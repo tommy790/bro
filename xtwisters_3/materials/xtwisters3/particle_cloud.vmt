@@ -1,0 +1,13 @@
+SpriteCard
+{
+	$basetexture "xtwisters3/cit_cloud001b"
+
+	$translucent 1
+	$nocull 1
+
+	$vertexcolor 1
+	$vertexalpha 1
+	$nofog 1
+
+	$depthblend 1
+}

@@ -1,0 +1,11 @@
+SpriteCard
+{
+	$basetexture "XTwisters3/TempestPuffyCloud"
+
+	$translucent 1
+	$nocull 1
+
+	$vertexcolor 1
+	$vertexalpha 1
+	$nofog 1
+}

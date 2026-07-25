@@ -1,0 +1,16 @@
+SpriteCard
+{
+	$basetexture "xtwisters3/neuro_blasts"
+
+	$additive 1
+
+	$vertexcolor 1
+	$vertexalpha 1
+
+	$depthblend 1
+	$endfadesize 4.5
+	$maxlumframeblend1 0
+	$maxlumframeblend2 1
+	$sequence_blend_mode 1
+	$startfadesize 3
+}

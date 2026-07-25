@@ -1,0 +1,20 @@
+SpriteCard
+{
+	$basetexture "xtwisters3/mega_fireball"
+
+	$translucent 1
+	$nocull 1
+
+	$vertexcolor 1
+	$vertexalpha 1
+	$nofog 1
+
+	$addself 1.0
+	$blendframes 1
+	$depthblend 1
+	$endfadesize .25
+	$maxsize .25
+	$overbrightfactor 2
+	$powerfunction "[0.8 2.5 5]"
+	$startfadesize .2
+}
