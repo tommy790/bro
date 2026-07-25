@@ -10,6 +10,7 @@ TIV.Config.SpikeCountConvarMin     = 0
 TIV.Config.SpikeCountConvarMax     = 6
 TIV.Config.SpikeForceConvarMin     = 0
 TIV.Config.SpikeForceConvarMax     = 200000
+TIV.Config.HideSpikes              = false
 TIV.Config.CompatWindForceScaleMin = 0.1
 TIV.Config.CompatWindForceScaleMax = 1.0
 

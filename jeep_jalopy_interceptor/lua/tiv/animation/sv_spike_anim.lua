@@ -62,8 +62,37 @@ local function GetParentedLocalAngle()
     return Angle(90, 0, 0)
 end
 
-TIV.SpikeAnim.GetSpikeDownAngle    = GetSpikeDownAngle
+TIV.SpikeAnim.GetSpikeDownAngle     = GetSpikeDownAngle
 TIV.SpikeAnim.GetParentedLocalAngle = GetParentedLocalAngle
+
+-- Keep visual configuration separate from physical spike behavior. SetNoDraw
+-- on the server replicates to every client and can be changed on live spikes.
+function TIV.SpikeAnim.ApplyVisibility(spike)
+    if not IsValid(spike) then return end
+    local hidden = TIV.Config.HideSpikes == true
+    spike:SetNoDraw(hidden)
+    spike:DrawShadow(not hidden)
+end
+
+-- Compatibility flags are plain Lua entity fields where the target addon
+-- expects them. In particular, current XTwisters 3 checks
+-- `XT3DoNotApplyPhysics`; the old network-only `XT3Ignore` marker was never
+-- read by XT3, allowing it to treat planted spikes as ordinary debris.
+function TIV.SpikeAnim.ApplyCompatibilityFlags(spike, veh)
+    if not IsValid(spike) then return end
+
+    spike:SetNWBool("TIV_Spike", true)
+    if IsValid(veh) then spike:SetNWEntity("TIV_OwnerVehicle", veh) end
+    spike:SetNWBool("GStormsIgnore", true)
+    spike:SetNWBool("XT3Ignore", true)
+
+    spike.IsTIVSpike             = true
+    spike.GStormsIgnore          = true
+    spike.XT3Ignore              = true
+    spike.XT3DoNotApplyPhysics   = true
+    spike.PhysgunDisabled        = true
+    spike.DoNotDuplicate         = true
+end
 
 -- ============================================================================
 -- GET OFFSETS FOR VEHICLE
@@ -135,16 +164,10 @@ function TIV.SpikeAnim.CreateSpikes(veh, data)
                 spike:SetColor(Color(80, 80, 80, 255))
                 spike:SetMaterial("models/props_combine/metal_combinebridge001")
 
-                -- Signal to tornado mods that this is not a debris prop.
-                -- Different mods check different conventions; cover the
-                -- common ones so prop-unweld features skip our spikes.
-                spike:SetNWBool("TIV_Spike", true)
-                spike:SetNWEntity("TIV_OwnerVehicle", veh)
-                spike:SetNWBool("GStormsIgnore", true)
-                spike:SetNWBool("XT3Ignore", true)
-                spike.IsTIVSpike       = true
-                spike.PhysgunDisabled  = true
-                spike.DoNotDuplicate   = true
+                -- Signal to tornado mods that this is an interceptor anchor,
+                -- not a debris prop, and apply the live visibility setting.
+                TIV.SpikeAnim.ApplyCompatibilityFlags(spike, veh)
+                TIV.SpikeAnim.ApplyVisibility(spike)
                 -- Some addons check this to skip cleanup entirely.
                 spike:SetCustomCollisionCheck(true)
 
@@ -187,6 +210,8 @@ function TIV.SpikeAnim.ReparentSpike(veh, spike, spikeData)
         spikePhys:EnableGravity(false)
     end
 
+    TIV.SpikeAnim.ApplyCompatibilityFlags(spike, veh)
+    TIV.SpikeAnim.ApplyVisibility(spike)
     spike:SetCollisionGroup(COLLISION_GROUP_DEBRIS)
     spike:SetParent(veh)
     spike:SetLocalPos(spikeData.localPos)
