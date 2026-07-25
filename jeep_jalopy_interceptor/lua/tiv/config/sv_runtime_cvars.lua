@@ -26,6 +26,27 @@ local function applyRuntimeSpikeConfig()
     TIV.Config.BallSocketForceLimit = force
 end
 
+-- Visibility is deliberately independent from spike count. Hidden spikes keep
+-- deploying and anchoring normally; only their models and shadows disappear.
+local function applyRuntimeSpikeVisibility()
+    local convar = GetConVar("tiv_hide_spikes")
+    TIV.Config.HideSpikes = convar and convar:GetBool() or false
+
+    for _, data in pairs((TIV.Deploy and TIV.Deploy.Vehicles) or {}) do
+        for _, spikeData in ipairs(data.spikes or {}) do
+            local spike = spikeData.entity
+            if IsValid(spike) then
+                if TIV.SpikeAnim and TIV.SpikeAnim.ApplyVisibility then
+                    TIV.SpikeAnim.ApplyVisibility(spike)
+                else
+                    spike:SetNoDraw(TIV.Config.HideSpikes)
+                    spike:DrawShadow(not TIV.Config.HideSpikes)
+                end
+            end
+        end
+    end
+end
+
 local function applyRuntimeCompatConfig()
     TIV.Compat = TIV.Compat or {}
     TIV.Compat.Enabled = GetConVar("tiv_compat_mode"):GetBool()
@@ -68,6 +89,13 @@ CreateConVar(
     "Number of TIV spikes used during deploy.",
     TIV.Config.SpikeCountConvarMin,
     TIV.Config.SpikeCountConvarMax
+)
+
+CreateConVar(
+    "tiv_hide_spikes",
+    "0",
+    { FCVAR_ARCHIVE, FCVAR_NOTIFY, FCVAR_REPLICATED },
+    "Hide TIV spike models while retaining their deploy and anchor behavior."
 )
 
 CreateConVar(
@@ -141,6 +169,10 @@ cvars.AddChangeCallback("tiv_spike_force", function(_, _, _)
     applyRuntimeSpikeConfig()
 end, "TIV_RuntimeSpikeForce")
 
+cvars.AddChangeCallback("tiv_hide_spikes", function(_, _, _)
+    applyRuntimeSpikeVisibility()
+end, "TIV_RuntimeSpikeVisibility")
+
 cvars.AddChangeCallback("tiv_compat_mode", function(_, _, _)
     applyRuntimeCompatConfig()
 end, "TIV_RuntimeCompatMode")
@@ -168,6 +200,7 @@ end, "TIV_RuntimeLoftThreshold")
 -- Single init path (was duplicated: Initialize hook + 3 timer.Simple calls).
 hook.Add("Initialize", "TIV_ApplyRuntimeCvars", function()
     applyRuntimeSpikeConfig()
+    applyRuntimeSpikeVisibility()
     applyRuntimeCompatConfig()
     applyRuntimeLoftConfig()
 end)

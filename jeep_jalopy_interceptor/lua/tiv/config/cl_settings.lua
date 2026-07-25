@@ -26,6 +26,9 @@ hook.Add("PopulateToolMenu", "TIV_AddSettingsPanel", function()
                 0
             )
 
+            panel:CheckBox("Hide Spike Models", "tiv_hide_spikes")
+                :SetTooltip("Hides spike models and shadows without disabling their anchor behavior. Applies live.")
+
             panel:NumSlider(
                 "Spike Force",
                 "tiv_spike_force",
