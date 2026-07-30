@@ -96,13 +96,17 @@ function ENT:Draw()
     local rtMaterial = VNPCS_BellyRT and VNPCS_BellyRT.GetMaterial(self)
 
     if rtMaterial then
+        local c = self:GetColor() or Color(255, 255, 255, 255)
+        local oldColor = Color(c.r or 255, c.g or 255, c.b or 255, c.a or 255)
+        self:SetColor(Color(255, 255, 255, 255))
+        render.SetColorModulation(1, 1, 1)
         render.MaterialOverride(rtMaterial)
-    end
-
-    self:DrawModel()
-
-    if rtMaterial then
+        self:DrawModel()
         render.MaterialOverride(nil)
+        self:SetColor(oldColor)
+        render.SetColorModulation(oldColor.r / 255, oldColor.g / 255, oldColor.b / 255)
+    else
+        self:DrawModel()
     end
 end
 

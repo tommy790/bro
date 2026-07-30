@@ -289,7 +289,9 @@ local function createState(belly)
     local rt = GetRenderTarget(rtName, RT_SIZE, RT_SIZE)
     local mat = CreateMaterial(matName, "UnlitGeneric", {
         ["$basetexture"] = rt:GetName(),
-        ["$ignorez"] = "0"
+        ["$ignorez"] = "0",
+        ["$model"] = "1",
+        ["$vertexcolor"] = "0"
     })
     mat:SetTexture("$basetexture", rt)
 
