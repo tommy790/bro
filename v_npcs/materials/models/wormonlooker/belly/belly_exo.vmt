@@ -1,0 +1,5 @@
+UnlitGeneric
+{
+	$basetexture "models\wormonlooker\belly\exoworo_belly" 
+	$model "1"
+}

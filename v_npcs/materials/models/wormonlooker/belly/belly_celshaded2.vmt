@@ -1,0 +1,8 @@
+VertexLitGeneric
+{
+	$basetexture "vgui/white"
+	$bumpmap "dev/bump_normal"
+	$ambientocclusion "1"
+
+	$lightwarptexture "models\wormonlooker\lightwarps\cryptia_lightwarp"
+}

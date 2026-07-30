@@ -1,0 +1,16 @@
+Vertexlitgeneric
+{
+	$basetexture "models\wormonlooker\belly\oldbellytex"
+	$bumpmap "models\wormonlooker\belly\normal" 
+	$ambientocclusion "1"
+	
+	$phong "1"
+	$phongboost "2"
+	$phongfresnelranges	"[0.1 0.5 1]"
+	$phongexponent "15"
+	$halflambert "1"
+	
+	"$detail" "models\wormonlooker\belly\detail"
+	"$detailscale" "1"
+	"$detailblendfactor" "1"
+}

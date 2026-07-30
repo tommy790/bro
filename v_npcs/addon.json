@@ -1,0 +1,13 @@
+{
+  "title": "V-NPCs",
+  "type": "npc",
+  "tags": [
+    "roleplay",
+    "comic"
+  ],
+  "ignore": [
+    "blender_files",
+    "blender_files/",
+    "blender_files/*"
+  ]
+}

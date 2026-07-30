@@ -1,0 +1,15 @@
+Vertexlitgeneric
+{
+	$basetexture "vgui/white"
+	$bumpmap "models\wormonlooker\belly\normal" 
+	
+	$ambientocclusion "1"
+	$surfaceprop Flesh
+	
+	$phong "1"
+	$phongboost "2"
+	$phongfresnelranges	"[0.1 0.5 1]"
+	$phongexponent "15"
+	
+	$halflambert "1"
+}

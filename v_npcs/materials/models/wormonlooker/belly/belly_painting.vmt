@@ -1,0 +1,16 @@
+VertexLitGeneric
+{
+	$basetexture "vgui/white"
+	$bumpmap "dev/bump_normal"
+	$ambientocclusion "1"
+
+	$phong "1"
+	$phongboost	"1" 
+	$phongalbedotint "1"
+	$phongexponent "15"
+	$phongtint "[.3 .2 .2]"
+
+	$phongfresnelranges	"[0.05 0.5 1]"
+	
+	$lightwarptexture "models\wormonlooker\lightwarps\painting_lightwarp"
+}

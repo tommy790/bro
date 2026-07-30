@@ -1,0 +1,10 @@
+"VertexLitGeneric"
+{
+	$basetexture "models\wormonlooker\belly\white" 
+	"$model" "1"
+	
+	$selfillum 1
+	$ambientocclusion "1"
+
+
+}

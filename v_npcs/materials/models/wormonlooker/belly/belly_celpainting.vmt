@@ -1,0 +1,27 @@
+VertexLitGeneric
+{
+	$basetexture "vgui/white"
+	$bumpmap "models\wormonlooker\belly\normal" 
+	$ambientocclusion "1"
+
+	$color2 "[ 1 1 1]"
+	$surfaceprop Flesh
+
+    $lightwarptexture "models\wormonlooker\lightwarps\smooth_lightwarp"
+
+	$alphatest 0
+    $nocull 1
+
+	$phong 1
+    "$phongfresnelranges"    "[1 1 0.945]"
+	$phongalbedotint 0
+	$phongexponent 0.1
+	$phongalbedoboost 4
+
+	$rimlight 0
+	$rimlightexponent 5
+	$rimlightboost 0.5
+	$rimlightmask 1
+
+	$rimmask 1
+}

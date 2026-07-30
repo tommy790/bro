@@ -1,0 +1,11 @@
+Vertexlitgeneric
+{
+	$basetexture "vgui/white"
+	$bumpmap "dev/bump_normal"
+	$lightwarptexture "models\wormonlooker\lightwarps\cel_lightwarp"
+	$ambientocclusion "1"
+
+	$phong 1
+	$nocull 1
+	$phongboost	".075"
+}
