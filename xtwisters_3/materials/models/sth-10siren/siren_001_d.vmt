@@ -1,9 +1,0 @@
-"VertexLitGeneric"
-{
-	"$baseTexture" 	"models/STH-10siren/siren_001_d"
-	"$envmap" env_cubemap
-	"$basealphaenvmapmask" 1
-	"$envmapsaturation" "0.25"
-	"$envmapcontrast" 	".66"
-	"$envmaptint" "[1 .65 0]"
-}

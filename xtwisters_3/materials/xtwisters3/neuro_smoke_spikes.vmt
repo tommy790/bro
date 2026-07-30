@@ -1,9 +1,0 @@
-SpriteCard
-{
-	$basetexture "xtwisters3/neuro_smoke_spikes"
-
-	$addself 1.0
-	$blendframes 1
-	$depthblend 1
-	$powerfunction "[0.8 2.5 5]"
-}

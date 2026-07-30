@@ -1,8 +1,0 @@
-SpriteCard
-{
-	$basetexture "xtwisters3/leafdead"
-
-	$alphatest 1
-
-	$blendframes 0
-}
