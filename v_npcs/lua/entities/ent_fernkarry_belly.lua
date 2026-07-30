@@ -93,7 +93,17 @@ end
 if not CLIENT then return end
 
 function ENT:Draw()
-    self:DrawModel() 
+    local rtMaterial = VNPCS_BellyRT and VNPCS_BellyRT.GetMaterial(self)
+
+    if rtMaterial then
+        render.MaterialOverride(rtMaterial)
+    end
+
+    self:DrawModel()
+
+    if rtMaterial then
+        render.MaterialOverride(nil)
+    end
 end
 
 local force_struggle = CreateConVar("vnpcs_global_struggle", "0", {FCVAR_ARCHIVE, FCVAR_NOTIFY, FCVAR_REPLICATED})
