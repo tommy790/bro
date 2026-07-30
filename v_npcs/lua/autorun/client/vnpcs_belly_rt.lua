@@ -337,10 +337,10 @@ local function captureTorso(state, predator)
     local target, mins, maxs = getTorsoTarget(clone)
     local height = math.max(maxs.z - mins.z, 32)
     local width = math.max(maxs.y - mins.y, 24)
-    local distance = math.max(height * 0.72, width * 1.45, 36)
-    local camPos = target + Vector(distance, 0, height * 0.02)
+    local distance = math.max(height * 0.5, width * 1.0, 26)
+    local camPos = target + Vector(distance, 0, height * 0.01)
     local camAng = (target - camPos):Angle()
-    local fov = math.Clamp(32 + (width / height) * 10, 28, 46)
+    local fov = math.Clamp(24 + (width / height) * 8, 20, 36)
 
     local oldX, oldY, oldW, oldH = 0, 0, ScrW(), ScrH()
     if render.GetViewPort then
