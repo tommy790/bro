@@ -287,8 +287,16 @@ local function createState(belly)
     local rtName = "vnpcs_belly_rt_" .. belly:EntIndex() .. "_" .. nextUID
     local matName = "vnpcs_belly_rt_mat_" .. belly:EntIndex() .. "_" .. nextUID
     local rt = GetRenderTarget(rtName, RT_SIZE, RT_SIZE)
-    local mat = CreateMaterial(matName, "UnlitGeneric", {
+    local mat = CreateMaterial(matName, "VertexLitGeneric", {
         ["$basetexture"] = rt:GetName(),
+        ["$bumpmap"] = "models/wormonlooker/belly/normal",
+        ["$ambientocclusion"] = "1",
+        ["$surfaceprop"] = "Flesh",
+        ["$halflambert"] = "1",
+        ["$phong"] = "1",
+        ["$phongboost"] = "2",
+        ["$phongexponent"] = "15",
+        ["$phongfresnelranges"] = "[0.1 0.5 1]",
         ["$ignorez"] = "0",
         ["$model"] = "1",
         ["$vertexcolor"] = "0"
