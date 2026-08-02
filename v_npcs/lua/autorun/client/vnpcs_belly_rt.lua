@@ -290,13 +290,13 @@ local function createState(belly)
     local mat = CreateMaterial(matName, "VertexLitGeneric", {
         ["$basetexture"] = rt:GetName(),
         ["$bumpmap"] = "models/wormonlooker/belly/normal",
-        ["$ambientocclusion"] = "1",
+        ["$ambientocclusion"] = "0",
         ["$surfaceprop"] = "Flesh",
         ["$halflambert"] = "1",
         ["$phong"] = "1",
-        ["$phongboost"] = "2",
-        ["$phongexponent"] = "15",
-        ["$phongfresnelranges"] = "[0.1 0.5 1]",
+        ["$phongboost"] = "0.5",
+        ["$phongexponent"] = "10",
+        ["$phongfresnelranges"] = "[0.05 0.3 1]",
         ["$ignorez"] = "0",
         ["$model"] = "1",
         ["$vertexcolor"] = "0"
@@ -362,13 +362,13 @@ local function captureTorso(state, predator)
 
     if render.FogMode then render.FogMode(MATERIAL_FOG_NONE) end
     render.SuppressEngineLighting(true)
-    render.ResetModelLighting(0.82, 0.82, 0.82)
-    render.SetModelLighting(BOX_FRONT, 1.25, 1.25, 1.25)
-    render.SetModelLighting(BOX_BACK, 0.35, 0.35, 0.35)
-    render.SetModelLighting(BOX_LEFT, 0.7, 0.7, 0.7)
-    render.SetModelLighting(BOX_RIGHT, 0.7, 0.7, 0.7)
-    render.SetModelLighting(BOX_TOP, 0.55, 0.55, 0.55)
-    render.SetModelLighting(BOX_BOTTOM, 0.35, 0.35, 0.35)
+    render.ResetModelLighting(0.95, 0.95, 0.95)
+    render.SetModelLighting(BOX_FRONT, 1.05, 1.05, 1.05)
+    render.SetModelLighting(BOX_BACK, 0.85, 0.85, 0.85)
+    render.SetModelLighting(BOX_LEFT, 0.92, 0.92, 0.92)
+    render.SetModelLighting(BOX_RIGHT, 0.92, 0.92, 0.92)
+    render.SetModelLighting(BOX_TOP, 0.95, 0.95, 0.95)
+    render.SetModelLighting(BOX_BOTTOM, 0.88, 0.88, 0.88)
     render.SetColorModulation(1, 1, 1)
     render.SetBlend(1)
 
