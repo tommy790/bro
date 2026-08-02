@@ -53,7 +53,7 @@ function VNPC_GiveFemaleModelVore(ent)
     ent.VNPC_FemaleModelVore = true
     ent.Predator = true
     ent.Belly_Angles = ent.Belly_Angles or Angle(0, 90, 90)
-    ent.Belly_Offset = ent.Belly_Offset or Vector(0, 3.5, 0)
+    ent.Belly_Offset = VNPC_GetFixedFemaleBellyOffset(ent)
     
     ent.VoreSettings = ent.VoreSettings or {
         EatsPlayers = true,
@@ -192,7 +192,7 @@ hook.Add("Think", "VNPC_FemaleModelVore_Think", function()
                 end
             end
             belly:SetLocalAngles(npc.Belly_Angles or Angle(0, 90, 90))
-            belly:SetLocalPos(npc.Belly_Offset or Vector(0, 3.5, 0))
+            belly:SetLocalPos(npc.Belly_Offset or VNPC_GetFixedFemaleBellyOffset(npc))
         end
     end
 end)

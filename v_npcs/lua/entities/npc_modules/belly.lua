@@ -61,8 +61,14 @@ end
 function ENT:SetBellyPosition() 
 	if not self.Belly then return end
 
-	self.Belly:SetLocalAngles(self.Belly_Angles)
-	self.Belly:SetLocalPos(self.Belly_Offset)
+	self.Belly:SetLocalAngles(self.Belly_Angles or Angle(0, 90, 90))
+	local offset = self.Belly_Offset
+	if VNPC_GetFixedFemaleBellyOffset and (not offset or offset == Vector(0, 1, 0) or offset == Vector(0, 0, 0)) then
+		if VNPC_IsFemaleModelNPC and VNPC_IsFemaleModelNPC(self) then
+			offset = VNPC_GetFixedFemaleBellyOffset(self)
+		end
+	end
+	self.Belly:SetLocalPos(offset or Vector(0, 3.5, 0))
 end
 
 function ENT:GetBelly()
