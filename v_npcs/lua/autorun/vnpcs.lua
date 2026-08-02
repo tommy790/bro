@@ -6,7 +6,7 @@ properties.Add("vnpcs_eatme", {
 	Order = 999,
 	MenuIcon = VNPCs.Icon,
 	Filter = function(self, ent, ply)
-		if not ent.IsDrGNextbot then return false end
+		if not ent.IsDrGNextbot and not ent.VNPC_FemaleModelVore then return false end
 		if not ent.Predator then return false end
 		return true
 	end,
@@ -17,6 +17,10 @@ properties.Add("vnpcs_eatme", {
 	end,
 	Receive = function(self, len, ply)
 		local ent = net.ReadEntity()
+        if ent.EatEntity then
+            ent:EatEntity(ply)
+            return
+        end
         --print(ent, SERVER) blehhhh
         ent:ClearPatrols()
         ent:SetEntityRelationship(ply, D_HT, 99999)

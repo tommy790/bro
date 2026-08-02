@@ -98,6 +98,10 @@ local function populate()
 
         panel:CheckBox("Force Burps", "vnpcs_global_burps")
         panel:CheckBox("Force Weight Gain", "vnpcs_global_gain")
+        panel:Help("\nFemale Model NPCs Vore\n")
+        panel:CheckBox("Give Female Model NPCs Vore", "vnpcs_female_model_vore")
+        panel:NumSlider("Detection Range", "vnpcs_female_model_vore_range", 100, 2000, 0)
+        panel:NumSlider("Grab Range", "vnpcs_female_model_vore_grab_range", 20, 300, 0)
 
         --panel:CheckBox("Do Custom Animations", "drg_animate")
         panel:ControlHelp("")
