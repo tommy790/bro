@@ -62,6 +62,9 @@ function ENT:OnDigestionPhaseChanged(new, old)
 
         if self.NPC then       
             self.NPC:SetFacialExpression(2)
+            if self.NPC.PlayVoreGesture then
+                self.NPC:PlayVoreGesture("rub_belly")
+            end
         end
     end
 

@@ -104,3 +104,107 @@ hook.Add("OnEntityCreated", "VNPC_AutoFemaleModelFacesAndTurn", function(ent)
         end
     end)
 end)
+
+-- Native Vore Gesture Animations
+VNPC_NATIVE_GESTURES = {
+    ["swallow"] = {
+        acts = {
+            ACT_GMOD_GESTURE_TAUNT_ZOMBIE,
+            ACT_HL2MP_GESTURE_RELOAD_MELEE,
+            ACT_GMOD_GESTURE_MELEE_ATTACK_SWING,
+            ACT_HL2MP_GESTURE_RANGE_ATTACK_MELEE,
+            ACT_GESTURE_MELEE_ATTACK1
+        },
+        sequences = {
+            "gesture_melee_attack1", "swing", "g_melee_hit", "taunt_zombie", "cheer"
+        }
+    },
+    ["burp"] = {
+        acts = {
+            ACT_HL2MP_GESTURE_TAUNT_CHEST_THUMP,
+            ACT_HL2MP_GESTURE_TAUNT_SALUTE,
+            ACT_GMOD_GESTURE_TAUNT_CHEER,
+            ACT_SIGNAL_HALT,
+            ACT_FLINCH_CHEST
+        },
+        sequences = {
+            "chest_thump", "taunt_chest_thump", "salute", "gesture_signal_halt", "flinch_chest"
+        }
+    },
+    ["rub_belly"] = {
+        acts = {
+            ACT_FLINCH_STOMACH,
+            ACT_HL2MP_GESTURE_TAUNT_CHEST_THUMP,
+            ACT_SIGNAL_HALT
+        },
+        sequences = {
+            "flinch_stomach", "stomach_flinch", "gesture_flinch_stomach", "idle_subtle"
+        }
+    },
+    ["struggle_flinch"] = {
+        acts = {
+            ACT_FLINCH_STOMACH,
+            ACT_FLINCH_PHYSICS,
+            ACT_FLINCH_CHEST
+        },
+        sequences = {
+            "flinch_stomach", "gesture_flinch_stomach", "flinch_01", "flinch_02"
+        }
+    }
+}
+
+function VNPC_PlayNativeVoreGesture(ent, gesture_type)
+    if not IsValid(ent) then return false end
+    local gesture_info = VNPC_NATIVE_GESTURES[gesture_type]
+    if not gesture_info then return false end
+
+    -- Allow entity override
+    if ent.VoreGestures and ent.VoreGestures[gesture_type] then
+        local custom = ent.VoreGestures[gesture_type]
+        if isnumber(custom) then
+            if ent.AddGesture then pcall(ent.AddGesture, ent, custom, true) end
+            return true
+        elseif isstring(custom) then
+            local seq = ent:LookupSequence(custom)
+            if seq and seq >= 0 then
+                if ent.AddGestureSequence then pcall(ent.AddGestureSequence, ent, seq, true) end
+                return true
+            end
+        end
+    end
+
+    -- Try DrGBase PlayGesture or sequence first if available
+    if ent.PlayGesture then
+        for _, seq_name in ipairs(gesture_info.sequences) do
+            local seq = ent:LookupSequence(seq_name)
+            if seq and seq >= 0 then
+                pcall(ent.PlayGesture, ent, seq_name)
+                return true
+            end
+        end
+    end
+
+    -- Try AddGestureSequence
+    if ent.AddGestureSequence then
+        for _, seq_name in ipairs(gesture_info.sequences) do
+            local seq = ent:LookupSequence(seq_name)
+            if seq and seq >= 0 then
+                pcall(ent.AddGestureSequence, ent, seq, true)
+                return true
+            end
+        end
+    end
+
+    -- Try standard AddGesture ACT enum
+    if ent.AddGesture then
+        for _, act in ipairs(gesture_info.acts) do
+            local seq = ent:SelectWeightedSequence(act)
+            if seq and seq >= 0 then
+                pcall(ent.AddGesture, ent, act, true)
+                return true
+            end
+        end
+    end
+
+    return false
+end

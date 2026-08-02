@@ -284,6 +284,13 @@ end
 
 --[[FUNCTIONS]]
 
+function ENT:PlayVoreGesture(gesture_type)
+    if VNPC_PlayNativeVoreGesture then
+        return VNPC_PlayNativeVoreGesture(self, gesture_type)
+    end
+    return false
+end
+
 function ENT:EatEntity(ent)
 	if not IsValid(ent) or self.Swallowing or ent.Vored or self.Vored then return end
 	if not ent:GetModel() or ent:GetClass():find("func") then return end
@@ -296,6 +303,7 @@ function ENT:EatEntity(ent)
 	print(ent, ent:GetClass()) --get rid of this one day
 	
 	if self.Belly:AddPrey(ent) then
+		self:PlayVoreGesture("swallow")
 		local swallow_sound = GetRandomFromTable(self.VoreSounds["swallow"])
 		self:EmitSound(swallow_sound, 100, 100)
 
@@ -342,6 +350,7 @@ function ENT:Burp(big)
 	end
 
 	self:SetFacialExpression(3) -- Burp face
+	self:PlayVoreGesture("burp")
 	local length = (big and 1.5 or 1.2)/self.VoreSoundPitch
     timer.Simple(length, function()
         if self and IsValid(self) then

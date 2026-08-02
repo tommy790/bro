@@ -135,6 +135,9 @@ function VNPC_GiveFemaleModelVore(ent)
                 local snd = snd_list[math.random(1, #snd_list)]
                 self:EmitSound(snd, 100, 100)
             end
+            if VNPC_PlayNativeVoreGesture then
+                VNPC_PlayNativeVoreGesture(self, "swallow")
+            end
             self.Swallowing = false
             return true
         end
@@ -149,6 +152,16 @@ function VNPC_GiveFemaleModelVore(ent)
             local snd = snd_list[math.random(1, #snd_list)]
             self:EmitSound(snd, 80, (self.VoreSoundPitch or 1) * 100, 1.4)
         end
+        if VNPC_PlayNativeVoreGesture then
+            VNPC_PlayNativeVoreGesture(self, "burp")
+        end
+    end
+
+    function ent:PlayVoreGesture(gesture_type)
+        if VNPC_PlayNativeVoreGesture then
+            return VNPC_PlayNativeVoreGesture(self, gesture_type)
+        end
+        return false
     end
 
     -- Belly methods matching VNPCs
