@@ -151,6 +151,182 @@ function VNPC_GiveFemaleModelVore(ent)
         end
     end
 
+    -- Belly methods matching VNPCs
+    function ent:GetBellyAnchor()
+        return GetBellyAnchorBone(self)
+    end
+
+    function ent:SetupBelly(spineBone)
+        local belly = self.VNPC_Belly or self.Belly
+        if not IsValid(belly) then
+            belly = ents.Create("ent_vore_belly")
+            self.VNPC_Belly = belly
+            self.Belly = belly
+            self:SetNWEntity("Belly", belly)
+        end
+        if IsValid(belly) then
+            belly:SetPos(self:GetPos())
+            belly:SetParent(self)
+            belly:SetProperties(self.BellyProperties, self)
+            belly:SetNPC(self)
+            belly:Spawn()
+            belly:Activate()
+            belly:FollowBone(self, spineBone or 0)
+            if not belly:GetParent() or belly:GetParent() ~= self then
+                belly:SetParent(self)
+            end
+            belly:SetLocalAngles(self.Belly_Angles or Angle(0, 90, 90))
+            local offset = self.Belly_Offset
+            if VNPC_GetFixedFemaleBellyOffset and (not offset or offset == Vector(0, 1, 0) or offset == Vector(0, 0, 0)) then
+                offset = VNPC_GetFixedFemaleBellyOffset(self)
+            end
+            belly:SetLocalPos(offset or Vector(0, 3.5, 0))
+            if belly.SetBellySize then belly:SetBellySize() end
+            if self.OnBellyCreated then self:OnBellyCreated(belly) end
+        end
+        return belly
+    end
+
+    function ent:SetBellyPosition()
+        local belly = self.VNPC_Belly or self.Belly
+        if not IsValid(belly) then return end
+        belly:SetLocalAngles(self.Belly_Angles or Angle(0, 90, 90))
+        local offset = self.Belly_Offset
+        if VNPC_GetFixedFemaleBellyOffset and (not offset or offset == Vector(0, 1, 0) or offset == Vector(0, 0, 0)) then
+            offset = VNPC_GetFixedFemaleBellyOffset(self)
+        end
+        belly:SetLocalPos(offset or Vector(0, 3.5, 0))
+    end
+
+    function ent:GetBelly()
+        return self.VNPC_Belly or self.Belly or self:GetNWEntity("Belly")
+    end
+
+    -- Weight gain methods matching VNPCs
+    ent.BoneScale = ent.BoneScale or 1
+
+    function ent:GainWeight(amount)
+        if not amount or amount == 0 then return end
+        self.BoneScale = math.max((self.BoneScale or 1) + amount, 1)
+        if self.OnWeightGain then self:OnWeightGain(self.BoneScale) end
+    end
+
+    function ent:LoseWeight(amount)
+        if not amount or amount == 0 then return end
+        self:GainWeight(-amount)
+    end
+
+    function ent:GetWeight()
+        return self.BoneScale or 1
+    end
+
+    function ent:SetWeight(num)
+        self.BoneScale = math.max(num or 1, 1)
+        if self.OnWeightGain then self:OnWeightGain(self.BoneScale) end
+    end
+
+    function ent:OnWeightGain(scale) end
+
+    -- Facial expression methods matching VNPCs
+    function ent:SetFacialExpression(phase)
+        self.CurrentFacialPhase = phase
+        self:SetNWInt("FacialPhase", phase)
+    end
+
+    function ent:GetCurrentFacialPhase()
+        return self:GetNWInt("FacialPhase", self.CurrentFacialPhase or 0)
+    end
+
+    function ent:UpdateFacialExpressions() end
+
+    -- Predation / VNPC model classification methods
+    function ent:IsFemaleModel(mdl)
+        return true
+    end
+
+    function ent:IsFemaleNPC()
+        return true
+    end
+
+    function ent:IsCitizenVore()
+        local mdl = string.lower(self:GetModel() or "")
+        local cls = string.lower(self:GetClass() or "")
+        return (mdl:find("group01") or mdl:find("group02") or mdl:find("group03") or cls:find("citizen") or cls:find("rebel") or cls:find("refugee") or cls:find("medic")) ~= nil
+    end
+
+    function ent:IsUnnoticedVore()
+        if self.UnnoticedVore ~= nil then return self.UnnoticedVore end
+        if self.VoreSettings and self.VoreSettings.UnnoticedVore ~= nil then return self.VoreSettings.UnnoticedVore end
+        local mdl = string.lower(self:GetModel() or "")
+        return (mdl:find("group01") or mdl:find("group02") or mdl:find("group03") or mdl:find("female") or mdl:find("alyx") or mdl:find("mossman")) ~= nil
+    end
+
+    function ent:ApplyUnnoticedVore(prey)
+        if not IsValid(prey) then return end
+        prey.UnnoticedVored = true
+        if prey.SetSquad then pcall(prey.SetSquad, prey, "") end
+        if prey.SetEnemy then pcall(prey.SetEnemy, prey, nil) end
+        if prey.SetTarget then pcall(prey.SetTarget, prey, nil) end
+        for _, npc in ipairs(ents.FindByClass("npc_*")) do
+            if IsValid(npc) and npc ~= self and npc ~= prey then
+                if npc:GetEnemy() == self or npc:GetEnemy() == prey then
+                    npc:SetEnemy(nil)
+                end
+                if npc.SetEntityRelationship then
+                    npc:SetEntityRelationship(self, D_NU, 99)
+                end
+            end
+        end
+    end
+
+    function ent:EatCondition(prey)
+        return true
+    end
+
+    function ent:CanEat(prey)
+        return true
+    end
+
+    -- Event hooks matching VNPCs
+    function ent:PostEntityEaten(ent) end
+    function ent:OnBellyCreated(belly) end
+
+    function ent:OnDigestionPhaseChanged(new, old)
+        if new == 0 and old == 2 then
+            self:Burp(true)
+            self:SetFacialExpression(0)
+        elseif new == 2 and old == 1 then
+            self:SetFacialExpression(2)
+        elseif new == 1 and old == 0 then
+            self:SetFacialExpression(1)
+        end
+    end
+
+    function ent:OnPreyAbsorbing(power, old_value, new_value)
+        self:GainWeight((power or 1) * 0.006)
+    end
+
+    function ent:OnPreyAbsorbed()
+        if IsValid(self.VNPC_Belly) and self.VNPC_Belly.PlayFinalAbsorbSound then
+            self.VNPC_Belly:PlayFinalAbsorbSound()
+        end
+    end
+    function ent:OnPreyKilled()
+        if IsValid(self.VNPC_Belly) and self.VNPC_Belly.PlayFinalDigestSound then
+            self.VNPC_Belly:PlayFinalDigestSound()
+        end
+    end
+
+    -- Speed & AI methods matching VNPCs
+    function ent:GetAdjustedSpeeds()
+        return 200, 300
+    end
+
+    function ent:UpdateRelations() end
+    function ent:ShouldIgnore(target)
+        return false
+    end
+
     return true
 end
 
