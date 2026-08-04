@@ -217,10 +217,16 @@ function VNPC_GiveFemaleModelVore(ent)
 
     -- Weight gain methods matching VNPCs
     ent.BoneScale = ent.BoneScale or 1
+    ent.VoreSettings = ent.VoreSettings or {}
+    ent.VoreSettings.HasWeightGain = true
+    ent.VoreSettings.WeightGainBones = ent.VoreSettings.WeightGainBones or VNPC_FEMALE_WEIGHT_GAIN_BONES
+    ent.VoreSettings.WeightGainSettings = ent.VoreSettings.WeightGainSettings or VNPC_FEMALE_WEIGHT_GAIN_SETTINGS
 
     function ent:GainWeight(amount)
         if not amount or amount == 0 then return end
         self.BoneScale = math.max((self.BoneScale or 1) + amount, 1)
+        self:SetNWFloat("Bonescale", self.BoneScale)
+        if VNPC_DoVisualBonescale then VNPC_DoVisualBonescale(self, self.BoneScale) end
         if self.OnWeightGain then self:OnWeightGain(self.BoneScale) end
     end
 
@@ -235,6 +241,8 @@ function VNPC_GiveFemaleModelVore(ent)
 
     function ent:SetWeight(num)
         self.BoneScale = math.max(num or 1, 1)
+        self:SetNWFloat("Bonescale", self.BoneScale)
+        if VNPC_DoVisualBonescale then VNPC_DoVisualBonescale(self, self.BoneScale) end
         if self.OnWeightGain then self:OnWeightGain(self.BoneScale) end
     end
 

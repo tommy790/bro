@@ -151,6 +151,144 @@ hook.Add("OnEntityCreated", "VNPC_AutoFemaleModelFacesAndTurn", function(ent)
     end)
 end)
 
+-- Weight Gain Bones & Settings for Female Model NPCs (matching VNPCs)
+VNPC_FEMALE_WEIGHT_GAIN_BONES = {
+    "ValveBiped.Bip01_L_Breast0",
+    "ValveBiped.Bip01_L_Breast1",
+    "ValveBiped.Bip01_R_Breast0",
+    "ValveBiped.Bip01_R_Breast1",
+    "ValveBiped.Bip01_L_Thigh",
+    "ValveBiped.Bip01_R_Thigh",
+    "ValveBiped.Bip01_L_Calf",
+    "ValveBiped.Bip01_R_Calf",
+    "ValveBiped.Bip01_L_Forearm",
+    "ValveBiped.Bip01_R_Forearm",
+    "ValveBiped.Bip01_Spinebut",
+    "ValveBiped.Bip01_Pelvis",
+    "ValveBiped.Bip01_Spine",
+    "ValveBiped.Bip01_Spine1",
+    "ValveBiped.Bip01_Spine4"
+}
+
+VNPC_FEMALE_WEIGHT_GAIN_SETTINGS = {
+    MaxBoob = 1.5,
+    MaxThigh = 1.5,
+    MaxCalf = 1.3,
+    MaxArm = 1.1,
+    MaxSpine = 1.1,
+    MaxWaist = 1.3,
+    MaxSpine4 = 2,
+    BoobMultiplier = 1,
+    ThighMultiplier = 1,
+    CalfMultiplier = 0.7,
+    ArmMultiplier = 0.5,
+    SpineMultiplier = 0.2,
+    WaistMultiplier = 0.4
+}
+
+local function VNPC_WhatIsBone(boneName, definers) 
+    boneName = string.lower(boneName)
+    if definers then
+        for ident, _ in pairs(definers) do
+            if boneName:find(string.lower(ident)) then
+                return ident
+            end
+        end
+    end
+    if boneName:find("breast") or boneName:find("boob") then
+        return "Boob"
+    elseif boneName:find("thigh") or boneName:find("leg_bone1") then
+        return "Thigh"
+    elseif boneName:find("calf") or boneName:find("leg_bone3") then
+        return "Calf"
+    elseif boneName:find("arm") then
+        return "Arm"
+    elseif boneName:find("pelvis") or boneName:find("hips") or boneName:find("butt") then
+        return "Waist"
+    elseif boneName:find("spine") then
+        return "Spine"
+    end
+    return "Unknown"
+end
+
+function VNPC_DoVisualBonescale(ent, _bonescale)
+    if not IsValid(ent) then return end
+    local setting = (ent.VoreSettings and ent.VoreSettings.WeightGainSettings) or VNPC_FEMALE_WEIGHT_GAIN_SETTINGS
+    local definers = ent.VoreSettings and ent.VoreSettings.WeightGainDefiners
+    local bones = (ent.VoreSettings and ent.VoreSettings.WeightGainBones) or VNPC_FEMALE_WEIGHT_GAIN_BONES
+
+    for _, boneName in ipairs(bones) do
+        local boneID = ent:LookupBone(boneName)
+        if not boneID then continue end
+
+        local is = VNPC_WhatIsBone(boneName, definers)
+        local multiplier = 0.5
+        local max = 1.5
+        if setting[is.."Multiplier"] then
+            multiplier = tonumber(setting[is.."Multiplier"]) or 0.5
+        end
+        if setting["Max"..is] then
+            max = tonumber(setting["Max"..is]) or 1.5
+        end
+
+        local actual_scale = _bonescale + (multiplier - 1) * (_bonescale - 1)
+        local scaleVec, posAdjust
+        if definers and definers[is] then
+            scaleVec, posAdjust = definers[is](actual_scale, max) 
+        elseif is == "Boob" then
+            scaleVec = Vector(
+                math.min(actual_scale, 1.65 * max),
+                math.min(actual_scale, 1.7 * max),
+                math.min(actual_scale, 2.2 * max)
+            )
+        elseif is == "Waist" then
+            scaleVec = Vector(
+                math.min(actual_scale, 1.3 * max),
+                math.min(actual_scale, 1.4 * max),
+                math.min(actual_scale, 1.6 * max)
+            )
+        elseif is == "Spine" then
+            scaleVec = Vector(
+                math.min(actual_scale, 1.6 * max),
+                math.min(actual_scale, 1),
+                math.min(actual_scale, 1.6 * max)
+            )
+        else
+            scaleVec = Vector(
+                math.min(actual_scale, 1),
+                math.min(actual_scale, 1.6 * max),
+                math.min(actual_scale, 1.6 * max)
+            )
+        end
+
+        ent:ManipulateBoneScale(boneID, scaleVec)
+        if posAdjust then
+            ent:ManipulateBonePosition(boneID, posAdjust, true)
+        end
+    end
+end
+
+if CLIENT then
+    hook.Add("Think", "VNPC_FemaleModelVore_ClientWeightGain", function()
+        local _dt = FrameTime()
+        for _, ent in ipairs(ents.FindByClass("npc_*")) do
+            if not IsValid(ent) then continue end
+            if not (VNPC_IsFemaleModelNPC(ent) or ent.VNPC_FemaleModelVore) then continue end
+
+            local current_scale = ent:GetNWFloat("Bonescale", 1)
+            local oldVisual = ent.VisualBonescale
+
+            local sped = 3
+            local bonescale_lerp = 1 - math.exp(-sped * _dt)
+            ent.VisualBonescale = Lerp(bonescale_lerp, ent.VisualBonescale or current_scale, current_scale)
+
+            if oldVisual ~= ent.VisualBonescale then
+                VNPC_DoVisualBonescale(ent, ent.VisualBonescale)
+            end
+        end
+    end)
+end
+
 -- Native Vore Gesture Animations
 VNPC_NATIVE_GESTURES = {
     ["swallow"] = {
