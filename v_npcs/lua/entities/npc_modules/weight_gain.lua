@@ -13,7 +13,7 @@ local function whatIsBone(boneName, definers)
 		end
 	end
 
-	if boneName:find("breast") or boneName:find("boob") then
+	if boneName:find("breast") or boneName:find("boob") or boneName:find("pectoral") or boneName:find("pec") then
 		return "Boob"
 	elseif boneName:find("thigh") or boneName:find("leg_bone1") then
 		return "Thigh"
