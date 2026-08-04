@@ -20,10 +20,56 @@ function VNPC_GetFixedFemaleBellyOffset(ent)
     return Vector(x, y, z)
 end
 
+function VNPC_HasFemaleModelBones(ent)
+    if not IsValid(ent) then return false end
+    if not ent.LookupBone or not ent.GetBoneCount then return false end
+    
+    local female_bone_names = {
+        "ValveBiped.Bip01_L_Breast0",
+        "ValveBiped.Bip01_L_Breast1",
+        "ValveBiped.Bip01_R_Breast0",
+        "ValveBiped.Bip01_R_Breast1",
+        "ValveBiped.Bip01_L_Breast",
+        "ValveBiped.Bip01_R_Breast",
+        "ValveBiped.Bip01_Spinebut",
+        "ValveBiped.Bip01_SpineBut",
+        "Bip01_L_Breast0",
+        "Bip01_R_Breast0",
+        "Bip01_L_Breast",
+        "Bip01_R_Breast",
+        "L_Breast",
+        "R_Breast",
+        "l_breast",
+        "r_breast",
+        "breast0",
+        "breast1",
+        "boob_l",
+        "boob_r"
+    }
+
+    for _, bone_name in ipairs(female_bone_names) do
+        local bone = ent:LookupBone(bone_name)
+        if bone and bone >= 0 then
+            return true
+        end
+    end
+
+    local count = ent:GetBoneCount() or 0
+    for i = 0, count - 1 do
+        local name = string.lower(ent:GetBoneName(i) or "")
+        if name:find("breast") or name:find("boob") or name:find("spinebut") then
+            return true
+        end
+    end
+
+    return false
+end
+
 function VNPC_IsFemaleModelNPC(ent)
     if not IsValid(ent) or not ent:IsNPC() then return false end
     if ent.IsDrGNextbot or ent.Base == "npc_vore_base" then return false end
     if ent:GetClass():find("func_") or ent:IsWeapon() or ent:IsPlayer() then return false end
+    if VNPC_HasFemaleModelBones(ent) then return true end
     local mdl = string.lower(ent:GetModel() or "")
     return (mdl:find("female") or mdl:find("alyx") or mdl:find("mossman")) ~= nil
 end

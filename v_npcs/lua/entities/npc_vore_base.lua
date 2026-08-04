@@ -291,6 +291,21 @@ function ENT:PlayVoreGesture(gesture_type)
     return false
 end
 
+function ENT:IsFemaleModel(mdl)
+    if self.IsFemalePredator or self.FemaleModel or self.IsFemale then
+        return true
+    end
+    if VNPC_HasFemaleModelBones and VNPC_HasFemaleModelBones(self) then
+        return true
+    end
+    mdl = string.lower(mdl or self:GetModel() or "")
+    return (mdl:find("female") or mdl:find("alyx") or mdl:find("mossman") or mdl:find("loona") or mdl:find("lovander") or mdl:find("noelle") or mdl:find("rouge") or mdl:find("rogue") or mdl:find("roxy") or mdl:find("sybil") or mdl:find("taroth") or mdl:find("purslime") or mdl:find("slime")) ~= nil
+end
+
+function ENT:IsFemaleNPC()
+    return self:IsFemaleModel()
+end
+
 function ENT:EatEntity(ent)
 	if not IsValid(ent) or self.Swallowing or ent.Vored or self.Vored then return end
 	if not ent:GetModel() or ent:GetClass():find("func") then return end
