@@ -474,3 +474,72 @@ function VNPC_PlayNativeVoreGesture(ent, gesture_type)
 
     return false
 end
+
+-- Additional ConVars for female model vore enhancements
+CreateConVar("vnpcs_female_model_vore_eat_corpses", "1", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Allow female model NPCs to eat corpses and ragdolls")
+CreateConVar("vnpcs_female_model_vore_ragdoll_range", "150", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Ragdoll scan range for female model NPCs")
+CreateConVar("vnpcs_female_model_vore_regurgitate_dmg", "0.3", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Damage fraction threshold to trigger regurgitation")
+CreateConVar("vnpcs_female_model_vore_debug_overlay", "0", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Enable 3D debug overlay for female model vore NPCs")
+
+if CLIENT then
+    hook.Add("CalcView", "VNPC_FemaleModelVore_InternalView", function(ply, pos, angles, fov)
+        if not IsValid(ply) or not (ply.Vored or ply.VNPC_Vored) then return end
+        local parent = ply:GetParent()
+        if IsValid(parent) and (parent.VNPC_FemaleModelVore or VNPC_IsFemaleModelNPC(parent)) then
+            local t = CurTime() * 2
+            local offset = Vector(math.sin(t) * 2, math.cos(t) * 2, math.sin(t * 0.7))
+            local ang_offset = Angle(math.sin(t * 1.5), math.cos(t * 1.2), math.sin(t) * 3)
+            return {
+                origin = parent:GetPos() + Vector(0, 0, 35) + offset,
+                angles = angles + ang_offset,
+                fov = fov - 10,
+                drawviewer = true
+            }
+        end
+    end)
+
+    hook.Add("HUDPaint", "VNPC_FemaleModelVore_SwallowedHUD", function()
+        local ply = LocalPlayer()
+        if not IsValid(ply) or not (ply.Vored or ply.VNPC_Vored) then return end
+        local parent = ply:GetParent()
+        if IsValid(parent) and (parent.VNPC_FemaleModelVore or VNPC_IsFemaleModelNPC(parent)) then
+            local w, h = ScrW(), ScrH()
+            surface.SetDrawColor(180, 20, 40, 60)
+            surface.DrawRect(0, 0, w, h)
+            draw.SimpleText("YOU HAVE BEEN SWALLOWED", "DermaLarge", w * 0.5, h * 0.15, Color(255, 80, 80, 255), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+            local pred_name = parent.PrintName or parent:GetClass()
+            draw.SimpleText("Predator: " .. pred_name, "DermaDefaultBold", w * 0.5, h * 0.20, Color(255, 200, 200, 255), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+        end
+    end)
+
+    hook.Add("EntityEmitSound", "VNPC_FemaleModelVore_MuffleAudio", function(info)
+        local ply = LocalPlayer()
+        if not IsValid(ply) or not (ply.Vored or ply.VNPC_Vored) then return end
+        local parent = ply:GetParent()
+        if IsValid(parent) and (parent.VNPC_FemaleModelVore or VNPC_IsFemaleModelNPC(parent)) then
+            info.DSP = 15 -- Muffled underwater DSP
+            return true
+        end
+    end)
+
+    hook.Add("PostDrawTranslucentRenderables", "VNPC_FemaleModelVore_DebugOverlay", function()
+        local debug_cv = GetConVar("vnpcs_female_model_vore_debug_overlay")
+        if not debug_cv or not debug_cv:GetBool() then return end
+        
+        for _, npc in ipairs(ents.FindByClass("npc_*")) do
+            if not IsValid(npc) or not npc.VNPC_FemaleModelVore then continue end
+            local pos = npc:WorldSpaceCenter()
+            local ang = EyeAngles()
+            ang:RotateAroundAxis(ang:Forward(), 90)
+            ang:RotateAroundAxis(ang:Right(), 90)
+            
+            cam.Start3D2D(pos + Vector(0, 0, 30), ang, 0.2)
+                draw.SimpleText("VNPC: " .. npc:GetClass(), "DermaDefaultBold", 0, 0, Color(255, 255, 0), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+                local bsize = IsValid(npc.VNPC_Belly) and (npc.VNPC_Belly.BaseScale or 0) or 0
+                draw.SimpleText(string.format("Belly Size: %.2f", bsize), "DermaDefault", 0, 16, Color(255, 150, 255), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+                local prey_count = (IsValid(npc.VNPC_Belly) and npc.VNPC_Belly.Prey) and #npc.VNPC_Belly.Prey or 0
+                draw.SimpleText(string.format("Prey Count: %d", prey_count), "DermaDefault", 0, 32, Color(255, 100, 100), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+            cam.End3D2D()
+        end
+    end)
+end

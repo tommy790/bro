@@ -338,6 +338,61 @@ function VNPC_GiveFemaleModelVore(ent)
         end
     end
 
+    function ent:Regurgitate(prey)
+        local belly = self.VNPC_Belly or self.Belly
+        if IsValid(belly) and belly.Regurgitate then
+            return pcall(belly.Regurgitate, belly, prey)
+        end
+        if IsValid(prey) then
+            prey.Vored = false
+            prey.VNPC_Vored = false
+            prey:SetNoDraw(false)
+            prey:SetSolid(SOLID_BBOX)
+            prey:SetMoveType(MOVETYPE_WALK)
+            prey:SetParent(nil)
+            prey:SetPos(self:GetPos() + self:GetForward() * 50 + Vector(0, 0, 10))
+            if prey:IsPlayer() and prey.UnLock then
+                pcall(prey.UnLock, prey)
+            end
+            return true
+        end
+        return false
+    end
+
+    function ent:ReleaseAllPrey()
+        local belly = self.VNPC_Belly or self.Belly
+        if IsValid(belly) and belly.Prey and istable(belly.Prey) then
+            for _, p_tbl in ipairs(belly.Prey) do
+                if p_tbl and IsValid(p_tbl.Entity) then
+                    self:Regurgitate(p_tbl.Entity)
+                end
+            end
+        end
+    end
+
+    function ent:PlayRandomGurgle()
+        local belly = self.VNPC_Belly or self.Belly
+        if IsValid(belly) and belly.PlayRandomGurgle then
+            pcall(belly.PlayRandomGurgle, belly)
+        end
+    end
+
+    function ent:PlayRandomStruggle()
+        local belly = self.VNPC_Belly or self.Belly
+        if IsValid(belly) and belly.PlayRandomStruggle then
+            pcall(belly.PlayRandomStruggle, belly)
+        end
+    end
+
+    function ent:CanEatCorpse(ragdoll)
+        local allow_corpses = GetConVar("vnpcs_female_model_vore_eat_corpses")
+        if allow_corpses and not allow_corpses:GetBool() then return false end
+        if not IsValid(ragdoll) then return false end
+        if ragdoll:GetClass() ~= "prop_ragdoll" and not ragdoll.VNPC_IsCorpse then return false end
+        if ragdoll.Vored or ragdoll.VNPC_Vored then return false end
+        return true
+    end
+
     -- Speed & AI methods matching VNPCs
     function ent:GetAdjustedSpeeds()
         return 200, 300
@@ -426,7 +481,7 @@ hook.Add("Think", "VNPC_FemaleModelVore_AI", function()
             end
         else
             if pers_data and pers_data.only_enemies then continue end
-            -- Search for nearby hostile target
+            -- Search for nearby hostile target or corpses
             for _, ent in ipairs(ents.FindInSphere(npc:GetPos(), eff_detect)) do
                 if IsValid(ent) and ent ~= npc and not ent.Vored and (ent:IsPlayer() or ent:IsNPC()) then
                     if npc.GetRelationship and npc:GetRelationship(ent) == D_HT then
@@ -438,6 +493,12 @@ hook.Add("Think", "VNPC_FemaleModelVore_AI", function()
                             if npc.SetSchedule then pcall(npc.SetSchedule, npc, SCHED_CHASE_ENEMY) end
                             break
                         end
+                    end
+                elseif IsValid(ent) and (ent:GetClass() == "prop_ragdoll" or ent.VNPC_IsCorpse) and npc.CanEatCorpse and npc:CanEatCorpse(ent) then
+                    local rag_dist = GetConVar("vnpcs_female_model_vore_ragdoll_range"):GetFloat() or 150
+                    if npc:GetPos():Distance(ent:GetPos()) <= math.min(eff_grab, rag_dist) then
+                        npc:EatEntity(ent)
+                        break
                     end
                 end
             end

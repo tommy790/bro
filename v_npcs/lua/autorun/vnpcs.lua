@@ -29,6 +29,34 @@ properties.Add("vnpcs_eatme", {
 	end
 })
 
+properties.Add("vnpcs_regurgitate", {
+	MenuLabel = "Regurgitate Prey",
+	Order = 1000,
+	MenuIcon = VNPCs.Icon,
+	Filter = function(self, ent, ply)
+		local belly = ent.VNPC_Belly or ent.Belly
+		if IsValid(belly) and belly.Prey and #belly.Prey > 0 then return true end
+		return false
+	end,
+	Action = function(self, ent)
+        self:MsgStart()
+		net.WriteEntity(ent)
+		self:MsgEnd()
+	end,
+	Receive = function(self, len, ply)
+		local ent = net.ReadEntity()
+		if IsValid(ent) and ent.ReleaseAllPrey then
+			ent:ReleaseAllPrey()
+		elseif IsValid(ent) and ent.Belly and ent.Belly.Regurgitate then
+			for _, p_tbl in ipairs(ent.Belly.Prey or {}) do
+				if p_tbl and IsValid(p_tbl.Entity) then
+					pcall(ent.Belly.Regurgitate, ent.Belly, p_tbl.Entity)
+				end
+			end
+		end
+	end
+})
+
 hook.Add("EntityEmitSound", "MuffleVoredSounds", function( sound_info )
     --local server_or_client = SERVER and "SERVER" or "CLIENT"
 	local ent = sound_info.Entity
