@@ -50,7 +50,56 @@ function ENT:SetWeight(new)
 	self:UpdateBoneScale(self.BoneScale)
 end
 
+local pectoral_bone_names = {
+    "ValveBiped.Bip01_L_Pectoral",
+    "ValveBiped.Bip01_R_Pectoral",
+    "ValveBiped.Bip01_L_Pectoral0",
+    "ValveBiped.Bip01_R_Pectoral0",
+    "Bip01_L_Pectoral",
+    "Bip01_R_Pectoral",
+    "L_Pectoral",
+    "R_Pectoral",
+    "l_pectoral",
+    "r_pectoral",
+    "pectoral0",
+    "pectoral1",
+    "pec_l",
+    "pec_r"
+}
+
+function ENT:EnsurePectoralBonesInWeightGain()
+    if not self.VoreSettings or not self.VoreSettings.WeightGainBones then return end
+    if self._CheckedPectoralBones then return end
+    self._CheckedPectoralBones = true
+
+    local existing = {}
+    for _, name in ipairs(self.VoreSettings.WeightGainBones) do
+        existing[string.lower(name)] = true
+    end
+
+    for _, name in ipairs(pectoral_bone_names) do
+        local boneID = self:LookupBone(name)
+        if boneID and not existing[string.lower(name)] then
+            table.insert(self.VoreSettings.WeightGainBones, name)
+            existing[string.lower(name)] = true
+        end
+    end
+
+    local count = self:GetBoneCount() or 0
+    for i = 0, count - 1 do
+        local name = self:GetBoneName(i)
+        if name then
+            local lower_name = string.lower(name)
+            if (lower_name:find("pectoral") or lower_name:find("pec_") or lower_name:find("_pec")) and not existing[lower_name] then
+                table.insert(self.VoreSettings.WeightGainBones, name)
+                existing[lower_name] = true
+            end
+        end
+    end
+end
+
 function ENT:DoVisualBonescale(_bonescale)
+	self:EnsurePectoralBonesInWeightGain()
 	local setting = self.VoreSettings.WeightGainSettings
 	local definers = self.VoreSettings.WeightGainDefiners
 
