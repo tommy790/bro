@@ -113,13 +113,16 @@ local function populate()
 
     spawnmenu.AddToolMenuOption("V-NPCs", "Personalization", "vnpcs_personality", "Personality", "", "", function(panel)
         panel:ClearControls()
+        panel:Help("Predator and Prey Personality System")
+        panel:CheckBox("Enable Personalities", "vnpcs_personalities_enabled")
+        panel:Help("\nDefault Personalities")
+        panel:TextEntry("Default Predator Personality", "vnpcs_default_predator_personality")
+        panel:TextEntry("Default Prey Personality", "vnpcs_default_prey_personality")
 
-        panel:Help("this is system will be replaced later by a more advanced one later")
-        panel:Help("")
+        panel:Help("\nPredator Personalities:\n- aggressive: Actively hunts targets (1.5x range, 1.2x grab, 1.2x digestion)\n- opportunistic: Prefers weakened/isolated targets\n- glutton: Indiscriminate eater (1.25x range/grab, 1.5x digestion)\n- shy: Only eats when unobserved by witnesses\n- selective: Only targets direct enemies\n- gentle: Slower digestion (0.6x) and playful behavior")
+        panel:Help("\nPrey Personalities:\n- fighter: Struggles vigorously (1.8x struggle)\n- passive: Quiet inside belly (0.5x struggle)\n- panicked: Flees predators, struggles rapidly (1.4x struggle)\n- stubborn: Resistant to digestion (0.6x damage)")
 
-        panel:Help("\nForcers\n")
-        panel:ControlHelp("Sets the variable to the multiplier, so all V-NPCs have the same values/settings")
-
+        panel:Help("\nLegacy Forcers\n")
         panel:CheckBox("Hungry for Players", "vnpcspersonality_players")
         panel:CheckBox("Hungry for NPCs", "vnpcspersonality_npcs")
     end)

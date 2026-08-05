@@ -136,6 +136,17 @@ function ENT:StruggleAnimation(aliveFactor)
     else
         struggleMulti = struggleMulti * global_struggle_multi:GetFloat()
     end
+    if VNPC_GetPreyPersonality and self.Prey and istable(self.Prey) and #self.Prey > 0 then
+        for _, p_tbl in ipairs(self.Prey) do
+            if p_tbl and IsValid(p_tbl.Entity) then
+                local _, prey_data = VNPC_GetPreyPersonality(p_tbl.Entity)
+                if prey_data and prey_data.struggle_multiplier then
+                    struggleMulti = struggleMulti * prey_data.struggle_multiplier
+                    break
+                end
+            end
+        end
+    end
 
     local freq = alive_struggle_speed == 0 and 10 or 0.3/alive_struggle_speed
     if self.PreyStruggleTimer > freq then 

@@ -350,6 +350,12 @@ function ENT:DigestPrey(dt)
     else
         digestionPower = digestionPower * global_digestion_multi:GetFloat()
     end
+    if VNPC_GetPredatorPersonality and IsValid(self.NPC) then
+        local _, pred_data = VNPC_GetPredatorPersonality(self.NPC)
+        if pred_data and pred_data.digestion_multiplier then
+            digestionPower = digestionPower * pred_data.digestion_multiplier
+        end
+    end
 
     digestionPower = digestionPower * dt * 2 --its x2 for legacy value support, dumb but..uhhhhh
 
@@ -375,10 +381,17 @@ function ENT:DigestPrey(dt)
 			    dmg_i:SetInflictor(npc)
             end
 			dmg_i:SetDamageType(DMG_REMOVENORAGDOLL)
-            dmg_i:SetDamage(digestionPower)
+            local effectiveDmg = digestionPower
+            if VNPC_GetPreyPersonality and IsValid(prey) then
+                local _, prey_data = VNPC_GetPreyPersonality(prey)
+                if prey_data and prey_data.digestion_resistance then
+                    effectiveDmg = effectiveDmg * prey_data.digestion_resistance
+                end
+            end
+            dmg_i:SetDamage(effectiveDmg)
             prey:TakeDamageInfo(dmg_i)
 
-            totalHeal = totalHeal + digestionPower
+            totalHeal = totalHeal + effectiveDmg
             if oldHealth == prey:Health() and not prey_table.Alive then
                 prey:SetHealth(oldHealth - digestionPower)
             end

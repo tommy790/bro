@@ -408,21 +408,29 @@ hook.Add("Think", "VNPC_FemaleModelVore_AI", function()
         if (npc.VNPC_NextAIThink or 0) > now then continue end
         npc.VNPC_NextAIThink = now + 0.5
         
+        local pers, pers_data = "opportunistic", nil
+        if VNPC_GetPredatorPersonality then
+            pers, pers_data = VNPC_GetPredatorPersonality(npc)
+        end
+        local eff_grab = grab_dist * (pers_data and pers_data.grab_multiplier or 1.0)
+        local eff_detect = detect_dist * (pers_data and pers_data.range_multiplier or 1.0)
+
         -- Target enemy if present
         local enemy = npc:GetEnemy()
         if IsValid(enemy) and enemy ~= npc and not enemy.Vored then
             local dist = npc:GetPos():Distance(enemy:GetPos())
-            if dist <= grab_dist then
+            if dist <= eff_grab then
                 npc:EatEntity(enemy)
-            elseif dist <= detect_dist then
+            elseif dist <= eff_detect then
                 if npc.SetSchedule then pcall(npc.SetSchedule, npc, SCHED_CHASE_ENEMY) end
             end
         else
+            if pers_data and pers_data.only_enemies then continue end
             -- Search for nearby hostile target
-            for _, ent in ipairs(ents.FindInSphere(npc:GetPos(), detect_dist)) do
+            for _, ent in ipairs(ents.FindInSphere(npc:GetPos(), eff_detect)) do
                 if IsValid(ent) and ent ~= npc and not ent.Vored and (ent:IsPlayer() or ent:IsNPC()) then
                     if npc.GetRelationship and npc:GetRelationship(ent) == D_HT then
-                        if npc:GetPos():Distance(ent:GetPos()) <= grab_dist then
+                        if npc:GetPos():Distance(ent:GetPos()) <= eff_grab then
                             npc:EatEntity(ent)
                             break
                         elseif npc.SetEnemy then

@@ -147,16 +147,26 @@ end
 function ENT:UpdateRelations()
 	self:SetSelfClassRelationship(D_LI)
 
-	if hungryNPCs:GetBool() then
-		self:SetDefaultRelationship(D_HT, 2)
-	else
-		self:SetDefaultRelationship(D_NU, 2)
+	local pers, pers_data = "opportunistic", nil
+	if VNPC_GetPredatorPersonality then
+		pers, pers_data = VNPC_GetPredatorPersonality(self)
 	end
 
-	if hungryPlayers:GetBool() then
-		self:SetPlayersRelationship(D_HT, 2)
-	else
+	if pers_data and pers_data.only_enemies then
+		self:SetDefaultRelationship(D_NU, 2)
 		self:SetPlayersRelationship(D_NU, 3)
+	else
+		if hungryNPCs:GetBool() or pers == "aggressive" or pers == "glutton" then
+			self:SetDefaultRelationship(D_HT, 2)
+		else
+			self:SetDefaultRelationship(D_NU, 2)
+		end
+
+		if hungryPlayers:GetBool() or pers == "aggressive" or pers == "glutton" then
+			self:SetPlayersRelationship(D_HT, 2)
+		else
+			self:SetPlayersRelationship(D_NU, 3)
+		end
 	end
 end
 
