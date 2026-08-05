@@ -36,6 +36,8 @@ ENT.VoreSettings.StruggleMultiplier = 1.5
 ENT.VoreSettings.HasWeightGain = true
 ENT.VoreSettings.FatFoldsMaxSize = 0.3
 ENT.VoreSettings.WeightGainBones = {
+    "ValveBiped.Bip01_lpectoral",
+    "ValveBiped.Bip01_rpectoral",
     "ValveBiped.Bip01_L_Thigh",
     "ValveBiped.Bip01_R_Thigh",
 

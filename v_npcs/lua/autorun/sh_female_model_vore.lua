@@ -157,6 +157,10 @@ VNPC_FEMALE_WEIGHT_GAIN_BONES = {
     "ValveBiped.Bip01_L_Breast1",
     "ValveBiped.Bip01_R_Breast0",
     "ValveBiped.Bip01_R_Breast1",
+    "ValveBiped.Bip01_lpectoral",
+    "ValveBiped.Bip01_rpectoral",
+    "ValveBiped.Bip01_Lpectoral",
+    "ValveBiped.Bip01_Rpectoral",
     "ValveBiped.Bip01_L_Thigh",
     "ValveBiped.Bip01_R_Thigh",
     "ValveBiped.Bip01_L_Calf",
@@ -195,7 +199,7 @@ local function VNPC_WhatIsBone(boneName, definers)
             end
         end
     end
-    if boneName:find("breast") or boneName:find("boob") or boneName:find("pectoral") or boneName:find("pec") then
+    if boneName:find("breast") or boneName:find("boob") or boneName:find("pectoral") or boneName:find("pec") or boneName:find("lpectoral") or boneName:find("rpectoral") then
         return "Boob"
     elseif boneName:find("thigh") or boneName:find("leg_bone1") then
         return "Thigh"
@@ -225,7 +229,17 @@ local pectoral_bone_names = {
     "pectoral0",
     "pectoral1",
     "pec_l",
-    "pec_r"
+    "pec_r",
+    "ValveBiped.Bip01_lpectoral",
+    "ValveBiped.Bip01_rpectoral",
+    "ValveBiped.Bip01_Lpectoral",
+    "ValveBiped.Bip01_Rpectoral",
+    "Bip01_lpectoral",
+    "Bip01_rpectoral",
+    "lpectoral",
+    "rpectoral",
+    "Lpectoral",
+    "Rpectoral"
 }
 
 function VNPC_EnsurePectoralBonesInWeightGain(ent, bones)
@@ -251,7 +265,7 @@ function VNPC_EnsurePectoralBonesInWeightGain(ent, bones)
         local name = ent:GetBoneName(i)
         if name then
             local lower_name = string.lower(name)
-            if (lower_name:find("pectoral") or lower_name:find("pec_") or lower_name:find("_pec")) and not existing[lower_name] then
+            if (lower_name:find("pectoral") or lower_name:find("pec_") or lower_name:find("_pec") or lower_name:find("lpectoral") or lower_name:find("rpectoral")) and not existing[lower_name] then
                 table.insert(bones, name)
                 existing[lower_name] = true
             end

@@ -37,6 +37,10 @@ ENT.VoreSettings.WeightGainBones = {
     "ValveBiped.Bip01_L_Breast1",
     "ValveBiped.Bip01_R_Breast0",
     "ValveBiped.Bip01_R_Breast1",
+    "ValveBiped.Bip01_lpectoral",
+    "ValveBiped.Bip01_rpectoral",
+    "ValveBiped.Bip01_lpectoral",
+    "ValveBiped.Bip01_rpectoral",
 
     "ValveBiped.Bip01_L_Thigh",
     "ValveBiped.Bip01_R_Thigh",
