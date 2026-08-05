@@ -20,8 +20,16 @@ function VNPC_GetFixedFemaleBellyOffset(ent)
     return Vector(x, y, z)
 end
 
+VNPC_FemaleBoneCache = VNPC_FemaleBoneCache or {}
+
 function VNPC_HasFemaleModelBones(ent)
     if not IsValid(ent) then return false end
+    local mdl = string.lower(ent:GetModel() or "")
+    if mdl ~= "" and VNPC_FemaleBoneCache[mdl] ~= nil then
+        return VNPC_FemaleBoneCache[mdl]
+    end
+
+    if ent.SetupBones then pcall(ent.SetupBones, ent) end
     if not ent.LookupBone or not ent.GetBoneCount then return false end
     
     local female_bone_names = {
@@ -33,10 +41,14 @@ function VNPC_HasFemaleModelBones(ent)
         "ValveBiped.Bip01_R_Breast",
         "ValveBiped.Bip01_Spinebut",
         "ValveBiped.Bip01_SpineBut",
+        "ValveBiped.Bip01_lpectoral",
+        "ValveBiped.Bip01_rpectoral",
         "Bip01_L_Breast0",
         "Bip01_R_Breast0",
         "Bip01_L_Breast",
         "Bip01_R_Breast",
+        "Bip01_lpectoral",
+        "Bip01_rpectoral",
         "L_Breast",
         "R_Breast",
         "l_breast",
@@ -44,12 +56,15 @@ function VNPC_HasFemaleModelBones(ent)
         "breast0",
         "breast1",
         "boob_l",
-        "boob_r"
+        "boob_r",
+        "lpectoral",
+        "rpectoral"
     }
 
     for _, bone_name in ipairs(female_bone_names) do
         local bone = ent:LookupBone(bone_name)
         if bone and bone >= 0 then
+            if mdl ~= "" then VNPC_FemaleBoneCache[mdl] = true end
             return true
         end
     end
@@ -57,11 +72,15 @@ function VNPC_HasFemaleModelBones(ent)
     local count = ent:GetBoneCount() or 0
     for i = 0, count - 1 do
         local name = string.lower(ent:GetBoneName(i) or "")
-        if name:find("breast") or name:find("boob") or name:find("spinebut") then
+        if name:find("breast") or name:find("boob") or name:find("spinebut") or name:find("lpectoral") or name:find("rpectoral") or name:find("ponytail") or name:find("pigtail") or name:find("skirt") or name:find("dress") or name:find("mamma") or name:find("bust") then
+            if mdl ~= "" then VNPC_FemaleBoneCache[mdl] = true end
             return true
         end
     end
 
+    if count > 0 and mdl ~= "" then
+        VNPC_FemaleBoneCache[mdl] = false
+    end
     return false
 end
 
