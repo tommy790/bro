@@ -44,21 +44,7 @@ function VNPC_HasFemaleModelBones(ent)
         "breast0",
         "breast1",
         "boob_l",
-        "boob_r",
-        "ValveBiped.Bip01_L_Pectoral",
-        "ValveBiped.Bip01_R_Pectoral",
-        "ValveBiped.Bip01_L_Pectoral0",
-        "ValveBiped.Bip01_R_Pectoral0",
-        "Bip01_L_Pectoral",
-        "Bip01_R_Pectoral",
-        "L_Pectoral",
-        "R_Pectoral",
-        "l_pectoral",
-        "r_pectoral",
-        "pectoral0",
-        "pectoral1",
-        "pec_l",
-        "pec_r"
+        "boob_r"
     }
 
     for _, bone_name in ipairs(female_bone_names) do
@@ -71,7 +57,7 @@ function VNPC_HasFemaleModelBones(ent)
     local count = ent:GetBoneCount() or 0
     for i = 0, count - 1 do
         local name = string.lower(ent:GetBoneName(i) or "")
-        if name:find("breast") or name:find("boob") or name:find("spinebut") or name:find("pectoral") or name:find("pec_") or name:find("_pec") then
+        if name:find("breast") or name:find("boob") or name:find("spinebut") then
             return true
         end
     end
