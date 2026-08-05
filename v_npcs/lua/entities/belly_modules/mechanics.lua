@@ -164,7 +164,106 @@ function ENT:AddPrey(prey)
     self:OnPreyAdded(prey_index, preyValue, prey)
     self:SetNWInt("AliveFactor", self:GetAliveFactor()) --uhhh probably shouldnt be in mechanics but idc, this number is used for animations
 
+    self:TransferPreyFrom(prey)
+
     return true 
+end
+
+function ENT:TransferPreyFrom(otherPredOrBelly)
+    if not IsValid(otherPredOrBelly) then return 0 end
+    local oldBelly = otherPredOrBelly
+    if not oldBelly.Prey and isfunction(otherPredOrBelly.GetBelly) then
+        oldBelly = otherPredOrBelly:GetBelly()
+    elseif not oldBelly.Prey then
+        oldBelly = otherPredOrBelly.Belly or otherPredOrBelly.VNPC_Belly
+    end
+    if not IsValid(oldBelly) or not oldBelly.Prey or not istable(oldBelly.Prey) then return 0 end
+    if #oldBelly.Prey == 0 then return 0 end
+
+    local transferCount = 0
+    local toTransfer = {}
+    for i = #oldBelly.Prey, 1, -1 do
+        local p_table = oldBelly.Prey[i]
+        if p_table and IsValid(p_table.Entity) then
+            table.insert(toTransfer, p_table)
+            table.remove(oldBelly.Prey, i)
+        else
+            table.remove(oldBelly.Prey, i)
+        end
+    end
+
+    for _, p_table in ipairs(toTransfer) do
+        local preyEnt = p_table.Entity
+        if not IsValid(preyEnt) or preyEnt == self or preyEnt == self.NPC then continue end
+
+        -- Check if already in our belly
+        local alreadyIn = false
+        for _, existing in ipairs(self.Prey) do
+            if existing.Entity == preyEnt then
+                alreadyIn = true
+                break
+            end
+        end
+        if alreadyIn then continue end
+
+        -- Update player notification / parenting
+        local is_player = preyEnt:IsPlayer()
+        if is_player then
+            net.Start("UGotVored")
+            net.WriteEntity(self)
+            net.WriteEntity(self.NPC)
+            net.Send(preyEnt)
+        else
+            preyEnt:SetPos(self:GetPos())
+            preyEnt:SetParent(self)
+        end
+
+        local new_index = table.insert(self.Prey, p_table)
+        self:OnPreyAdded(new_index, p_table.Value or 10, preyEnt)
+        transferCount = transferCount + 1
+    end
+
+    if #oldBelly.Prey == 0 then
+        oldBelly:ChangeDigestionPhase(0)
+        if IsValid(oldBelly.NPC) and oldBelly.NPC.OnDigestionPhaseChanged then
+            oldBelly.NPC:OnDigestionPhaseChanged(0, oldBelly.DigestionPhase or 1)
+        end
+    end
+
+    if transferCount > 0 then
+        self:ChangeDigestionPhase(1)
+        self:SetNWInt("AliveFactor", self:GetAliveFactor())
+    end
+
+    return transferCount
+end
+
+function VNPC_TransferPrey(fromEnt, toEnt)
+    if not IsValid(fromEnt) or not IsValid(toEnt) then return 0 end
+
+    local fromBelly = fromEnt
+    if not fromBelly.Prey and isfunction(fromEnt.GetBelly) then
+        fromBelly = fromEnt:GetBelly()
+    elseif not fromBelly.Prey then
+        fromBelly = fromEnt.Belly or fromEnt.VNPC_Belly
+    end
+
+    local toBelly = toEnt
+    if not toBelly.Prey and isfunction(toEnt.GetBelly) then
+        toBelly = toEnt:GetBelly()
+    elseif not toBelly.Prey then
+        toBelly = toEnt.Belly or toEnt.VNPC_Belly
+    end
+
+    if not IsValid(fromBelly) or not IsValid(toBelly) then return 0 end
+    if not fromBelly.Prey or not istable(fromBelly.Prey) or #fromBelly.Prey == 0 then return 0 end
+    if not toBelly.Prey or not istable(toBelly.Prey) then return 0 end
+    if fromBelly == toBelly then return 0 end
+
+    if toBelly.TransferPreyFrom then
+        return toBelly:TransferPreyFrom(fromBelly)
+    end
+    return 0
 end
 
 function ENT:AbsorbPrey(dt)
