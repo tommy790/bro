@@ -306,6 +306,19 @@ function ENT:IsFemaleNPC()
     return self:IsFemaleModel()
 end
 
+function ENT:EatGroup(targets)
+    if not istable(targets) then return self:EatEntity(targets) end
+    local count = 0
+    for _, ent in ipairs(targets) do
+        if IsValid(ent) and not ent.Vored and not ent.VNPC_Vored then
+            if self:EatEntity(ent) then
+                count = count + 1
+            end
+        end
+    end
+    return count > 0, count
+end
+
 function ENT:EatEntity(ent)
 	if not IsValid(ent) or self.Swallowing or ent.Vored or self.Vored then return end
 	if not ent:GetModel() or ent:GetClass():find("func") then return end
@@ -321,6 +334,20 @@ function ENT:EatEntity(ent)
 		self:PlayVoreGesture("swallow")
 		local swallow_sound = GetRandomFromTable(self.VoreSounds["swallow"])
 		self:EmitSound(swallow_sound, 100, 100)
+
+		if not self._InClumpVore and VNPC_GetClumpedPreyGroup then
+			self._InClumpVore = true
+			local group = VNPC_GetClumpedPreyGroup(self, ent)
+			if #group > 1 then
+				for i = 2, #group do
+					local extraPrey = group[i]
+					if IsValid(extraPrey) and not extraPrey.Vored and not extraPrey.VNPC_Vored then
+						pcall(self.EatEntity, self, extraPrey)
+					end
+				end
+			end
+			self._InClumpVore = nil
+		end
 
 		timer.Simple(1, function()
 			if self and IsValid(self) then

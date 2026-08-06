@@ -169,6 +169,19 @@ function ENT:AddPrey(prey)
     return true 
 end
 
+function ENT:AddPreyGroup(prey_list)
+    if not istable(prey_list) then return self:AddPrey(prey_list) end
+    local count = 0
+    for _, prey in ipairs(prey_list) do
+        if IsValid(prey) and not prey.Vored and not prey.VNPC_Vored then
+            if self:AddPrey(prey) then
+                count = count + 1
+            end
+        end
+    end
+    return count > 0, count
+end
+
 function ENT:TransferPreyFrom(otherPredOrBelly)
     if not IsValid(otherPredOrBelly) then return 0 end
     local oldBelly = otherPredOrBelly

@@ -120,6 +120,19 @@ function VNPC_GiveFemaleModelVore(ent)
         end
     end
 
+    function ent:EatGroup(targets)
+        if not istable(targets) then return self:EatEntity(targets) end
+        local count = 0
+        for _, e in ipairs(targets) do
+            if IsValid(e) and not e.Vored and not e.VNPC_Vored then
+                if self:EatEntity(e) then
+                    count = count + 1
+                end
+            end
+        end
+        return count > 0, count
+    end
+
     -- Add EatEntity method
     function ent:EatEntity(target)
         if not IsValid(target) or self.Swallowing or target.Vored or self.Vored then return false end
@@ -137,6 +150,19 @@ function VNPC_GiveFemaleModelVore(ent)
             end
             if VNPC_PlayNativeVoreGesture then
                 VNPC_PlayNativeVoreGesture(self, "swallow")
+            end
+            if not self._InClumpVore and VNPC_GetClumpedPreyGroup then
+                self._InClumpVore = true
+                local group = VNPC_GetClumpedPreyGroup(self, target)
+                if #group > 1 then
+                    for i = 2, #group do
+                        local extraPrey = group[i]
+                        if IsValid(extraPrey) and not extraPrey.Vored and not extraPrey.VNPC_Vored then
+                            pcall(self.EatEntity, self, extraPrey)
+                        end
+                    end
+                end
+                self._InClumpVore = nil
             end
             self.Swallowing = false
             return true

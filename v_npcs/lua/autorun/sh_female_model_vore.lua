@@ -540,3 +540,31 @@ if CLIENT then
         end
     end)
 end
+
+-- Clumped Prey Group Vore
+CreateConVar("vnpcs_clumped_vore_enabled", "1", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Enable clumped prey group vore")
+CreateConVar("vnpcs_clumped_vore_radius", "75", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Search radius around target for clumped prey")
+CreateConVar("vnpcs_clumped_vore_max_group", "4", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Max prey items swallowed in a clumped group")
+
+function VNPC_GetClumpedPreyGroup(pred, target)
+    local group = { target }
+    if not IsValid(pred) or not IsValid(target) then return group end
+    local enabled = GetConVar("vnpcs_clumped_vore_enabled")
+    if enabled and not enabled:GetBool() then return group end
+
+    local radius = GetConVar("vnpcs_clumped_vore_radius"):GetFloat() or 75
+    local max_count = GetConVar("vnpcs_clumped_vore_max_group"):GetInt() or 4
+
+    for _, ent in ipairs(ents.FindInSphere(target:GetPos(), radius)) do
+        if #group >= max_count then break end
+        if IsValid(ent) and ent ~= pred and ent ~= target and not ent.Vored and not ent.VNPC_Vored then
+            local is_valid_prey = (ent:IsPlayer() or ent:IsNPC() or (ent:GetClass() == "prop_ragdoll" or ent.VNPC_IsCorpse))
+            if is_valid_prey then
+                if pred.EatCondition and not pred:EatCondition(ent) then continue end
+                if pred.IsFemaleModel and not pred:IsFemaleModel() then continue end
+                table.insert(group, ent)
+            end
+        end
+    end
+    return group
+end
