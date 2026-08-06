@@ -317,21 +317,43 @@ local function createState(belly)
     return state
 end
 
-local function queueCapture(state)
+local function isInBattle(predator)
+    if not IsValid(predator) then return false end
+    if predator.GetEnemy and IsValid(predator:GetEnemy()) then return true end
+    if predator.GetNW2Entity and IsValid(predator:GetNW2Entity("DrGBaseEnemy")) then return true end
+    if predator.GetNW2Entity and IsValid(predator:GetNW2Entity("DrGBaseTarget")) then return true end
+    if predator.GetNWEntity and IsValid(predator:GetNWEntity("Enemy")) then return true end
+    if predator.IsCurrentSchedule and (predator:IsCurrentSchedule(SCHED_CHASE_ENEMY) or predator:IsCurrentSchedule(SCHED_COMBAT_FACE)) then return true end
+    if predator.GetActiveWeapon and IsValid(predator:GetActiveWeapon()) and predator:GetEnemy() then return true end
+    return false
+end
+
+function BellyRT.IsPredatorInBattle(predator)
+    return isInBattle(predator)
+end
+
+local function queueCapture(state, predator)
     if state.queued then return end
     state.queued = true
-    captureQueue[#captureQueue + 1] = state
+    if isInBattle(predator) then
+        state.priority = true
+        table.insert(captureQueue, 1, state)
+    else
+        state.priority = false
+        table.insert(captureQueue, state)
+    end
 end
 
 local function pollState(state, predator)
     local now = CurTime()
     if state.nextPoll > now then return end
-    state.nextPoll = now + SIGNATURE_POLL_RATE
+    local pollRate = isInBattle(predator) and 0.05 or SIGNATURE_POLL_RATE
+    state.nextPoll = now + pollRate
 
     local signature = buildSignature(predator)
     if signature ~= state.signature then
         state.signature = signature
-        queueCapture(state)
+        queueCapture(state, predator)
     end
 end
 
@@ -454,15 +476,19 @@ end)
 
 hook.Add("PostRender", "VNPCS_BellyRT_Capture", function()
     local captures = 0
+    local max_captures = CAPTURES_PER_FRAME
     local queueIndex = 1
 
-    while captureQueue[queueIndex] and captures < CAPTURES_PER_FRAME do
+    while captureQueue[queueIndex] and captures < max_captures do
         local state = table.remove(captureQueue, queueIndex)
         if state then
             state.queued = false
             local belly = state.belly
             local predator = IsValid(belly) and getPredatorForBelly(belly) or nil
             if IsValid(belly) and IsValid(predator) then
+                if state.priority or isInBattle(predator) then
+                    max_captures = math.max(max_captures, 2)
+                end
                 captureTorso(state, predator)
                 captures = captures + 1
             end
