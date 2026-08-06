@@ -318,11 +318,8 @@ function VNPC_DoVisualBonescale(ent, _bonescale)
         if definers and definers[is] then
             scaleVec, posAdjust = definers[is](actual_scale, max) 
         elseif is == "Boob" then
-            scaleVec = Vector(
-                math.min(actual_scale, 1.65 * max),
-                math.min(actual_scale, 1.7 * max),
-                math.min(actual_scale, 2.2 * max)
-            )
+            local boobScale = math.min(actual_scale, 2.5 * max)
+            scaleVec = Vector(boobScale, boobScale, boobScale)
         elseif is == "Waist" then
             scaleVec = Vector(
                 math.min(actual_scale, 1.3 * max),
