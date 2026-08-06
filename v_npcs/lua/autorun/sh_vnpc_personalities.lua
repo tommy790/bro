@@ -70,6 +70,33 @@ VNPC_PREDATOR_PERSONALITIES = {
 }
 
 VNPC_PREY_PERSONALITIES = {
+    ["willing"] = {
+        name = "Willing / Desirous",
+        description = "Actively desires to be swallowed and does not struggle.",
+        struggle_multiplier = 0.0,
+        digestion_resistance = 1.0,
+        flee_predator = false,
+        seek_predator = true,
+        willing = true
+    },
+    ["desire"] = {
+        name = "Desirous / Willing",
+        description = "Actively desires to be swallowed and does not struggle.",
+        struggle_multiplier = 0.0,
+        digestion_resistance = 1.0,
+        flee_predator = false,
+        seek_predator = true,
+        willing = true
+    },
+    ["desirous"] = {
+        name = "Desirous / Willing",
+        description = "Actively desires to be swallowed and does not struggle.",
+        struggle_multiplier = 0.0,
+        digestion_resistance = 1.0,
+        flee_predator = false,
+        seek_predator = true,
+        willing = true
+    },
     ["fighter"] = {
         name = "Fighter",
         description = "Struggles vigorously inside the belly.",

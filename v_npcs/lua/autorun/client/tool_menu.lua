@@ -124,7 +124,7 @@ local function populate()
         panel:TextEntry("Default Prey Personality", "vnpcs_default_prey_personality")
 
         panel:Help("\nPredator Personalities:\n- aggressive: Actively hunts targets (1.5x range, 1.2x grab, 1.2x digestion)\n- opportunistic: Prefers weakened/isolated targets\n- glutton: Indiscriminate eater (1.25x range/grab, 1.5x digestion)\n- shy: Only eats when unobserved by witnesses\n- selective: Only targets direct enemies\n- gentle: Slower digestion (0.6x) and playful behavior")
-        panel:Help("\nPrey Personalities:\n- fighter: Struggles vigorously (1.8x struggle)\n- passive: Quiet inside belly (0.5x struggle)\n- panicked: Flees predators, struggles rapidly (1.4x struggle)\n- stubborn: Resistant to digestion (0.6x damage)")
+        panel:Help("\nPrey Personalities:\n- fighter: Struggles vigorously (1.8x struggle)\n- passive: Quiet inside belly (0.5x struggle)\n- panicked: Flees predators, struggles rapidly (1.4x struggle)\n- stubborn: Resistant to digestion (0.6x damage)\n- willing / desire: Actively desires to be swallowed, approaches predators, and does not struggle (0x struggle)")
 
         panel:Help("\nLegacy Forcers\n")
         panel:CheckBox("Hungry for Players", "vnpcspersonality_players")

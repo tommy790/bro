@@ -506,6 +506,45 @@ hook.Add("Think", "VNPC_FemaleModelVore_AI", function()
     end
 end)
 
+-- AI Think loop for willing/desire prey NPCs to seek out predators and present themselves to be eaten
+hook.Add("Think", "VNPC_WillingPrey_AI", function()
+    local enabled = GetConVar("vnpcs_personalities_enabled")
+    if enabled and not enabled:GetBool() then return end
+
+    local now = CurTime()
+    local grab_dist = GetConVar("vnpcs_female_model_vore_grab_range"):GetFloat() or 75
+
+    for _, npc in ipairs(ents.FindByClass("npc_*")) do
+        if not IsValid(npc) or npc.Vored or npc.VNPC_Vored then continue end
+        if (npc.VNPC_NextWillingThink or 0) > now then continue end
+        npc.VNPC_NextWillingThink = now + 0.6
+
+        local pers, pers_data = "fighter", nil
+        if VNPC_GetPreyPersonality then
+            pers, pers_data = VNPC_GetPreyPersonality(npc)
+        end
+
+        if pers_data and (pers_data.seek_predator or pers_data.willing) then
+            -- Search for nearby female model vore predator
+            for _, pred in ipairs(ents.FindInSphere(npc:GetPos(), 600)) do
+                if IsValid(pred) and pred ~= npc and (pred.Predator or pred.VNPC_FemaleModelVore or VNPC_IsFemaleModelNPC(pred)) and not pred.Vored then
+                    local dist = npc:GetPos():Distance(pred:GetPos())
+                    if dist <= grab_dist then
+                        if pred.EatEntity then
+                            pcall(pred.EatEntity, pred, npc)
+                        end
+                        break
+                    elseif npc.SetSchedule then
+                        if npc.SetTarget then pcall(npc.SetTarget, npc, pred) end
+                        pcall(npc.SetSchedule, npc, SCHED_TARGET_CHASE)
+                        break
+                    end
+                end
+            end
+        end
+    end
+end)
+
 -- Damage threshold regurgitation / cleanup hooks
 hook.Add("EntityTakeDamage", "VNPC_FemaleModelVore_DamageRegurgitate", function(ent, dmg)
     if IsValid(ent) and ent.VNPC_FemaleModelVore and IsValid(ent.VNPC_Belly) then
