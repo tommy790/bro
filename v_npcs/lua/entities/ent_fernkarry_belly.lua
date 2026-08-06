@@ -347,16 +347,22 @@ function ENT:Think() --this code is realllyyyyy stupid
     do 
         if belly_clipping:GetBool() then
             local bone_matrix = self:GetBoneMatrix(0)
-            local pos = bone_matrix:GetTranslation()
+            if not bone_matrix then
+                self:SetupBones()
+                bone_matrix = self:GetBoneMatrix(0)
+            end
+            if bone_matrix then
+                local pos = bone_matrix:GetTranslation()
 
-            local tr = util.TraceLine({
-                start = pos,
-                endpos = pos + (-vector_up * 200),
-                filter = {self, self.NPC}
-            })
+                local tr = util.TraceLine({
+                    start = pos,
+                    endpos = pos + (-vector_up * 200),
+                    filter = {self, self.NPC}
+                })
 
-            if tr.Hit then
-                clipMax = tr.HitPos:Distance(pos)
+                if tr.Hit then
+                    clipMax = tr.HitPos:Distance(pos)
+                end
             end
         end
     end
@@ -379,9 +385,13 @@ end
 
 function ENT:InteralCameraPos(entPos, ang)
     local bone_matrix = self:GetBoneMatrix(1)
-    local bone_pos = bone_matrix:GetTranslation()
-    local bone_ang = bone_matrix:GetAngles()
-    local bone_scale = bone_matrix:GetScale()
+    if not bone_matrix then
+        self:SetupBones()
+        bone_matrix = self:GetBoneMatrix(1)
+    end
+    local bone_pos = bone_matrix and bone_matrix:GetTranslation() or self:GetPos()
+    local bone_ang = bone_matrix and bone_matrix:GetAngles() or self:GetAngles()
+    local bone_scale = bone_matrix and bone_matrix:GetScale() or Vector(1, 1, 1)
 
     entPos = bone_pos - Vector(0,0,5) + bone_ang:Right() * bone_scale * -15
 

@@ -219,26 +219,32 @@ function ENT:Think() --this code is realllyyyyy stupid
         local wantedAngleOffset = 0
         if belly_clipping:GetBool() and not self:GetNWBool("NoClipFix", false) then
             local bone_matrix = self:GetBoneMatrix(1)
-            local pos = bone_matrix:GetTranslation()
-            local offset = 4
+            if not bone_matrix then
+                self:SetupBones()
+                bone_matrix = self:GetBoneMatrix(1)
+            end
+            if bone_matrix then
+                local pos = bone_matrix:GetTranslation()
+                local offset = 4
 
-            local box = vector_one * newSize * 5
+                local box = vector_one * newSize * 5
 
-            local tr = util.TraceHull({
-                start = pos + vector_up * offset,
-                endpos = pos + (-vector_up * 200),
-                maxs = box,
-		        mins = -box,
-                filter = {self, self.NPC}
-            })
+                local tr = util.TraceHull({
+                    start = pos + vector_up * offset,
+                    endpos = pos + (-vector_up * 200),
+                    maxs = box,
+		            mins = -box,
+                    filter = {self, self.NPC}
+                })
 
-            if tr.Hit then
-                local dist = tr.HitPos:Distance(pos) + (newSize * 5) + offset  
-                local belly_size_messurement_aprox = 36 * newSize
-                local clipCalc = dist - belly_size_messurement_aprox 
+                if tr.Hit then
+                    local dist = tr.HitPos:Distance(pos) + (newSize * 5) + offset  
+                    local belly_size_messurement_aprox = 36 * newSize
+                    local clipCalc = dist - belly_size_messurement_aprox 
 
-                if clipCalc < 0 then
-                 wantedAngleOffset = 50 * math.exp((5 * clipCalc)/math.pow(dist, 1.2)) - 50
+                    if clipCalc < 0 then
+                        wantedAngleOffset = 50 * math.exp((5 * clipCalc)/math.pow(dist, 1.2)) - 50
+                    end
                 end
             end
         end
@@ -265,9 +271,13 @@ end
 
 function ENT:InteralCameraPos(entPos, ang)
     local bone_matrix = self:GetBoneMatrix(1)
-    local bone_pos = bone_matrix:GetTranslation()
-    local bone_ang = bone_matrix:GetAngles()
-    local bone_scale = bone_matrix:GetScale()
+    if not bone_matrix then
+        self:SetupBones()
+        bone_matrix = self:GetBoneMatrix(1)
+    end
+    local bone_pos = bone_matrix and bone_matrix:GetTranslation() or self:GetPos()
+    local bone_ang = bone_matrix and bone_matrix:GetAngles() or self:GetAngles()
+    local bone_scale = bone_matrix and bone_matrix:GetScale() or Vector(1, 1, 1)
 
     entPos = bone_pos - vector_up + bone_ang:Right() * bone_scale * -15
 
