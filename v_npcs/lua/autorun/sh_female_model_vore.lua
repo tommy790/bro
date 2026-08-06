@@ -93,6 +93,17 @@ function VNPC_IsFemaleModelNPC(ent)
     return (mdl:find("female") or mdl:find("alyx") or mdl:find("mossman")) ~= nil
 end
 
+function VNPC_ClearPatrols(ent)
+    if not IsValid(ent) then return end
+    if ent.ClearPatrols and isfunction(ent.ClearPatrols) then
+        pcall(ent.ClearPatrols, ent)
+    elseif ent.ClearSchedule then
+        pcall(ent.ClearSchedule, ent)
+    elseif ent.SetSchedule then
+        pcall(ent.SetSchedule, ent, SCHED_IDLE_STAND)
+    end
+end
+
 -- Female Model Faces (Vore Flex Phases) and Head Turning
 VNPC_FEMALE_EYE_BONE = "ValveBiped.Bip01_Head1"
 

@@ -428,6 +428,12 @@ function VNPC_GiveFemaleModelVore(ent)
     function ent:ShouldIgnore(target)
         return false
     end
+    function ent:ClearPatrols()
+        if self.ClearSchedule then pcall(self.ClearSchedule, self) end
+    end
+    function ent:AddPatrolPos(pos)
+        if self.SetLastPosition then pcall(self.SetLastPosition, self, pos) end
+    end
 
     return true
 end

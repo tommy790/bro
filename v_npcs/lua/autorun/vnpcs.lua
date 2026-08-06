@@ -22,7 +22,11 @@ properties.Add("vnpcs_eatme", {
             return
         end
         --print(ent, SERVER) blehhhh
-        ent:ClearPatrols()
+        if ent.ClearPatrols then
+            pcall(ent.ClearPatrols, ent)
+        elseif VNPC_ClearPatrols then
+            VNPC_ClearPatrols(ent)
+        end
         ent:SetEntityRelationship(ply, D_HT, 99999)
         ent:SetEnemy(ply)
         ent:SpotEntity(ply)

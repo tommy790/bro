@@ -15,7 +15,11 @@ TOOL.Information = {
 }
 
 local function chaseGuy(pred, prey, owner)
-	pred:ClearPatrols()
+	if pred.ClearPatrols then
+		pcall(pred.ClearPatrols, pred)
+	elseif VNPC_ClearPatrols then
+		VNPC_ClearPatrols(pred)
+	end
 	
 	pred:SetEntityRelationship(prey, D_HT, 99999)
 	pred:SetEnemy(prey)

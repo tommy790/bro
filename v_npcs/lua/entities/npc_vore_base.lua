@@ -362,7 +362,11 @@ function ENT:EatEntity(ent)
 		end)
 
 		if not patrolling:GetBool() then
-			self:ClearPatrols()
+			if self.ClearPatrols then
+				pcall(self.ClearPatrols, self)
+			elseif VNPC_ClearPatrols then
+				VNPC_ClearPatrols(self)
+			end
 		end
 
 		self:PostEntityEaten(ent)
