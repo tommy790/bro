@@ -427,6 +427,96 @@ VNPC_NATIVE_GESTURES = {
     }
 }
 
+VNPC_NativeSequenceCache = VNPC_NativeSequenceCache or {}
+
+local GESTURE_DISCOVERY_KEYWORDS = {
+    ["swallow"] = {
+        "swallow", "gulp", "eat", "vore", "bite", "chew", "consume", "attack_melee", "melee_attack", "swing", "slash"
+    },
+    ["burp"] = {
+        "burp", "belch", "thump", "chest", "pat", "salute", "taunt", "cheer", "halt", "signal"
+    },
+    ["rub_belly"] = {
+        "rub", "belly", "stomach", "caress", "pat", "idle_subtle", "subtle", "flinch_stomach", "stomach_flinch"
+    },
+    ["struggle_flinch"] = {
+        "flinch_stomach", "stomach_flinch", "stomach", "belly", "flinch", "hit", "react", "pain", "hurt"
+    }
+}
+
+function VNPC_DiscoverNativeSequence(ent, gesture_type)
+    if not IsValid(ent) then return -1, nil end
+    local mdl = string.lower(ent:GetModel() or "")
+    if mdl ~= "" and VNPC_NativeSequenceCache[mdl] and VNPC_NativeSequenceCache[mdl][gesture_type] then
+        local cached = VNPC_NativeSequenceCache[mdl][gesture_type]
+        if cached == -1 then return -1, nil end
+        return cached.id, cached.name
+    end
+
+    local gesture_info = VNPC_NATIVE_GESTURES[gesture_type]
+    if gesture_info and gesture_info.sequences then
+        for _, seq_name in ipairs(gesture_info.sequences) do
+            local seq = ent:LookupSequence(seq_name)
+            if seq and seq >= 0 then
+                if mdl ~= "" then
+                    VNPC_NativeSequenceCache[mdl] = VNPC_NativeSequenceCache[mdl] or {}
+                    VNPC_NativeSequenceCache[mdl][gesture_type] = { id = seq, name = seq_name }
+                end
+                return seq, seq_name
+            end
+        end
+    end
+
+    -- Scan sequence list by keywords
+    local keywords = GESTURE_DISCOVERY_KEYWORDS[gesture_type]
+    if keywords and ent.GetSequenceList then
+        local seq_list = ent:GetSequenceList()
+        if seq_list and istable(seq_list) then
+            for _, seq_name in ipairs(seq_list) do
+                local lower_seq = string.lower(seq_name)
+                for _, kw in ipairs(keywords) do
+                    if lower_seq:find(kw) then
+                        local seq = ent:LookupSequence(seq_name)
+                        if seq and seq >= 0 then
+                            if mdl ~= "" then
+                                VNPC_NativeSequenceCache[mdl] = VNPC_NativeSequenceCache[mdl] or {}
+                                VNPC_NativeSequenceCache[mdl][gesture_type] = { id = seq, name = seq_name }
+                            end
+                            return seq, seq_name
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    -- Scan by sequence count if GetSequenceList is not available
+    if keywords and ent.GetSequenceCount and ent.GetSequenceName then
+        local count = ent:GetSequenceCount() or 0
+        for seq_id = 0, count - 1 do
+            local seq_name = ent:GetSequenceName(seq_id)
+            if seq_name then
+                local lower_seq = string.lower(seq_name)
+                for _, kw in ipairs(keywords) do
+                    if lower_seq:find(kw) then
+                        if mdl ~= "" then
+                            VNPC_NativeSequenceCache[mdl] = VNPC_NativeSequenceCache[mdl] or {}
+                            VNPC_NativeSequenceCache[mdl][gesture_type] = { id = seq_id, name = seq_name }
+                        end
+                        return seq_id, seq_name
+                    end
+                end
+            end
+        end
+    end
+
+    if mdl ~= "" then
+        VNPC_NativeSequenceCache[mdl] = VNPC_NativeSequenceCache[mdl] or {}
+        VNPC_NativeSequenceCache[mdl][gesture_type] = -1
+    end
+    return -1, nil
+end
+
 function VNPC_PlayNativeVoreGesture(ent, gesture_type)
     if not IsValid(ent) then return false end
     local gesture_info = VNPC_NATIVE_GESTURES[gesture_type]
@@ -447,25 +537,16 @@ function VNPC_PlayNativeVoreGesture(ent, gesture_type)
         end
     end
 
-    -- Try DrGBase PlayGesture or sequence first if available
-    if ent.PlayGesture then
-        for _, seq_name in ipairs(gesture_info.sequences) do
-            local seq = ent:LookupSequence(seq_name)
-            if seq and seq >= 0 then
-                pcall(ent.PlayGesture, ent, seq_name)
-                return true
-            end
+    -- Use improved native sequence discovery
+    local seq_id, seq_name = VNPC_DiscoverNativeSequence(ent, gesture_type)
+    if seq_id and seq_id >= 0 and seq_name then
+        if ent.PlayGesture then
+            local ok = pcall(ent.PlayGesture, ent, seq_name)
+            if ok then return true end
         end
-    end
-
-    -- Try AddGestureSequence
-    if ent.AddGestureSequence then
-        for _, seq_name in ipairs(gesture_info.sequences) do
-            local seq = ent:LookupSequence(seq_name)
-            if seq and seq >= 0 then
-                pcall(ent.AddGestureSequence, ent, seq, true)
-                return true
-            end
+        if ent.AddGestureSequence then
+            local ok = pcall(ent.AddGestureSequence, ent, seq_id, true)
+            if ok then return true end
         end
     end
 
