@@ -319,12 +319,18 @@ end
 
 local function isInBattle(predator)
     if not IsValid(predator) then return false end
-    if predator.GetEnemy and IsValid(predator:GetEnemy()) then return true end
-    if predator.GetNW2Entity and IsValid(predator:GetNW2Entity("DrGBaseEnemy")) then return true end
-    if predator.GetNW2Entity and IsValid(predator:GetNW2Entity("DrGBaseTarget")) then return true end
-    if predator.GetNWEntity and IsValid(predator:GetNWEntity("Enemy")) then return true end
-    if predator.IsCurrentSchedule and (predator:IsCurrentSchedule(SCHED_CHASE_ENEMY) or predator:IsCurrentSchedule(SCHED_COMBAT_FACE)) then return true end
-    if predator.GetActiveWeapon and IsValid(predator:GetActiveWeapon()) and predator:GetEnemy() then return true end
+    local enemy = safeCall(predator, "GetEnemy")
+    if IsValid(enemy) then return true end
+    local drgEnemy = safeCall(predator, "GetNW2Entity", "DrGBaseEnemy")
+    if IsValid(drgEnemy) then return true end
+    local drgTarget = safeCall(predator, "GetNW2Entity", "DrGBaseTarget")
+    if IsValid(drgTarget) then return true end
+    local nwEnemy = safeCall(predator, "GetNWEntity", "Enemy")
+    if IsValid(nwEnemy) then return true end
+    if SCHED_CHASE_ENEMY and safeCall(predator, "IsCurrentSchedule", SCHED_CHASE_ENEMY) then return true end
+    if SCHED_COMBAT_FACE and safeCall(predator, "IsCurrentSchedule", SCHED_COMBAT_FACE) then return true end
+    local wep = safeCall(predator, "GetActiveWeapon")
+    if IsValid(wep) and IsValid(enemy) then return true end
     return false
 end
 
