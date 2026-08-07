@@ -55,19 +55,30 @@ local torsoBones = {
     "ValveBiped.Bip01_Spine",
     "ValveBiped.Bip01_Spine1",
     "ValveBiped.Bip01_Spine2",
+    "ValveBiped.Bip01_Spine3",
     "ValveBiped.Bip01_Spine4",
+    "ValveBiped.Bip01_Spinebut",
     "Pelvis",
     "Spine",
     "Spine1",
     "Spine2",
+    "Spine3",
+    "Spine4",
+    "Spinebut",
     "Bip01_Pelvis",
     "Bip01_Spine",
     "Bip01_Spine1",
     "Bip01_Spine2",
+    "Bip01_Spine3",
+    "Bip01_Spine4",
     "bip_pelvis",
     "bip_spine_0",
     "bip_spine_1",
-    "bip_spine_2"
+    "bip_spine_2",
+    "chest",
+    "Chest",
+    "root",
+    "Root"
 }
 
 local tPoseSequences = {
@@ -463,7 +474,15 @@ local function getPredatorForBelly(belly)
     if not IsValid(predator) then
         predator = belly:GetNWEntity("NPCParent")
     end
-
+    if not IsValid(predator) then
+        predator = belly:GetParent()
+    end
+    if not IsValid(predator) then
+        predator = belly:GetOwner()
+    end
+    if not IsValid(predator) and belly.GetNPC and isfunction(belly.GetNPC) then
+        predator = belly:GetNPC()
+    end
     return predator
 end
 
@@ -477,6 +496,11 @@ function BellyRT.GetMaterial(belly)
 
     local state = states[belly] or createState(belly)
     pollState(state, predator)
+
+    if not state.ready and state.queued then
+        captureTorso(state, predator)
+        state.queued = false
+    end
 
     if state.ready then
         return state.material

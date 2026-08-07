@@ -512,4 +512,8 @@ end
 function ENT:SetNPC(npc)
     self.NPC = npc
     self:SetNWEntity("NPCParent", npc)
+    if IsValid(npc) then
+        self:SetParent(npc)
+        self:SetOwner(npc)
+    end
 end
