@@ -517,10 +517,104 @@ function VNPC_DiscoverNativeSequence(ent, gesture_type)
     return -1, nil
 end
 
+-- Bone-Pose Vore Animations Engine
+CreateConVar("vnpcs_bone_pose_animations", "1", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Enable procedural bone-pose vore animations")
+
+VNPC_BONE_POSE_ANIMATIONS = {
+    ["swallow"] = {
+        pose_params = {
+            ["head_pitch"] = -15,
+            ["aim_pitch"] = -15,
+            ["mouth"] = 1.0,
+            ["jaw_drop"] = 1.0
+        },
+        bone_angles = {
+            ["ValveBiped.Bip01_Head1"] = Angle(-15, 0, 0),
+            ["ValveBiped.Bip01_Spine2"] = Angle(-8, 0, 0)
+        },
+        duration = 1.2
+    },
+    ["burp"] = {
+        pose_params = {
+            ["head_pitch"] = -10,
+            ["mouth"] = 0.8,
+            ["jaw_drop"] = 1.0
+        },
+        bone_angles = {
+            ["ValveBiped.Bip01_Head1"] = Angle(-10, 0, 0),
+            ["ValveBiped.Bip01_Spine2"] = Angle(5, 0, 0)
+        },
+        duration = 1.0
+    },
+    ["rub_belly"] = {
+        pose_params = {
+            ["aim_pitch"] = 10
+        },
+        bone_angles = {
+            ["ValveBiped.Bip01_Spine1"] = Angle(3, 0, 0)
+        },
+        duration = 2.0
+    },
+    ["struggle_flinch"] = {
+        pose_params = {
+            ["body_yaw"] = 5
+        },
+        bone_angles = {
+            ["ValveBiped.Bip01_Spine2"] = Angle(6, 0, 5),
+            ["ValveBiped.Bip01_Spine1"] = Angle(-4, 0, -3)
+        },
+        duration = 0.5
+    }
+}
+
+function VNPC_PlayBonePoseAnimation(ent, anim_type)
+    if not IsValid(ent) then return false end
+    local enabled = GetConVar("vnpcs_bone_pose_animations")
+    if enabled and not enabled:GetBool() then return false end
+
+    local anim = VNPC_BONE_POSE_ANIMATIONS[anim_type]
+    if not anim then return false end
+
+    if anim.pose_params and ent.SetPoseParameter then
+        for param, val in pairs(anim.pose_params) do
+            pcall(ent.SetPoseParameter, ent, param, val)
+        end
+    end
+
+    local applied_bones = {}
+    if anim.bone_angles then
+        for bone_name, ang in pairs(anim.bone_angles) do
+            local boneID = ent:LookupBone(bone_name)
+            if boneID and boneID >= 0 then
+                ent:ManipulateBoneAngles(boneID, ang)
+                table.insert(applied_bones, boneID)
+            end
+        end
+    end
+
+    local duration = anim.duration or 1.0
+    timer.Simple(duration, function()
+        if not IsValid(ent) then return end
+        if anim.pose_params and ent.SetPoseParameter then
+            for param, _ in pairs(anim.pose_params) do
+                pcall(ent.SetPoseParameter, ent, param, 0)
+            end
+        end
+        for _, boneID in ipairs(applied_bones) do
+            if IsValid(ent) and ent.ManipulateBoneAngles then
+                ent:ManipulateBoneAngles(boneID, Angle(0, 0, 0))
+            end
+        end
+    end)
+
+    return true
+end
+
 function VNPC_PlayNativeVoreGesture(ent, gesture_type)
     if not IsValid(ent) then return false end
     local gesture_info = VNPC_NATIVE_GESTURES[gesture_type]
     if not gesture_info then return false end
+    VNPC_PlayBonePoseAnimation(ent, gesture_type)
 
     -- Allow entity override
     if ent.VoreGestures and ent.VoreGestures[gesture_type] then

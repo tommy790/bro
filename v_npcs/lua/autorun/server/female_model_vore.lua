@@ -190,6 +190,13 @@ function VNPC_GiveFemaleModelVore(ent)
         return false
     end
 
+    function ent:PlayBonePoseAnimation(anim_type)
+        if VNPC_PlayBonePoseAnimation then
+            return VNPC_PlayBonePoseAnimation(self, anim_type)
+        end
+        return false
+    end
+
     -- Belly methods matching VNPCs
     function ent:GetBellyAnchor()
         return GetBellyAnchorBone(self)

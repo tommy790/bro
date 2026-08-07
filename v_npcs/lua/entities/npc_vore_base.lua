@@ -291,6 +291,13 @@ function ENT:PlayVoreGesture(gesture_type)
     return false
 end
 
+function ENT:PlayBonePoseAnimation(anim_type)
+    if VNPC_PlayBonePoseAnimation then
+        return VNPC_PlayBonePoseAnimation(self, anim_type)
+    end
+    return false
+end
+
 function ENT:IsFemaleModel(mdl)
     if self.IsFemalePredator or self.FemaleModel or self.IsFemale then
         return true

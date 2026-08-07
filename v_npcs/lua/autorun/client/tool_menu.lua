@@ -113,6 +113,7 @@ local function populate()
         panel:CheckBox("Enable Clumped Group Vore", "vnpcs_clumped_vore_enabled")
         panel:NumSlider("Clump Search Radius", "vnpcs_clumped_vore_radius", 20, 250, 0)
         panel:NumSlider("Max Group Size", "vnpcs_clumped_vore_max_group", 1, 15, 0)
+        panel:CheckBox("Enable Bone-Pose Vore Animations", "vnpcs_bone_pose_animations")
 
         --panel:CheckBox("Do Custom Animations", "drg_animate")
         panel:ControlHelp("")
