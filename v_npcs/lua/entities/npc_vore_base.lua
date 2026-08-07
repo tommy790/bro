@@ -368,7 +368,7 @@ function ENT:EatEntity(ent)
 
 		timer.Simple(1, function()
 			if self and IsValid(self) then
-				if IsValid(self.Belly) and (self.Belly.DigestionPhase ~= 0 or (self.Belly.Prey and #self.Belly.Prey > 0)) then
+				if IsValid(self.Belly) and self.Belly.DigestionPhase == 1 then
 					self:SetFacialExpression(4)
 				end
 			end

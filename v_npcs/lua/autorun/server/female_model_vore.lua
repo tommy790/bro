@@ -172,7 +172,7 @@ function VNPC_GiveFemaleModelVore(ent)
             end
 
             timer.Simple(1, function()
-                if IsValid(self) and IsValid(belly) and (belly.DigestionPhase ~= 0 or (belly.Prey and #belly.Prey > 0)) then
+                if IsValid(self) and IsValid(belly) and belly.DigestionPhase == 1 then
                     self:SetFacialExpression(4)
                 end
             end)
