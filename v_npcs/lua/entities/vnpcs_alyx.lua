@@ -56,7 +56,7 @@ ENT.VoreSettings.WeightGainBones = {
 }
 
 ENT.VoreSettings.WeightGainSettings = {
-	MaxBoob = 3.0;
+	MaxBoob = 2.2;
 	MaxThigh = 2;
 	MaxCalf = 1.7;
 	MaxArm = 0.8;

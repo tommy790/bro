@@ -134,7 +134,7 @@ function ENT:DoVisualBonescale(_bonescale)
 		if definers and definers[is] then
 			scaleVec, posAdjust = definers[is](actual_scale, max) 
 		elseif is == "Boob" then
-			local boobScale = math.min(actual_scale, 4.0 * max)
+			local boobScale = math.min(actual_scale, 2.8 * max)
 			scaleVec = Vector(boobScale, boobScale, boobScale)
 		elseif is == "Waist" then
 			scaleVec = Vector(

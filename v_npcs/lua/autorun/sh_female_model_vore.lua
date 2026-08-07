@@ -205,7 +205,7 @@ VNPC_FEMALE_WEIGHT_GAIN_BONES = {
 }
 
 VNPC_FEMALE_WEIGHT_GAIN_SETTINGS = {
-    MaxBoob = 3.0,
+    MaxBoob = 2.2,
     MaxThigh = 1.5,
     MaxCalf = 1.3,
     MaxArm = 1.1,
@@ -329,7 +329,7 @@ function VNPC_DoVisualBonescale(ent, _bonescale)
         if definers and definers[is] then
             scaleVec, posAdjust = definers[is](actual_scale, max) 
         elseif is == "Boob" then
-            local boobScale = math.min(actual_scale, 4.0 * max)
+            local boobScale = math.min(actual_scale, 2.8 * max)
             scaleVec = Vector(boobScale, boobScale, boobScale)
         elseif is == "Waist" then
             scaleVec = Vector(
