@@ -390,9 +390,6 @@ function ENT:EatEntity(ent)
 			elseif VNPC_ClearPatrols then
 				VNPC_ClearPatrols(self)
 			end
-			if self.StopMoving then
-				pcall(self.StopMoving, self)
-			end
 		end
 
 		self:PostEntityEaten(ent)
@@ -511,16 +508,6 @@ if SERVER then --setup functions
 		end
 		self:UpdateFacialExpressions()
 		self:CheckOpenDoors()
-
-		if (self.Belly and (self.Belly.DigestionPhase ~= 0 or (self.Belly.Prey and #self.Belly.Prey > 0))) and not patrolling:GetBool() then
-			if self.ClearPatrols then pcall(self.ClearPatrols, self) end
-			if self.StopMoving then pcall(self.StopMoving, self) end
-			if self.StopMovingImmediately then pcall(self.StopMovingImmediately, self) end
-			if self.SetEnemy then pcall(self.SetEnemy, self, nil) end
-			if self.ClearEnemy then pcall(self.ClearEnemy, self) end
-			if self.loco and self.loco.SetDesiredSpeed then pcall(self.loco.SetDesiredSpeed, self.loco, 0) end
-			if self.loco and self.loco.SetAcceleration then pcall(self.loco.SetAcceleration, self.loco, 0) end
-		end
 
 		self:AnimatedBoneOffsets()
 		self:PostThink() --hook

@@ -887,6 +887,15 @@ function VNPC_AnimatedBoneOffsets(ent)
 
     local boneCount = ent:GetBoneCount() or 0
     local speed = (phase == 1 or phase == 3 or phase == 4) and 14 or 8
+    local is_hunting_or_moving = false
+    if IsValid(ent:GetEnemy()) then
+        is_hunting_or_moving = true
+    elseif ent.IsMoving and ent:IsMoving() then
+        is_hunting_or_moving = true
+    elseif ent.GetVelocity and ent:GetVelocity():Length2DSqr() > 25 then
+        is_hunting_or_moving = true
+    end
+
     for i = 0, boneCount - 1 do
         local boneName = ent:GetBoneName(i)
         if not boneName then continue end
@@ -909,6 +918,12 @@ function VNPC_AnimatedBoneOffsets(ent)
                 tgtAng = tgt.ang or angle_zero
             end
         end
+
+        local is_leg_or_pelvis = boneName:find("Pelvis") or boneName:find("Thigh") or boneName:find("Calf") or boneName:find("Foot") or boneName:find("Leg") or boneName:find("leg") or boneName:find("thigh") or boneName:find("calf") or boneName:find("foot") or boneName:find("pelvis")
+        if is_hunting_or_moving and is_leg_or_pelvis then
+            tgtPos, tgtAng = vector_origin, angle_zero
+        end
+
         local cur = ent.BoneBlendState[boneName]
         if not cur then
             cur = {pos = vector_origin, ang = angle_zero}

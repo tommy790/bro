@@ -529,11 +529,15 @@ hook.Add("Think", "VNPC_FemaleModelVore_Think", function()
             end
 
             if not GetConVar("vnpcs_patrol_full"):GetBool() and (belly.DigestionPhase ~= 0 or (belly.Prey and #belly.Prey > 0)) then
-                if npc.ClearSchedule then pcall(npc.ClearSchedule, npc) end
-                if npc.SetSchedule then pcall(npc.SetSchedule, npc, SCHED_NPC_FREEZE) end
-                if npc.SetEnemy then pcall(npc.SetEnemy, npc, nil) end
-                if npc.SetTarget then pcall(npc.SetTarget, npc, nil) end
-                if npc.StopMoving then pcall(npc.StopMoving, npc) end
+                if not IsValid(npc:GetEnemy()) then
+                    if npc.GetCurrentSchedule then
+                        local sched = npc:GetCurrentSchedule()
+                        if sched == SCHED_PATROL_WALK or sched == SCHED_IDLE_WANDER or sched == SCHED_IDLE_WALK then
+                            if npc.ClearSchedule then pcall(npc.ClearSchedule, npc) end
+                            if npc.SetSchedule then pcall(npc.SetSchedule, npc, SCHED_IDLE_STAND) end
+                        end
+                    end
+                end
             end
         end
         if VNPC_AnimatedBoneOffsets then
@@ -555,14 +559,6 @@ hook.Add("Think", "VNPC_FemaleModelVore_AI", function()
         if not IsValid(npc) or not npc.VNPC_FemaleModelVore then continue end
         if (npc.VNPC_NextAIThink or 0) > now then continue end
         npc.VNPC_NextAIThink = now + 0.5
-        
-        local belly = npc.VNPC_Belly or npc.Belly
-        if IsValid(belly) and (belly.DigestionPhase ~= 0 or (belly.Prey and #belly.Prey > 0)) then
-            if not GetConVar("vnpcs_patrol_full"):GetBool() then
-                if VNPC_ClearPatrols then VNPC_ClearPatrols(npc) end
-                continue
-            end
-        end
         
         local pers, pers_data = "opportunistic", nil
         if VNPC_GetPredatorPersonality then
