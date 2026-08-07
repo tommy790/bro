@@ -412,8 +412,9 @@ local function captureTorso(state, predator)
         oldX, oldY, oldW, oldH = render.GetViewPort()
     end
 
+    local rtSize = getRTSize()
     render.PushRenderTarget(state.rt)
-    render.SetViewPort(0, 0, RT_SIZE, RT_SIZE)
+    render.SetViewPort(0, 0, rtSize, rtSize)
     render.Clear(0, 0, 0, 255, true, true)
     render.ClearDepth()
 
@@ -429,7 +430,7 @@ local function captureTorso(state, predator)
     render.SetColorModulation(1, 1, 1)
     render.SetBlend(1)
 
-    cam.Start3D(camPos, camAng, fov, 0, 0, RT_SIZE, RT_SIZE, 1, distance + height * 2)
+    cam.Start3D(camPos, camAng, fov, 0, 0, rtSize, rtSize, 1, distance + height * 2)
         cam.IgnoreZ(false)
         clone:DrawModel()
     cam.End3D()
