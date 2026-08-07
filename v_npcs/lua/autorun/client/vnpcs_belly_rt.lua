@@ -310,9 +310,10 @@ end
 local function createState(belly)
     nextUID = nextUID + 1
 
+    local rtSize = getRTSize()
     local rtName = "vnpcs_belly_rt_" .. belly:EntIndex() .. "_" .. nextUID
     local matName = "vnpcs_belly_rt_mat_" .. belly:EntIndex() .. "_" .. nextUID
-    local rt = GetRenderTarget(rtName, RT_SIZE, RT_SIZE)
+    local rt = GetRenderTarget(rtName, rtSize, rtSize)
     local mat = CreateMaterial(matName, "VertexLitGeneric", {
         ["$basetexture"] = rt:GetName(),
         ["$bumpmap"] = "models/wormonlooker/belly/normal",
