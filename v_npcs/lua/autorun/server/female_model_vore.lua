@@ -532,13 +532,11 @@ hook.Add("Think", "VNPC_FemaleModelVore_Think", function()
             end
 
             if not GetConVar("vnpcs_patrol_full"):GetBool() and (belly.DigestionPhase ~= 0 or (belly.Prey and #belly.Prey > 0)) then
-                if npc.GetCurrentSchedule then
-                    local sched = npc:GetCurrentSchedule()
-                    if sched == SCHED_PATROL_WALK or sched == SCHED_IDLE_WANDER or sched == SCHED_IDLE_WALK or sched == SCHED_FORCED_GO or sched == SCHED_FORCED_GO_RUN then
-                        if npc.ClearSchedule then pcall(npc.ClearSchedule, npc) end
-                        if npc.SetSchedule then pcall(npc.SetSchedule, npc, SCHED_IDLE_STAND) end
-                    end
-                end
+                if npc.ClearSchedule then pcall(npc.ClearSchedule, npc) end
+                if npc.SetSchedule then pcall(npc.SetSchedule, npc, SCHED_NPC_FREEZE) end
+                if npc.SetEnemy then pcall(npc.SetEnemy, npc, nil) end
+                if npc.SetTarget then pcall(npc.SetTarget, npc, nil) end
+                if npc.StopMoving then pcall(npc.StopMoving, npc) end
             end
         end
         if VNPC_AnimatedBoneOffsets then

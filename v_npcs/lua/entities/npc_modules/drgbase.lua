@@ -72,6 +72,10 @@ function ENT:GetAdjustedSpeeds() --weight speed mechanics are here
 		return self.WalkSpeed, self.RunSpeed
 	end
 	
+	if (self.Belly.DigestionPhase ~= 0 or (self.Belly.Prey and #self.Belly.Prey > 0)) and not patrolling:GetBool() then
+		return 0, 0
+	end
+
 	local WEIGHT_VALUE = self.Belly:GetCollectivePreyValue()
 	if WEIGHT_VALUE <= 0 then
 		return self.WalkSpeed, self.RunSpeed
@@ -87,6 +91,9 @@ function ENT:GetAdjustedSpeeds() --weight speed mechanics are here
 end
 
 function ENT:OnUpdateSpeed()
+	if (self.Belly and (self.Belly.DigestionPhase ~= 0 or (self.Belly.Prey and #self.Belly.Prey > 0))) and not patrolling:GetBool() then
+		return 0
+	end
 	local walkspeed, runspeed = self:GetAdjustedSpeeds() 
 	if self:IsCrouching() then return walkspeed * 0.8 end
 	if self:IsRunning() then return runspeed end
@@ -179,6 +186,9 @@ function ENT:SetCrouching(bool)
 end
 
 function ENT:ShouldIgnore(ent) 
+	if (self.Belly and (self.Belly.DigestionPhase ~= 0 or (self.Belly.Prey and #self.Belly.Prey > 0))) and not patrolling:GetBool() then
+		return true
+	end
 	if self:GetEnemy() ~= ent then
 		return ent.Predator --change this later? maybe?
 	end
