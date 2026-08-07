@@ -53,6 +53,7 @@ function ENT:OnPreyAbsorbing(power, old_value, new_value)
     if self.NPC then
         self.NPC:GainWeight(self.WeightGainAmount * power * 0.006) --we wanna gain over the course of absorbption
     end
+    self:GainBellyFat(power)
 end
 
 function ENT:OnDigestionPhaseChanged(new, old)
