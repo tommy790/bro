@@ -485,6 +485,9 @@ hook.Add("Think", "VNPC_FemaleModelVore_Think", function()
             belly:SetLocalAngles(npc.Belly_Angles or Angle(0, 90, 90))
             belly:SetLocalPos(npc.Belly_Offset or VNPC_GetFixedFemaleBellyOffset(npc))
         end
+        if VNPC_AnimatedBoneOffsets then
+            VNPC_AnimatedBoneOffsets(npc)
+        end
     end
 end)
 
