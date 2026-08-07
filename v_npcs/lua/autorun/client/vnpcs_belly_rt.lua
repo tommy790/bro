@@ -13,15 +13,9 @@ VNPCS_BellyRT = VNPCS_BellyRT or {}
 
 local BellyRT = VNPCS_BellyRT
 
-local cv_enabled = CreateClientConVar("vnpcs_belly_rt_enabled", "1", true, false, "Enable Belly RT texturing")
-local cv_size = CreateClientConVar("vnpcs_belly_rt_size", "512", true, false, "Belly RT texture resolution (128, 256, 512, 1024)")
-local cv_max_captures = CreateClientConVar("vnpcs_belly_rt_max_captures", "1", true, false, "Max Belly RT captures per frame when idle")
-local cv_battle_captures = CreateClientConVar("vnpcs_belly_rt_battle_captures", "4", true, false, "Max Belly RT captures per frame during battle")
-local cv_poll_rate = CreateClientConVar("vnpcs_belly_rt_poll_rate", "0.15", true, false, "Poll rate (seconds) for Belly RT signature changes")
-local cv_battle_poll_rate = CreateClientConVar("vnpcs_belly_rt_battle_poll_rate", "0.05", true, false, "Poll rate (seconds) during battle")
-
 local function getRTSize()
-    local sz = cv_size:GetInt() or 512
+    local cv_size = GetConVar("vnpcs_belly_rt_size")
+    local sz = cv_size and cv_size:GetInt() or 512
     if sz < 128 then return 128 end
     if sz > 2048 then return 2048 end
     return sz
@@ -36,64 +30,24 @@ local states = {}
 local captureQueue = {}
 local nextUID = 0
 
-concommand.Add("vnpcs_belly_rt_refresh", function()
+function BellyRT.ClearAll()
+    for belly, state in pairs(states) do
+        if IsValid(state.clone) then
+            state.clone:Remove()
+        end
+    end
+    table.Empty(states)
+    table.Empty(captureQueue)
+end
+
+function BellyRT.RefreshAll()
     for belly, _ in pairs(states) do
         BellyRT.MarkDirty(belly)
     end
-    print("[V-NPCs] Marked all Belly RT textures dirty for refresh.")
-end)
-
-concommand.Add("vnpcs_belly_rt_clear", function()
-    for belly, state in pairs(states) do
-        if IsValid(state.clone) then
-            state.clone:Remove()
-        end
-    end
-    table.Empty(states)
-    table.Empty(captureQueue)
-    print("[V-NPCs] Cleared all Belly RT cached states and duplicate models.")
-end)
-
-concommand.Add("vnpcs_belly_rt_battle_preset", function()
-    RunConsoleCommand("vnpcs_belly_rt_size", "256")
-    RunConsoleCommand("vnpcs_belly_rt_max_captures", "3")
-    RunConsoleCommand("vnpcs_belly_rt_battle_captures", "6")
-    RunConsoleCommand("vnpcs_belly_rt_poll_rate", "0.3")
-    RunConsoleCommand("vnpcs_belly_rt_battle_poll_rate", "0.1")
-    for belly, state in pairs(states) do
-        if IsValid(state.clone) then
-            state.clone:Remove()
-        end
-    end
-    table.Empty(states)
-    table.Empty(captureQueue)
-    print("[V-NPCs] Applied Large Battle RT Preset (256px, 6 captures/frame, optimized polling).")
-end)
-
-concommand.Add("vnpcs_belly_rt_default_preset", function()
-    RunConsoleCommand("vnpcs_belly_rt_size", "512")
-    RunConsoleCommand("vnpcs_belly_rt_max_captures", "1")
-    RunConsoleCommand("vnpcs_belly_rt_battle_captures", "4")
-    RunConsoleCommand("vnpcs_belly_rt_poll_rate", "0.15")
-    RunConsoleCommand("vnpcs_belly_rt_battle_poll_rate", "0.05")
-    for belly, state in pairs(states) do
-        if IsValid(state.clone) then
-            state.clone:Remove()
-        end
-    end
-    table.Empty(states)
-    table.Empty(captureQueue)
-    print("[V-NPCs] Restored Default Belly RT Settings (512px, 4 battle captures/frame).")
-end)
+end
 
 cvars.AddChangeCallback("vnpcs_belly_rt_size", function()
-    for belly, state in pairs(states) do
-        if IsValid(state.clone) then
-            state.clone:Remove()
-        end
-    end
-    table.Empty(states)
-    table.Empty(captureQueue)
+    BellyRT.ClearAll()
 end, "VNPCS_BellyRT_SizeChanged")
 
 local torsoBones = {
@@ -425,7 +379,9 @@ end
 local function pollState(state, predator)
     local now = CurTime()
     if state.nextPoll > now then return end
-    local pollRate = isInBattle(predator) and cv_battle_poll_rate:GetFloat() or cv_poll_rate:GetFloat()
+    local battle_rate = GetConVar("vnpcs_belly_rt_battle_poll_rate")
+    local idle_rate = GetConVar("vnpcs_belly_rt_poll_rate")
+    local pollRate = isInBattle(predator) and (battle_rate and battle_rate:GetFloat() or 0.05) or (idle_rate and idle_rate:GetFloat() or 0.15)
     state.nextPoll = now + pollRate
 
     local signature = buildSignature(predator)
@@ -510,7 +466,8 @@ local function getPredatorForBelly(belly)
 end
 
 function BellyRT.GetMaterial(belly)
-    if not cv_enabled:GetBool() then return nil end
+    local cv_en = GetConVar("vnpcs_belly_rt_enabled")
+    if cv_en and not cv_en:GetBool() then return nil end
     if not IsValid(belly) then return nil end
 
     local predator = getPredatorForBelly(belly)
@@ -555,7 +512,9 @@ end)
 
 hook.Add("PostRender", "VNPCS_BellyRT_Capture", function()
     local captures = 0
-    local max_captures = cv_max_captures:GetInt() or 1
+    local cv_max = GetConVar("vnpcs_belly_rt_max_captures")
+    local cv_battle = GetConVar("vnpcs_belly_rt_battle_captures")
+    local max_captures = cv_max and cv_max:GetInt() or 1
     local queueIndex = 1
 
     while captureQueue[queueIndex] and captures < max_captures do
@@ -566,7 +525,7 @@ hook.Add("PostRender", "VNPCS_BellyRT_Capture", function()
             local predator = IsValid(belly) and getPredatorForBelly(belly) or nil
             if IsValid(belly) and IsValid(predator) then
                 if state.priority or isInBattle(predator) then
-                    max_captures = math.max(max_captures, cv_battle_captures:GetInt() or 4)
+                    max_captures = math.max(max_captures, cv_battle and cv_battle:GetInt() or 4)
                 end
                 captureTorso(state, predator)
                 captures = captures + 1

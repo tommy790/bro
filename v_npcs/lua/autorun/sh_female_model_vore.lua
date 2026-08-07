@@ -13,6 +13,86 @@ CreateConVar("vnpcs_female_model_vore_offset_x", "0", {FCVAR_ARCHIVE, FCVAR_REPL
 CreateConVar("vnpcs_female_model_vore_offset_y", "3.5", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Belly Y offset for female model NPCs")
 CreateConVar("vnpcs_female_model_vore_offset_z", "0", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Belly Z offset for female model NPCs")
 
+CreateConVar("vnpcs_belly_rt_enabled", "1", {FCVAR_ARCHIVE, FCVAR_REPLICATED, FCVAR_NOTIFY}, "Enable Belly RT texturing")
+CreateConVar("vnpcs_belly_rt_size", "512", {FCVAR_ARCHIVE, FCVAR_REPLICATED, FCVAR_NOTIFY}, "Belly RT texture resolution (128, 256, 512, 1024)")
+CreateConVar("vnpcs_belly_rt_max_captures", "1", {FCVAR_ARCHIVE, FCVAR_REPLICATED, FCVAR_NOTIFY}, "Max Belly RT captures per frame when idle")
+CreateConVar("vnpcs_belly_rt_battle_captures", "4", {FCVAR_ARCHIVE, FCVAR_REPLICATED, FCVAR_NOTIFY}, "Max Belly RT captures per frame during battle")
+CreateConVar("vnpcs_belly_rt_poll_rate", "0.15", {FCVAR_ARCHIVE, FCVAR_REPLICATED, FCVAR_NOTIFY}, "Poll rate (seconds) for Belly RT signature changes")
+CreateConVar("vnpcs_belly_rt_battle_poll_rate", "0.05", {FCVAR_ARCHIVE, FCVAR_REPLICATED, FCVAR_NOTIFY}, "Poll rate (seconds) during battle")
+
+if SERVER then
+    util.AddNetworkString("VNPCS_BellyRT_Command")
+end
+
+concommand.Add("vnpcs_belly_rt_battle_preset", function(ply)
+    GetConVar("vnpcs_belly_rt_size"):SetInt(256)
+    GetConVar("vnpcs_belly_rt_max_captures"):SetInt(3)
+    GetConVar("vnpcs_belly_rt_battle_captures"):SetInt(6)
+    GetConVar("vnpcs_belly_rt_poll_rate"):SetFloat(0.3)
+    GetConVar("vnpcs_belly_rt_battle_poll_rate"):SetFloat(0.1)
+    if SERVER then
+        net.Start("VNPCS_BellyRT_Command")
+        net.WriteString("clear")
+        net.Broadcast()
+    elseif VNPCS_BellyRT and VNPCS_BellyRT.ClearAll then
+        VNPCS_BellyRT.ClearAll()
+    end
+    local msg = "[V-NPCs] Applied Large Battle RT Preset (256px, 6 captures/frame, optimized polling)."
+    if IsValid(ply) then ply:PrintMessage(HUD_PRINTCONSOLE, msg) else print(msg) end
+end)
+
+concommand.Add("vnpcs_belly_rt_default_preset", function(ply)
+    GetConVar("vnpcs_belly_rt_size"):SetInt(512)
+    GetConVar("vnpcs_belly_rt_max_captures"):SetInt(1)
+    GetConVar("vnpcs_belly_rt_battle_captures"):SetInt(4)
+    GetConVar("vnpcs_belly_rt_poll_rate"):SetFloat(0.15)
+    GetConVar("vnpcs_belly_rt_battle_poll_rate"):SetFloat(0.05)
+    if SERVER then
+        net.Start("VNPCS_BellyRT_Command")
+        net.WriteString("clear")
+        net.Broadcast()
+    elseif VNPCS_BellyRT and VNPCS_BellyRT.ClearAll then
+        VNPCS_BellyRT.ClearAll()
+    end
+    local msg = "[V-NPCs] Restored Default Belly RT Settings (512px, 4 battle captures/frame)."
+    if IsValid(ply) then ply:PrintMessage(HUD_PRINTCONSOLE, msg) else print(msg) end
+end)
+
+concommand.Add("vnpcs_belly_rt_refresh", function(ply)
+    if SERVER then
+        net.Start("VNPCS_BellyRT_Command")
+        net.WriteString("refresh")
+        net.Broadcast()
+    elseif VNPCS_BellyRT and VNPCS_BellyRT.RefreshAll then
+        VNPCS_BellyRT.RefreshAll()
+    end
+    local msg = "[V-NPCs] Marked all Belly RT textures dirty for refresh."
+    if IsValid(ply) then ply:PrintMessage(HUD_PRINTCONSOLE, msg) else print(msg) end
+end)
+
+concommand.Add("vnpcs_belly_rt_clear", function(ply)
+    if SERVER then
+        net.Start("VNPCS_BellyRT_Command")
+        net.WriteString("clear")
+        net.Broadcast()
+    elseif VNPCS_BellyRT and VNPCS_BellyRT.ClearAll then
+        VNPCS_BellyRT.ClearAll()
+    end
+    local msg = "[V-NPCs] Cleared all Belly RT cached states and duplicate models."
+    if IsValid(ply) then ply:PrintMessage(HUD_PRINTCONSOLE, msg) else print(msg) end
+end)
+
+if CLIENT then
+    net.Receive("VNPCS_BellyRT_Command", function()
+        local cmd = net.ReadString()
+        if cmd == "refresh" and VNPCS_BellyRT and VNPCS_BellyRT.RefreshAll then
+            VNPCS_BellyRT.RefreshAll()
+        elseif cmd == "clear" and VNPCS_BellyRT and VNPCS_BellyRT.ClearAll then
+            VNPCS_BellyRT.ClearAll()
+        end
+    end)
+end
+
 function VNPC_GetFixedFemaleBellyOffset(ent)
     local x = GetConVar("vnpcs_female_model_vore_offset_x"):GetFloat() or 0
     local y = GetConVar("vnpcs_female_model_vore_offset_y"):GetFloat() or 3.5
