@@ -15,8 +15,8 @@ CreateConVar("vnpcs_female_model_vore_offset_z", "0", {FCVAR_ARCHIVE, FCVAR_REPL
 
 CreateConVar("vnpcs_belly_rt_enabled", "1", {FCVAR_ARCHIVE, FCVAR_REPLICATED, FCVAR_NOTIFY}, "Enable Belly RT texturing")
 CreateConVar("vnpcs_belly_rt_size", "512", {FCVAR_ARCHIVE, FCVAR_REPLICATED, FCVAR_NOTIFY}, "Belly RT texture resolution (128, 256, 512, 1024)")
-CreateConVar("vnpcs_belly_rt_max_captures", "1", {FCVAR_ARCHIVE, FCVAR_REPLICATED, FCVAR_NOTIFY}, "Max Belly RT captures per frame when idle")
-CreateConVar("vnpcs_belly_rt_battle_captures", "4", {FCVAR_ARCHIVE, FCVAR_REPLICATED, FCVAR_NOTIFY}, "Max Belly RT captures per frame during battle")
+CreateConVar("vnpcs_belly_rt_max_captures", "99", {FCVAR_ARCHIVE, FCVAR_REPLICATED, FCVAR_NOTIFY}, "Max Belly RT captures per frame when idle")
+CreateConVar("vnpcs_belly_rt_battle_captures", "99", {FCVAR_ARCHIVE, FCVAR_REPLICATED, FCVAR_NOTIFY}, "Max Belly RT captures per frame during battle")
 CreateConVar("vnpcs_belly_rt_poll_rate", "0.15", {FCVAR_ARCHIVE, FCVAR_REPLICATED, FCVAR_NOTIFY}, "Poll rate (seconds) for Belly RT signature changes")
 CreateConVar("vnpcs_belly_rt_battle_poll_rate", "0.05", {FCVAR_ARCHIVE, FCVAR_REPLICATED, FCVAR_NOTIFY}, "Poll rate (seconds) during battle")
 
@@ -26,8 +26,8 @@ end
 
 concommand.Add("vnpcs_belly_rt_battle_preset", function(ply)
     GetConVar("vnpcs_belly_rt_size"):SetInt(256)
-    GetConVar("vnpcs_belly_rt_max_captures"):SetInt(3)
-    GetConVar("vnpcs_belly_rt_battle_captures"):SetInt(6)
+    GetConVar("vnpcs_belly_rt_max_captures"):SetInt(99)
+    GetConVar("vnpcs_belly_rt_battle_captures"):SetInt(99)
     GetConVar("vnpcs_belly_rt_poll_rate"):SetFloat(0.3)
     GetConVar("vnpcs_belly_rt_battle_poll_rate"):SetFloat(0.1)
     if SERVER then
@@ -37,14 +37,14 @@ concommand.Add("vnpcs_belly_rt_battle_preset", function(ply)
     elseif VNPCS_BellyRT and VNPCS_BellyRT.ClearAll then
         VNPCS_BellyRT.ClearAll()
     end
-    local msg = "[V-NPCs] Applied Large Battle RT Preset (256px, 6 captures/frame, optimized polling)."
+    local msg = "[V-NPCs] Applied Large Battle RT Preset (256px, unlimited captures/frame, optimized polling)."
     if IsValid(ply) then ply:PrintMessage(HUD_PRINTCONSOLE, msg) else print(msg) end
 end)
 
 concommand.Add("vnpcs_belly_rt_default_preset", function(ply)
     GetConVar("vnpcs_belly_rt_size"):SetInt(512)
-    GetConVar("vnpcs_belly_rt_max_captures"):SetInt(1)
-    GetConVar("vnpcs_belly_rt_battle_captures"):SetInt(4)
+    GetConVar("vnpcs_belly_rt_max_captures"):SetInt(99)
+    GetConVar("vnpcs_belly_rt_battle_captures"):SetInt(99)
     GetConVar("vnpcs_belly_rt_poll_rate"):SetFloat(0.15)
     GetConVar("vnpcs_belly_rt_battle_poll_rate"):SetFloat(0.05)
     if SERVER then
@@ -54,7 +54,7 @@ concommand.Add("vnpcs_belly_rt_default_preset", function(ply)
     elseif VNPCS_BellyRT and VNPCS_BellyRT.ClearAll then
         VNPCS_BellyRT.ClearAll()
     end
-    local msg = "[V-NPCs] Restored Default Belly RT Settings (512px, 4 battle captures/frame)."
+    local msg = "[V-NPCs] Restored Default Belly RT Settings (512px, unlimited captures/frame)."
     if IsValid(ply) then ply:PrintMessage(HUD_PRINTCONSOLE, msg) else print(msg) end
 end)
 
