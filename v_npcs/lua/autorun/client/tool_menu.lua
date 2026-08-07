@@ -124,7 +124,7 @@ local function populate()
         panel:ClearControls()
         panel:Help("Predator and Prey Personality System")
         panel:CheckBox("Enable Personalities", "vnpcs_personalities_enabled")
-        panel:Help("\nDefault Personalities")
+        panel:Help("\nDefault Personalities (use 'random' to randomize each NPC)")
         panel:TextEntry("Default Predator Personality", "vnpcs_default_predator_personality")
         panel:TextEntry("Default Prey Personality", "vnpcs_default_prey_personality")
 

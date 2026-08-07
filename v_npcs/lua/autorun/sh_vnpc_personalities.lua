@@ -2,8 +2,8 @@
     Predator and Prey Personalities System for V-NPCs
 ]]
 
-CreateConVar("vnpcs_default_predator_personality", "opportunistic", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Default predator personality")
-CreateConVar("vnpcs_default_prey_personality", "fighter", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Default prey personality")
+CreateConVar("vnpcs_default_predator_personality", "random", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Default predator personality (random, opportunistic, aggressive, glutton, shy, selective, gentle)")
+CreateConVar("vnpcs_default_prey_personality", "random", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Default prey personality (random, fighter, passive, panicked, stubborn, willing)")
 CreateConVar("vnpcs_personalities_enabled", "1", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Enable predator and prey personalities")
 
 VNPC_PREDATOR_PERSONALITIES = {
@@ -128,13 +128,34 @@ VNPC_PREY_PERSONALITIES = {
     }
 }
 
+local VNPC_PREDATOR_PERS_LIST = {
+    "aggressive",
+    "opportunistic",
+    "glutton",
+    "shy",
+    "selective",
+    "gentle"
+}
+
+local VNPC_PREY_PERS_LIST = {
+    "willing",
+    "fighter",
+    "passive",
+    "panicked",
+    "stubborn"
+}
+
 function VNPC_GetPredatorPersonality(ent)
     if not IsValid(ent) then return "opportunistic", VNPC_PREDATOR_PERSONALITIES["opportunistic"] end
     local pers = ent.VNPC_PredatorPersonality or (ent.VoreSettings and ent.VoreSettings.PredatorPersonality)
     if not pers or not VNPC_PREDATOR_PERSONALITIES[pers] then
         local default_pers = GetConVar("vnpcs_default_predator_personality")
-        pers = default_pers and default_pers:GetString() or "opportunistic"
-        if not VNPC_PREDATOR_PERSONALITIES[pers] then pers = "opportunistic" end
+        pers = default_pers and string.lower(default_pers:GetString() or "random") or "random"
+        if pers == "random" or pers == "randomize" or pers == "" or not VNPC_PREDATOR_PERSONALITIES[pers] then
+            pers = VNPC_PREDATOR_PERS_LIST[math.random(1, #VNPC_PREDATOR_PERS_LIST)]
+            ent.VNPC_PredatorPersonality = pers
+            if ent.VoreSettings then ent.VoreSettings.PredatorPersonality = pers end
+        end
     end
     return pers, VNPC_PREDATOR_PERSONALITIES[pers]
 end
@@ -153,8 +174,12 @@ function VNPC_GetPreyPersonality(ent)
     local pers = ent.VNPC_PreyPersonality or ent.PreyPersonality
     if not pers or not VNPC_PREY_PERSONALITIES[pers] then
         local default_pers = GetConVar("vnpcs_default_prey_personality")
-        pers = default_pers and default_pers:GetString() or "fighter"
-        if not VNPC_PREY_PERSONALITIES[pers] then pers = "fighter" end
+        pers = default_pers and string.lower(default_pers:GetString() or "random") or "random"
+        if pers == "random" or pers == "randomize" or pers == "" or not VNPC_PREY_PERSONALITIES[pers] then
+            pers = VNPC_PREY_PERS_LIST[math.random(1, #VNPC_PREY_PERS_LIST)]
+            ent.VNPC_PreyPersonality = pers
+            ent.PreyPersonality = pers
+        end
     end
     return pers, VNPC_PREY_PERSONALITIES[pers]
 end
@@ -167,3 +192,26 @@ function VNPC_SetPreyPersonality(ent, pers_name)
         ent.PreyPersonality = pers_name
     end
 end
+
+function VNPC_RandomizePersonalities(ent)
+    if not IsValid(ent) then return end
+    local pred_pers = VNPC_PREDATOR_PERS_LIST[math.random(1, #VNPC_PREDATOR_PERS_LIST)]
+    local prey_pers = VNPC_PREY_PERS_LIST[math.random(1, #VNPC_PREY_PERS_LIST)]
+    ent.VNPC_PredatorPersonality = pred_pers
+    if ent.VoreSettings then ent.VoreSettings.PredatorPersonality = pred_pers end
+    ent.VNPC_PreyPersonality = prey_pers
+    ent.PreyPersonality = prey_pers
+    return pred_pers, prey_pers
+end
+
+hook.Add("OnEntityCreated", "VNPC_AutoRandomizePersonalities", function(ent)
+    timer.Simple(0.1, function()
+        if not IsValid(ent) then return end
+        if ent:IsNPC() or ent:IsPlayer() then
+            if ent.Predator or ent.VNPC_FemaleModelVore or (VNPC_IsFemaleModelNPC and VNPC_IsFemaleModelNPC(ent)) then
+                VNPC_GetPredatorPersonality(ent)
+            end
+            VNPC_GetPreyPersonality(ent)
+        end
+    end)
+end)
