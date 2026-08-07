@@ -368,13 +368,19 @@ function ENT:EatEntity(ent)
 
 		timer.Simple(1, function()
 			if self and IsValid(self) then
-				self:SetFacialExpression(4)
+				if IsValid(self.Belly) and (self.Belly.DigestionPhase ~= 0 or (self.Belly.Prey and #self.Belly.Prey > 0)) then
+					self:SetFacialExpression(4)
+				end
 			end
 		end)
 
 		timer.Simple(2, function()
 			if self and IsValid(self) then
-				self:SetFacialExpression(2)
+				if IsValid(self.Belly) and (self.Belly.DigestionPhase ~= 0 or (self.Belly.Prey and #self.Belly.Prey > 0)) then
+					self:SetFacialExpression(2)
+				else
+					self:SetFacialExpression(0)
+				end
 			end
 		end)
 
@@ -383,6 +389,9 @@ function ENT:EatEntity(ent)
 				pcall(self.ClearPatrols, self)
 			elseif VNPC_ClearPatrols then
 				VNPC_ClearPatrols(self)
+			end
+			if self.StopMoving then
+				pcall(self.StopMoving, self)
 			end
 		end
 
@@ -417,7 +426,7 @@ function ENT:Burp(big)
 	local length = (big and 1.5 or 1.2)/self.VoreSoundPitch
     timer.Simple(length, function()
         if self and IsValid(self) then
-			if self.Belly.DigestionPhase == 0 then
+			if not IsValid(self.Belly) or self.Belly.DigestionPhase == 0 or (self.Belly.Prey and #self.Belly.Prey == 0) then
 				self:SetFacialExpression(0) -- Normal face
 			else
 				self:SetFacialExpression(2) -- Digestion face
@@ -502,6 +511,10 @@ if SERVER then --setup functions
 		end
 		self:UpdateFacialExpressions()
 		self:CheckOpenDoors()
+
+		if (self.Belly and (self.Belly.DigestionPhase ~= 0 or (self.Belly.Prey and #self.Belly.Prey > 0))) and not patrolling:GetBool() then
+			if self.ClearPatrols then pcall(self.ClearPatrols, self) end
+		end
 
 		self:AnimatedBoneOffsets()
 		self:PostThink() --hook

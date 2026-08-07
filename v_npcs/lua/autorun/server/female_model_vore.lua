@@ -170,6 +170,31 @@ function VNPC_GiveFemaleModelVore(ent)
                 end
                 self._InClumpVore = nil
             end
+
+            timer.Simple(1, function()
+                if IsValid(self) and IsValid(belly) and (belly.DigestionPhase ~= 0 or (belly.Prey and #belly.Prey > 0)) then
+                    self:SetFacialExpression(4)
+                end
+            end)
+
+            timer.Simple(2, function()
+                if IsValid(self) then
+                    if IsValid(belly) and (belly.DigestionPhase ~= 0 or (belly.Prey and #belly.Prey > 0)) then
+                        self:SetFacialExpression(2)
+                    else
+                        self:SetFacialExpression(0)
+                    end
+                end
+            end)
+
+            if not GetConVar("vnpcs_patrol_full"):GetBool() then
+                if self.ClearPatrols then pcall(self.ClearPatrols, self) end
+                if self.ClearSchedule then pcall(self.ClearSchedule, self) end
+                if self.SetSchedule then pcall(self.SetSchedule, self, SCHED_IDLE_STAND) end
+                if self.SetEnemy then pcall(self.SetEnemy, self, nil) end
+                if self.SetTarget then pcall(self.SetTarget, self, nil) end
+            end
+
             self.Swallowing = false
             return true
         end
@@ -358,9 +383,11 @@ function VNPC_GiveFemaleModelVore(ent)
     function ent:OnBellyCreated(belly) end
 
     function ent:OnDigestionPhaseChanged(new, old)
-        if new == 0 and old == 2 then
-            self:Burp(true)
+        if new == 0 then
             self:SetFacialExpression(0)
+            if old == 2 then
+                self:Burp(true)
+            end
         elseif new == 2 and old == 1 then
             self:SetFacialExpression(2)
         elseif new == 1 and old == 0 then
@@ -496,6 +523,23 @@ hook.Add("Think", "VNPC_FemaleModelVore_Think", function()
             end
             belly:SetLocalAngles(npc.Belly_Angles or Angle(0, 90, 90))
             belly:SetLocalPos(npc.Belly_Offset or VNPC_GetFixedFemaleBellyOffset(npc))
+
+            if (belly.DigestionPhase == 0 and (not belly.Prey or #belly.Prey == 0)) and not npc.Swallowing then
+                local current_phase = npc:GetCurrentFacialPhase()
+                if current_phase == 1 or current_phase == 2 or current_phase == 4 then
+                    npc:SetFacialExpression(0)
+                end
+            end
+
+            if not GetConVar("vnpcs_patrol_full"):GetBool() and (belly.DigestionPhase ~= 0 or (belly.Prey and #belly.Prey > 0)) then
+                if npc.GetCurrentSchedule then
+                    local sched = npc:GetCurrentSchedule()
+                    if sched == SCHED_PATROL_WALK or sched == SCHED_IDLE_WANDER or sched == SCHED_IDLE_WALK or sched == SCHED_FORCED_GO or sched == SCHED_FORCED_GO_RUN then
+                        if npc.ClearSchedule then pcall(npc.ClearSchedule, npc) end
+                        if npc.SetSchedule then pcall(npc.SetSchedule, npc, SCHED_IDLE_STAND) end
+                    end
+                end
+            end
         end
         if VNPC_AnimatedBoneOffsets then
             VNPC_AnimatedBoneOffsets(npc)
@@ -516,6 +560,14 @@ hook.Add("Think", "VNPC_FemaleModelVore_AI", function()
         if not IsValid(npc) or not npc.VNPC_FemaleModelVore then continue end
         if (npc.VNPC_NextAIThink or 0) > now then continue end
         npc.VNPC_NextAIThink = now + 0.5
+        
+        local belly = npc.VNPC_Belly or npc.Belly
+        if IsValid(belly) and (belly.DigestionPhase ~= 0 or (belly.Prey and #belly.Prey > 0)) then
+            if not GetConVar("vnpcs_patrol_full"):GetBool() then
+                if VNPC_ClearPatrols then VNPC_ClearPatrols(npc) end
+                continue
+            end
+        end
         
         local pers, pers_data = "opportunistic", nil
         if VNPC_GetPredatorPersonality then

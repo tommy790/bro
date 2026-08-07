@@ -240,7 +240,10 @@ function ENT:OnReachedPatrol()
 end
 
 function ENT:OnIdle()
-	if (self.Belly and self.Belly.DigestionPhase ~= 0) and not patrolling:GetBool() then return end
+	if (self.Belly and (self.Belly.DigestionPhase ~= 0 or (self.Belly.Prey and #self.Belly.Prey > 0))) and not patrolling:GetBool() then
+		if self.ClearPatrols then pcall(self.ClearPatrols, self) end
+		return
+	end
 	self:AddPatrolPos(self:RandomPos(1000))
 end
 
