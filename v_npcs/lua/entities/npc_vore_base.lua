@@ -29,6 +29,10 @@ ENT.ModNeeded = [["hello, set this to the workshop addon where you found the mod
 ENT.Belly_Offset = Vector(0, 1, 0)
 ENT.Belly_Angles = Angle(0, 90, 90)
 
+ENT.TriggerBone = "ValveBiped.Bip01_Pelvis"
+ENT.TriggerThreshold = Vector(1.0, 1.0, 1.0)
+ENT.OffsetFullFactor = 1.5
+
 ENT.BellyProperties = {
 	BellyColor = Color(195,145,122), 
 	DigestionStrength = 2,
@@ -298,6 +302,12 @@ function ENT:PlayBonePoseAnimation(anim_type)
     return false
 end
 
+function ENT:AnimatedBoneOffsets()
+    if VNPC_AnimatedBoneOffsets then
+        VNPC_AnimatedBoneOffsets(self)
+    end
+end
+
 function ENT:IsFemaleModel(mdl)
     if self.IsFemalePredator or self.FemaleModel or self.IsFemale then
         return true
@@ -478,6 +488,10 @@ if SERVER then --setup functions
 		self:SetFacialExpression(0)
 		self:SetWeight(self.BoneScale)
 
+		self.BoneBlendState = self.BoneBlendState or {}
+		self.LastFacialPhase = self.LastFacialPhase or 0
+		self.FacialPhaseStartTime = self.FacialPhaseStartTime or CurTime()
+
 		self:PostInitalize()
 	end
 
@@ -489,6 +503,7 @@ if SERVER then --setup functions
 		self:UpdateFacialExpressions()
 		self:CheckOpenDoors()
 
+		self:AnimatedBoneOffsets()
 		self:PostThink() --hook
 	end
 

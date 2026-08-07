@@ -89,6 +89,12 @@ function VNPC_GiveFemaleModelVore(ent)
         }
     }
     ent.VoreSoundPitch = ent.VoreSoundPitch or 1
+    ent.TriggerBone = ent.TriggerBone or "ValveBiped.Bip01_Pelvis"
+    ent.TriggerThreshold = ent.TriggerThreshold or Vector(1.0, 1.0, 1.0)
+    ent.OffsetFullFactor = ent.OffsetFullFactor or 1.5
+    ent.BoneBlendState = ent.BoneBlendState or {}
+    ent.LastFacialPhase = ent.LastFacialPhase or 0
+    ent.FacialPhaseStartTime = ent.FacialPhaseStartTime or CurTime()
     
     -- Create and attach belly entity with spine or fallback bone
     if not IsValid(ent.VNPC_Belly) then
@@ -195,6 +201,12 @@ function VNPC_GiveFemaleModelVore(ent)
             return VNPC_PlayBonePoseAnimation(self, anim_type)
         end
         return false
+    end
+
+    function ent:AnimatedBoneOffsets()
+        if VNPC_AnimatedBoneOffsets then
+            VNPC_AnimatedBoneOffsets(self)
+        end
     end
 
     -- Belly methods matching VNPCs

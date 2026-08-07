@@ -39,13 +39,14 @@ VNPC_PREDATOR_PERSONALITIES = {
     },
     ["shy"] = {
         name = "Shy / Secretive",
-        description = "Only eats when unobserved by witnesses.",
+        description = "Only eats when unobserved by witnesses. Uses shy defensive belly bone-pose animations.",
         range_multiplier = 0.8,
         grab_multiplier = 1.0,
         only_enemies = false,
         prefer_weakened = false,
         require_unseen = true,
-        digestion_multiplier = 1.0
+        digestion_multiplier = 1.0,
+        animated_bone_list = "shy"
     },
     ["selective"] = {
         name = "Selective",
