@@ -98,6 +98,30 @@ local function populate()
 
         panel:CheckBox("Force Burps", "vnpcs_global_burps")
         panel:CheckBox("Force Weight Gain", "vnpcs_global_gain")
+
+        panel:Help("\nBelly RT (Render-Target) Texturing\n")
+        panel:CheckBox("Enable Belly RT Textures", "vnpcs_belly_rt_enabled")
+        panel:NumSlider("RT Texture Resolution", "vnpcs_belly_rt_size", 128, 1024, 0)
+        panel:ControlHelp("Default 512. For large battles, set to 256 for 4x faster rendering.")
+        panel:NumSlider("Max Captures / Frame (Idle)", "vnpcs_belly_rt_max_captures", 1, 10, 0)
+        panel:NumSlider("Max Captures / Frame (Battle)", "vnpcs_belly_rt_battle_captures", 1, 15, 0)
+        panel:ControlHelp("Default 4. Controls how many bellies generate RT textures per frame during combat.")
+        do
+            local btn_battle = panel:Button("Apply Large Battle Preset")
+            btn_battle.DoClick = function()
+                RunConsoleCommand("vnpcs_belly_rt_battle_preset")
+            end
+            panel:ControlHelp("Optimizes RT settings for large NPC battles (Size 256, 6 battle captures/frame).\n")
+            local btn_default = panel:Button("Restore Default RT Settings")
+            btn_default.DoClick = function()
+                RunConsoleCommand("vnpcs_belly_rt_default_preset")
+            end
+            local btn_refresh = panel:Button("Refresh All Belly RT Textures")
+            btn_refresh.DoClick = function()
+                RunConsoleCommand("vnpcs_belly_rt_refresh")
+            end
+        end
+
         panel:Help("\nFemale Model NPCs Vore\n")
         panel:CheckBox("Give Female Model NPCs Vore", "vnpcs_female_model_vore")
         panel:NumSlider("Detection Range", "vnpcs_female_model_vore_range", 100, 2000, 0)
