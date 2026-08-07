@@ -385,9 +385,6 @@ function VNPC_GiveFemaleModelVore(ent)
     function ent:OnDigestionPhaseChanged(new, old)
         if new == 0 then
             self:SetFacialExpression(0)
-            if old == 2 then
-                self:Burp(true)
-            end
         elseif new == 2 and old == 1 then
             self:SetFacialExpression(2)
         elseif new == 1 and old == 0 then
