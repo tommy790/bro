@@ -61,13 +61,20 @@ hook.Add("Think", "VNPC_Surrender_ZeroDigestion", function()
     end
 end)
 
--- Main AI Think loop for surrendering females to get fed prey, then get eaten once #Prey >= 2
+function VNPC_GetSurrenderMinPrey(pred)
+    local base_min = GetConVar("vnpcs_surrender_min_prey"):GetInt() or 2
+    if not IsValid(pred) or not VNPC_GetHunger then return base_min end
+    local hunger = VNPC_GetHunger(pred) or 0
+    local bonus = math.floor(hunger / 25)
+    return base_min + bonus
+end
+
+-- Main AI Think loop for surrendering females to get fed prey, then get eaten once #Prey >= min_prey
 hook.Add("Think", "VNPC_Surrender_AI_ThinkLoop", function()
     local enabled = GetConVar("vnpcs_surrender_enabled")
     if enabled and not enabled:GetBool() then return end
 
     local now = CurTime()
-    local min_prey = GetConVar("vnpcs_surrender_min_prey"):GetInt() or 2
 
     for _, npc in ipairs(ents.FindByClass("npc_*")) do
         if not IsValid(npc) or not npc.VNPC_Surrendered or npc.Vored or npc.VNPC_Vored then continue end
@@ -88,6 +95,8 @@ hook.Add("Think", "VNPC_Surrender_AI_ThinkLoop", function()
                 end
             end
         end
+
+        local min_prey = VNPC_GetSurrenderMinPrey(pred)
 
         if preyCount < min_prey then
             -- STATE 1: Surrendered female has eaten < 2 prey -> Feed her nearby prey with zero digestion!
@@ -142,7 +151,7 @@ concommand.Add("vnpcs_surrender_status", function(ply)
     print("===============================================================")
     print(" - Surrender System Enabled: " .. tostring(GetConVar("vnpcs_surrender_enabled"):GetBool()))
     print(" - Surrender HP Threshold: " .. tostring(GetConVar("vnpcs_surrender_hp_threshold"):GetInt()) .. " HP")
-    print(" - Minimum Prey Before Devouring: " .. tostring(GetConVar("vnpcs_surrender_min_prey"):GetInt()))
+    print(" - Base Minimum Prey Before Devouring: " .. tostring(GetConVar("vnpcs_surrender_min_prey"):GetInt()))
     local count = 0
     for _, npc in ipairs(ents.FindByClass("npc_*")) do
         if IsValid(npc) and npc.VNPC_Surrendered then
@@ -150,7 +159,8 @@ concommand.Add("vnpcs_surrender_status", function(ply)
             local belly = npc.VNPC_Belly or npc.Belly
             local preyCount = IsValid(belly) and (belly.Prey and #belly.Prey or 0) or 0
             local predName = IsValid(npc.VNPC_SurrenderMaster) and (npc.VNPC_SurrenderMaster.PrintName or npc.VNPC_SurrenderMaster:GetClass()) or "NONE"
-            print(string.format(" - Surrendered #%d [%s]: Eaten Prey = %d (Digestion = OFF) | Master Predator = %s", npc:EntIndex(), npc.PrintName or npc:GetClass(), preyCount, predName))
+            local reqPrey = VNPC_GetSurrenderMinPrey(npc.VNPC_SurrenderMaster)
+            print(string.format(" - Surrendered #%d [%s]: Eaten Prey = %d / %d required (Digestion = OFF) | Master = %s", npc:EntIndex(), npc.PrintName or npc:GetClass(), preyCount, reqPrey, predName))
         end
     end
     if count == 0 then
