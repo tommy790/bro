@@ -51,18 +51,11 @@ function VNPC_CalculatePreyValue(ent, override_scale)
 
     local base_val = (vol_factor + diag_factor + hp_factor + mass_factor) * class_mult
 
-    -- 6. Accumulated prey inside a swallowed predator's belly!
-    local stomach_val = 0
-    local belly = ent.VNPC_Belly or ent.Belly or ent.belly
-    if IsValid(belly) and belly.GetCollectivePreyValue then
-        stomach_val = belly:GetCollectivePreyValue()
-    end
-
     local cv_scale = GetConVar("vnpcs_prey_value_scale")
     local global_mult = cv_scale and cv_scale:GetFloat() or 1.0
 
-    local total = math.Clamp((base_val + stomach_val) * global_mult, 15, 2500)
-    local details = string.format("Vol=%.1f, Diag=%.1f, HP=%.1f, Mass=%.1f, Stomach=%.1f, Mult=%.2f", vol_factor, diag_factor, hp_factor, mass_factor, stomach_val, class_mult)
+    local total = math.Clamp(base_val * global_mult, 15, 2500)
+    local details = string.format("Vol=%.1f, Diag=%.1f, HP=%.1f, Mass=%.1f, Mult=%.2f", vol_factor, diag_factor, hp_factor, mass_factor, class_mult)
     return total, details
 end
 
