@@ -195,7 +195,10 @@ function ENT:AddPrey(prey)
         end
     end
 
-    prey.Vored = true 
+    prey.Vored = true
+    if VNPC_FeedHunger then
+        VNPC_FeedHunger(self.NPC or self:GetOwner() or self, 40)
+    end 
     local is_player, is_npc, is_nextbot = prey:IsPlayer(), prey:IsNPC(), prey:IsNextBot()
 
     if is_player then

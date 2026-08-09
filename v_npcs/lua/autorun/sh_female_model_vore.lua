@@ -785,7 +785,6 @@ function VNPC_GetClumpedPreyGroup(pred, target)
             local is_valid_prey = (ent:IsPlayer() or ent:IsNPC() or (ent:GetClass() == "prop_ragdoll" or ent.VNPC_IsCorpse))
             if is_valid_prey then
                 if pred.EatCondition and not pred:EatCondition(ent) then continue end
-                if pred.IsFemaleModel and not pred:IsFemaleModel() then continue end
                 table.insert(group, ent)
             end
         end

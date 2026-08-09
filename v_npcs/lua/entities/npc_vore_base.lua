@@ -337,7 +337,7 @@ function ENT:EatGroup(targets)
 end
 
 function ENT:EatEntity(ent)
-	if not IsValid(ent) or self.Swallowing or ent.Vored or self.Vored then return end
+	if not IsValid(ent) or (self.Swallowing and not self._InClumpVore) or ent.Vored or self.Vored then return end
 	if not ent:GetModel() or ent:GetClass():find("func") then return end
 
 	local result = false

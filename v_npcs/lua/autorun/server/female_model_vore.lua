@@ -141,7 +141,7 @@ function VNPC_GiveFemaleModelVore(ent)
 
     -- Add EatEntity method
     function ent:EatEntity(target)
-        if not IsValid(target) or self.Swallowing or target.Vored or self.Vored then return false end
+        if not IsValid(target) or (self.Swallowing and not self._InClumpVore) or target.Vored or self.Vored then return false end
         if not target:GetModel() or target:GetClass():find("func") then return false end
         
         self.Swallowing = true
