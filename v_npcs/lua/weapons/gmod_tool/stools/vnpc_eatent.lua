@@ -21,9 +21,15 @@ local function chaseGuy(pred, prey, owner)
 		VNPC_ClearPatrols(pred)
 	end
 	
-	pred:SetEntityRelationship(prey, D_HT, 99999)
-	pred:SetEnemy(prey)
-	pred:SpotEntity(prey)
+	if pred.SetEntityRelationship then
+		pcall(pred.SetEntityRelationship, pred, prey, D_HT, 99999)
+	end
+	if pred.SetEnemy then
+		pcall(pred.SetEnemy, pred, prey)
+	end
+	if pred.SpotEntity then
+		pcall(pred.SpotEntity, pred, prey)
+	end
 end
 
 function TOOL:LeftClick( tr )

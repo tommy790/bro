@@ -55,30 +55,19 @@ local torsoBones = {
     "ValveBiped.Bip01_Spine",
     "ValveBiped.Bip01_Spine1",
     "ValveBiped.Bip01_Spine2",
-    "ValveBiped.Bip01_Spine3",
     "ValveBiped.Bip01_Spine4",
-    "ValveBiped.Bip01_Spinebut",
     "Pelvis",
     "Spine",
     "Spine1",
     "Spine2",
-    "Spine3",
-    "Spine4",
-    "Spinebut",
     "Bip01_Pelvis",
     "Bip01_Spine",
     "Bip01_Spine1",
     "Bip01_Spine2",
-    "Bip01_Spine3",
-    "Bip01_Spine4",
     "bip_pelvis",
     "bip_spine_0",
     "bip_spine_1",
-    "bip_spine_2",
-    "chest",
-    "Chest",
-    "root",
-    "Root"
+    "bip_spine_2"
 }
 
 local tPoseSequences = {
