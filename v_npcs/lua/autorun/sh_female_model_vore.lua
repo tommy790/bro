@@ -1582,6 +1582,76 @@ function VNPC_InterpolateKeyframes(keyframes, tNorm, boneName)
     return LerpVector(f, pos1, pos2), VNPC_LerpAngle(f, ang1, ang2)
 end
 
+CreateConVar("vnpcs_calm_idle_animation", "1", {FCVAR_REPLICATED, FCVAR_ARCHIVE}, "Enable 5-second long calm full-belly bone pose animation when predators are not in a battle")
+
+VNPC_CalmFullBellyKeyframes = {
+    length = 5.0,
+    keyframes = {
+        [0.00] = {
+            ["ValveBiped.Bip01_Head1"] = { pos = Vector(0, 0, 0), ang = Angle(0, -15, 5) },
+            ["ValveBiped.Bip01_Spine1"] = { pos = Vector(0, 0, 0), ang = Angle(0, -5, 0) },
+            ["ValveBiped.Bip01_R_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(15, -15, 10) },
+            ["ValveBiped.Bip01_R_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(145, 45, 130) },
+            ["ValveBiped.Bip01_R_Hand"] = { pos = Vector(0, 0, 0), ang = Angle(-10, -50, 20) },
+            ["ValveBiped.Bip01_L_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(-15, -15, -10) },
+            ["ValveBiped.Bip01_L_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(-145, 45, -130) },
+            ["ValveBiped.Bip01_L_Hand"] = { pos = Vector(0, 0, 0), ang = Angle(10, -50, -20) }
+        },
+        [0.20] = { -- 1.0s: Gentle stroke right hand
+            ["ValveBiped.Bip01_Head1"] = { pos = Vector(0, 0, 0), ang = Angle(5, -18, 8) },
+            ["ValveBiped.Bip01_Spine1"] = { pos = Vector(0, 0, 0), ang = Angle(0, -6, 0) },
+            ["ValveBiped.Bip01_R_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(20, -5, 15) },
+            ["ValveBiped.Bip01_R_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(160, 55, 140) },
+            ["ValveBiped.Bip01_R_Hand"] = { pos = Vector(0, 0, 0), ang = Angle(-15, -60, 30) },
+            ["ValveBiped.Bip01_L_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(-15, -15, -10) },
+            ["ValveBiped.Bip01_L_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(-145, 45, -130) },
+            ["ValveBiped.Bip01_L_Hand"] = { pos = Vector(0, 0, 0), ang = Angle(10, -50, -20) }
+        },
+        [0.40] = { -- 2.0s: Soft exhale / content head nod
+            ["ValveBiped.Bip01_Head1"] = { pos = Vector(0, 0, 0), ang = Angle(0, -10, 0) },
+            ["ValveBiped.Bip01_Spine1"] = { pos = Vector(0, 0, 0), ang = Angle(0, -8, 0) },
+            ["ValveBiped.Bip01_R_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(15, -15, 10) },
+            ["ValveBiped.Bip01_R_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(150, 40, 135) },
+            ["ValveBiped.Bip01_R_Hand"] = { pos = Vector(0, 0, 0), ang = Angle(-10, -50, 20) },
+            ["ValveBiped.Bip01_L_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(-15, -15, -10) },
+            ["ValveBiped.Bip01_L_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(-150, 40, -135) },
+            ["ValveBiped.Bip01_L_Hand"] = { pos = Vector(0, 0, 0), ang = Angle(10, -50, -20) }
+        },
+        [0.60] = { -- 3.0s: Gentle stroke left hand
+            ["ValveBiped.Bip01_Head1"] = { pos = Vector(0, 0, 0), ang = Angle(-5, -18, -8) },
+            ["ValveBiped.Bip01_Spine1"] = { pos = Vector(0, 0, 0), ang = Angle(0, -6, 0) },
+            ["ValveBiped.Bip01_R_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(15, -15, 10) },
+            ["ValveBiped.Bip01_R_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(145, 45, 130) },
+            ["ValveBiped.Bip01_R_Hand"] = { pos = Vector(0, 0, 0), ang = Angle(-10, -50, 20) },
+            ["ValveBiped.Bip01_L_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(-20, -5, -15) },
+            ["ValveBiped.Bip01_L_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(-160, 55, -140) },
+            ["ValveBiped.Bip01_L_Hand"] = { pos = Vector(0, 0, 0), ang = Angle(15, -60, -30) }
+        },
+        [0.80] = { -- 4.0s: Satisfied deep breath / stretch
+            ["ValveBiped.Bip01_Head1"] = { pos = Vector(0, 0, 0), ang = Angle(0, -8, 0) },
+            ["ValveBiped.Bip01_Spine1"] = { pos = Vector(0, 0, 0), ang = Angle(0, -3, 0) },
+            ["ValveBiped.Bip01_R_Clavicle"] = { pos = Vector(0, 0, 0), ang = Angle(0, 5, 0) },
+            ["ValveBiped.Bip01_R_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(15, -15, 10) },
+            ["ValveBiped.Bip01_R_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(145, 45, 130) },
+            ["ValveBiped.Bip01_R_Hand"] = { pos = Vector(0, 0, 0), ang = Angle(-10, -50, 20) },
+            ["ValveBiped.Bip01_L_Clavicle"] = { pos = Vector(0, 0, 0), ang = Angle(0, -5, 0) },
+            ["ValveBiped.Bip01_L_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(-15, -15, -10) },
+            ["ValveBiped.Bip01_L_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(-145, 45, -130) },
+            ["ValveBiped.Bip01_L_Hand"] = { pos = Vector(0, 0, 0), ang = Angle(10, -50, -20) }
+        },
+        [1.00] = { -- 5.0s: Loop back to 0.0s
+            ["ValveBiped.Bip01_Head1"] = { pos = Vector(0, 0, 0), ang = Angle(0, -15, 5) },
+            ["ValveBiped.Bip01_Spine1"] = { pos = Vector(0, 0, 0), ang = Angle(0, -5, 0) },
+            ["ValveBiped.Bip01_R_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(15, -15, 10) },
+            ["ValveBiped.Bip01_R_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(145, 45, 130) },
+            ["ValveBiped.Bip01_R_Hand"] = { pos = Vector(0, 0, 0), ang = Angle(-10, -50, 20) },
+            ["ValveBiped.Bip01_L_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(-15, -15, -10) },
+            ["ValveBiped.Bip01_L_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(-145, 45, -130) },
+            ["ValveBiped.Bip01_L_Hand"] = { pos = Vector(0, 0, 0), ang = Angle(10, -50, -20) }
+        }
+    }
+}
+
 function VNPC_AnimatedBoneOffsets(ent)
     if not IsValid(ent) then return end
     local enabled = GetConVar("vnpcs_bone_pose_animations")
@@ -1612,6 +1682,12 @@ function VNPC_AnimatedBoneOffsets(ent)
     local is_armed = false
     if ent.GetActiveWeapon and IsValid(ent:GetActiveWeapon()) then
         is_armed = true
+    end
+
+    local is_in_battle = is_hunting_or_moving or is_armed
+    local calm_cv = GetConVar("vnpcs_calm_idle_animation")
+    if calm_cv and calm_cv:GetBool() and not is_in_battle and (phase == 2 or phase == 3) then
+        data = VNPC_CalmFullBellyKeyframes
     end
 
     for i = 0, boneCount - 1 do
