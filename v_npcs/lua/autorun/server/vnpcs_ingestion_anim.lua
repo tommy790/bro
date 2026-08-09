@@ -100,7 +100,12 @@ hook.Add("Think", "VNPCS_IngestionAnimation_Loop", function()
             continue
         end
 
-        local tNorm = (now - anim.startTime) / anim.duration
+        local tNorm = math.Clamp((now - anim.startTime) / anim.duration, 0, 1)
+        prey.VNPC_IngestionDepth = math.sin(tNorm * math.pi * 0.5)
+
+        if IsValid(belly) and belly.SetBellySize then
+            belly:SetBellySize()
+        end
 
         -- Keep prey positioned at predator's mouth as she swallows
         local headBone = pred:LookupBone("ValveBiped.Bip01_Head1") or pred:LookupBone("Head") or pred:LookupBone("head")
@@ -141,6 +146,11 @@ hook.Add("Think", "VNPCS_IngestionAnimation_Loop", function()
             prey:SetParent(belly)
             prey:SetPos(belly:GetPos())
             prey.VNPC_IsBeingSwallowed = false
+            prey.VNPC_IngestionDepth = 1.0
+
+            if IsValid(belly) and belly.SetBellySize then
+                belly:SetBellySize()
+            end
 
             if pred.SetFacialExpression then
                 pcall(pred.SetFacialExpression, pred, 2) -- Full Belly face!

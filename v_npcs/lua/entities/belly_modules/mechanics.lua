@@ -574,7 +574,11 @@ function ENT:GetCollectivePreyValue() --: number
     local total = 0
 
     for _, prey in ipairs(self.Prey) do
-        local value = prey.Value
+        local value = prey.Value or 0
+        local ent = prey.Entity
+        if IsValid(ent) and ent.VNPC_IsBeingSwallowed and ent.VNPC_IngestionDepth then
+            value = value * math.Clamp(ent.VNPC_IngestionDepth, 0, 1)
+        end
         total = total + value
     end
 
