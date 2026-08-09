@@ -186,8 +186,8 @@ ENT.Predator = true --dont change this
 ENT.SpotDuration = 20
 
 ENT.RangeAttackRange = 0
-ENT.MeleeAttackRange = 35
-ENT.ReachEnemyRange = 10
+ENT.MeleeAttackRange = 110
+ENT.ReachEnemyRange = 85
 ENT.AvoidEnemyRange = 0
 
 ENT.UseWalkframes = true

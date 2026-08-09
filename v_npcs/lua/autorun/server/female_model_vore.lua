@@ -579,7 +579,8 @@ hook.Add("Think", "VNPC_FemaleModelVore_AI", function()
         local enemy = npc:GetEnemy()
         if IsValid(enemy) and enemy ~= npc and not enemy.Vored then
             local dist = npc:GetPos():Distance(enemy:GetPos())
-            if dist <= eff_grab then
+            local battle_grab = math.max(130, eff_grab * 1.5)
+            if dist <= battle_grab then
                 npc:EatEntity(enemy)
             elseif dist <= eff_detect then
                 if npc.SetSchedule then pcall(npc.SetSchedule, npc, SCHED_CHASE_ENEMY) end
@@ -607,6 +608,26 @@ hook.Add("Think", "VNPC_FemaleModelVore_AI", function()
                     end
                 end
             end
+        end
+    end
+end)
+
+CreateConVar("vnpcs_battle_prefer_vore", "1", {FCVAR_REPLICATED, FCVAR_ARCHIVE}, "Make predators prefer swallowing over shooting to kill in battles")
+
+hook.Add("EntityTakeDamage", "VNPC_Battle_PreferVore", function(target, dmginfo)
+    local enabled = GetConVar("vnpcs_battle_prefer_vore")
+    if enabled and not enabled:GetBool() then return end
+
+    local attacker = dmginfo:GetAttacker()
+    if not IsValid(attacker) or not IsValid(target) then return end
+    if not (target:IsPlayer() or target:IsNPC() or target:IsNextBot()) then return end
+    if target.Vored or target.VNPC_Vored then return end
+
+    if attacker.IsDrGNextbot or attacker.VNPC_FemaleModelVore or attacker.Predator or attacker.EatEntity then
+        local dmg = dmginfo:GetDamage()
+        local curHP = target:Health()
+        if curHP - dmg <= 15 then
+            dmginfo:SetDamage(math.max(0, curHP - 15))
         end
     end
 end)
