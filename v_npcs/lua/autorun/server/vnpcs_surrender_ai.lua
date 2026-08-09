@@ -12,6 +12,12 @@ function VNPC_MakeSurrender(npc, pred)
     local enabled = GetConVar("vnpcs_surrender_enabled")
     if enabled and not enabled:GetBool() then return false end
 
+    local belly = npc.VNPC_Belly or npc.Belly
+    if not IsValid(belly) then
+        -- Males or NPCs without a belly never surrender to get fed; they get eaten directly by the predator!
+        return false
+    end
+
     npc.VNPC_Surrendered = true
     npc.VNPC_SurrenderMaster = pred
     npc.VNPC_SurrenderFedCount = 0
@@ -26,19 +32,11 @@ function VNPC_MakeSurrender(npc, pred)
         if pred.SetEnemy and pred:GetEnemy() == npc then pcall(pred.SetEnemy, pred, nil) end
     end
 
-    -- Ensure surrendered female NPC has a vore belly so she can eat prey
-    if not npc.VNPC_FemaleModelVore and VNPC_AttachFemaleModelVore then
-        VNPC_AttachFemaleModelVore(npc)
-    end
-
     -- TURN OFF DIGESTION so swallowed prey stay alive inside her without digestion
-    local belly = npc.VNPC_Belly or npc.Belly
-    if IsValid(belly) then
-        belly.VNPC_NoDigestion = true
-        belly.DigestionStrength = 0
-        if belly.SetDigestionPower then
-            belly:SetDigestionPower(0)
-        end
+    belly.VNPC_NoDigestion = true
+    belly.DigestionStrength = 0
+    if belly.SetDigestionPower then
+        belly:SetDigestionPower(0)
     end
 
     return true
