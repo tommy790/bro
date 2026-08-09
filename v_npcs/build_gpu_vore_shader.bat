@@ -80,8 +80,11 @@ if exist "!GMOD_DIR!\bin\fxc.exe" (
     powershell -NoProfile -ExecutionPolicy Bypass -Command ^
         "$fxcPath = '%WORKSPACE%\fxc.exe';" ^
         "if (!(Test-Path $fxcPath)) {" ^
-        "    $sdkFxc = (Get-ChildItem -Path 'C:\Program Files (x86)\Windows Kits\10\bin' -Filter 'fxc.exe' -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.FullName -like '*x86*' } | Select-Object -First 1);" ^
-        "    if ($sdkFxc) { Copy-Item $sdkFxc.FullName $fxcPath; }" ^
+        "    $sdkDir = 'C:\Program Files (x86)\Windows Kits\10\bin';" ^
+        "    if (Test-Path $sdkDir) {" ^
+        "        $sdkFxc = (Get-ChildItem -Path $sdkDir -Filter 'fxc.exe' -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.FullName -like '*x86*' } | Select-Object -First 1);" ^
+        "        if ($sdkFxc) { Copy-Item $sdkFxc.FullName $fxcPath -Force -ErrorAction SilentlyContinue; }" ^
+        "    }" ^
         "}"
     if not exist "%FXC_EXE%" (
         echo [%COLOR_YELLOW%WARN%COLOR_RESET%] fxc.exe not found in SDK. Generating standalone Source Engine shader stub...
