@@ -246,6 +246,10 @@ function ENT:AddPrey(prey)
 
     VNPC_SwallowAttachedEntities(self, prey)
 
+    if VNPC_StartIngestionAnimation then
+        VNPC_StartIngestionAnimation(self.NPC or self:GetOwner() or self, prey, self)
+    end
+
     if prey:Health() < 25 then --fix for objects/npcs getting instantly digested, uhhhh super binary and hardcoded
         prey:SetHealth(25)
     end
