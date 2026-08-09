@@ -188,7 +188,20 @@ if exist "!TARGET_WIN64_VCS!" (
 )
 
 copy /y "%SHADER_VCS%" "!TARGET_VCS!" >nul
+if %ERRORLEVEL% NEQ 0 (
+    echo [%COLOR_RED%ERROR%COLOR_RESET%] Failed to copy shader binary to: !TARGET_VCS!
+    echo [%COLOR_RED%ERROR%COLOR_RESET%] Please ensure Garry's Mod is closed and you ran as Administrator.
+    echo [%COLOR_YELLOW%PAUSE%COLOR_RESET%] Press ANY KEY to close this window...
+    pause >nul
+    exit /b 1
+)
 copy /y "%SHADER_VCS%" "!TARGET_WIN64_VCS!" >nul
+if %ERRORLEVEL% NEQ 0 (
+    echo [%COLOR_RED%ERROR%COLOR_RESET%] Failed to copy win64 shader binary to: !TARGET_WIN64_VCS!
+    echo [%COLOR_YELLOW%PAUSE%COLOR_RESET%] Press ANY KEY to close this window...
+    pause >nul
+    exit /b 1
+)
 echo [%COLOR_GREEN%SUCCESS%COLOR_RESET%] Installed compiled .vcs shader binary to Garry's Mod active runtime directories.
 
 :: ------------------------------------------------------------------------------
@@ -306,11 +319,17 @@ echo [%COLOR_GREEN%SUCCESS%COLOR_RESET%] Client-side Lua bridge written successf
 echo [%COLOR_YELLOW%INFO%COLOR_RESET%] Cleaning up temporary compilation workspace...
 if exist "%WORKSPACE%" rmdir /s /q "%WORKSPACE%"
 
+echo.
 echo %COLOR_GREEN%=============================================================================%COLOR_RESET%
 echo %COLOR_GREEN%    GPU VORE VERTEX DEFORMATION SHADER INSTALLED SUCCESSFULLY!             %COLOR_RESET%
 echo %COLOR_GREEN%=============================================================================%COLOR_RESET%
+echo.
+echo %COLOR_CYAN%=============================================================================%COLOR_RESET%
+echo %COLOR_CYAN%  SCRIPT FINISHED! YOU CAN SCROLL UP NOW TO REVIEW ALL OUTPUT & LOGS ABOVE.  %COLOR_RESET%
+echo %COLOR_CYAN%=============================================================================%COLOR_RESET%
+echo [%COLOR_YELLOW%PAUSE%COLOR_RESET%] Press ANY KEY to launch Garry's Mod via Steam and close this window...
+pause >nul
+
 echo [%COLOR_CYAN%LAUNCH%COLOR_RESET%] Launching Garry's Mod via Steam (steam://run/4000) ...
 start "" "steam://run/4000"
-
-pause
 exit /b 0
