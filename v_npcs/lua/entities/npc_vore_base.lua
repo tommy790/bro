@@ -372,6 +372,11 @@ function ENT:EatEntity(ent)
 		end
 		local tSwallow = (animList and animList[1] and animList[1].length) or 1.0
 		local tGulp = (animList and animList[4] and animList[4].length) or 1.0
+		local calm_swallow_cv = GetConVar("vnpcs_calm_swallow_animation")
+		if calm_swallow_cv and calm_swallow_cv:GetBool() and not IsValid(self:GetEnemy()) then
+			tSwallow = 5.0
+			tGulp = 1.0
+		end
 		local tFull = tSwallow + tGulp
 
 		timer.Simple(tSwallow, function()
