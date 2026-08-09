@@ -626,7 +626,13 @@ hook.Add("EntityTakeDamage", "VNPC_Battle_PreferVore", function(target, dmginfo)
     if attacker.IsDrGNextbot or attacker.VNPC_FemaleModelVore or attacker.Predator or attacker.EatEntity then
         local dmg = dmginfo:GetDamage()
         local curHP = target:Health()
-        if curHP - dmg <= 15 then
+        local surr_hp = GetConVar("vnpcs_surrender_hp_threshold"):GetInt() or 35
+        if target:IsNPC() and (curHP - dmg <= surr_hp) and not target.VNPC_Surrendered then
+            if VNPC_MakeSurrender then
+                VNPC_MakeSurrender(target, attacker)
+            end
+        end
+        if curHP - dmg <= 15 or target.VNPC_Surrendered then
             dmginfo:SetDamage(math.max(0, curHP - 15))
         end
     end
