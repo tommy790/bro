@@ -17,8 +17,11 @@ function ENT:OnPreyAbsorbing(power, old_value, new_value)  --this is here so the
 end
  
 local function getModelBounds(ent, scale)
+    if VNPC_CalculatePreyValue then
+        return VNPC_CalculatePreyValue(ent, scale)
+    end
     local _, max_bounds = ent:GetModelBounds()
-    return max_bounds:Length() * ent:GetModelScale()
+    return max_bounds:Length() * (scale or ent:GetModelScale() or 1)
 end
 
 function ENT:EatCondition(prey) --slime girl cant eat something thats a bigger than her

@@ -32,9 +32,12 @@ local global_absorption_multi = CreateConVar("vnpcs_absorption_multi", "1", {FCV
 local force_digestion = CreateConVar("vnpcs_global_digestion", "0", {FCVAR_ARCHIVE, FCVAR_REPLICATED})
 local force_absorption = CreateConVar("vnpcs_global_absorption", "0", {FCVAR_ARCHIVE, FCVAR_REPLICATED})
 
-local function getModelBounds(ent)
+local function getModelBounds(ent, scale)
+    if VNPC_CalculatePreyValue then
+        return VNPC_CalculatePreyValue(ent, scale)
+    end
     local _, max_bounds = ent:GetModelBounds()
-    return max_bounds:Length() * ent:GetModelScale()
+    return max_bounds:Length() * (scale or ent:GetModelScale() or 1)
 end
 
 local function GetFlags(ent)
