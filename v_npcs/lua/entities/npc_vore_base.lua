@@ -366,7 +366,15 @@ function ENT:EatEntity(ent)
 			self._InClumpVore = nil
 		end
 
-		timer.Simple(1, function()
+		local animList = nil
+		if VNPC_GetAnimatedBoneList then
+			animList = VNPC_GetAnimatedBoneList(self)
+		end
+		local tSwallow = (animList and animList[1] and animList[1].length) or 1.0
+		local tGulp = (animList and animList[4] and animList[4].length) or 1.0
+		local tFull = tSwallow + tGulp
+
+		timer.Simple(tSwallow, function()
 			if self and IsValid(self) then
 				if IsValid(self.Belly) and self.Belly.DigestionPhase == 1 then
 					self:SetFacialExpression(4)
@@ -374,7 +382,7 @@ function ENT:EatEntity(ent)
 			end
 		end)
 
-		timer.Simple(2, function()
+		timer.Simple(tFull, function()
 			if self and IsValid(self) then
 				if IsValid(self.Belly) and (self.Belly.DigestionPhase ~= 0 or (self.Belly.Prey and #self.Belly.Prey > 0)) then
 					self:SetFacialExpression(2)

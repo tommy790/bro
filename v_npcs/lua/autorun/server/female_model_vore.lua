@@ -171,13 +171,21 @@ function VNPC_GiveFemaleModelVore(ent)
                 self._InClumpVore = nil
             end
 
-            timer.Simple(1, function()
+            local animList = nil
+            if VNPC_GetAnimatedBoneList then
+                animList = VNPC_GetAnimatedBoneList(self)
+            end
+            local tSwallow = (animList and animList[1] and animList[1].length) or 1.0
+            local tGulp = (animList and animList[4] and animList[4].length) or 1.0
+            local tFull = tSwallow + tGulp
+
+            timer.Simple(tSwallow, function()
                 if IsValid(self) and IsValid(belly) and belly.DigestionPhase == 1 then
                     self:SetFacialExpression(4)
                 end
             end)
 
-            timer.Simple(2, function()
+            timer.Simple(tFull, function()
                 if IsValid(self) then
                     if IsValid(belly) and (belly.DigestionPhase ~= 0 or (belly.Prey and #belly.Prey > 0)) then
                         self:SetFacialExpression(2)
