@@ -900,6 +900,118 @@ VNPC_DefaultAnimatedBoneList = {
 VNPC_ShyAnimatedBoneList = VNPC_DefaultAnimatedBoneList
 VNPC_SHY_ANIMATED_BONE_LIST = VNPC_DefaultAnimatedBoneList
 
+VNPC_BonfieAnimatedBoneList = {
+    [0] = { -- rest
+        ["ValveBiped.Bip01_Head1"] = { pos = Vector(0, 0, 0), ang = Angle(0, 0, 0) },
+        ["ValveBiped.Bip01_R_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(0, 0, 0) },
+        ["ValveBiped.Bip01_R_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(0, 0, 0) },
+        ["ValveBiped.Bip01_R_Hand"] = { pos = Vector(0, 0, 0), ang = Angle(0, 0, 0) },
+        ["ValveBiped.Bip01_L_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(0, 0, 0) },
+        ["ValveBiped.Bip01_L_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(0, 0, 0) },
+        ["ValveBiped.Bip01_L_Hand"] = { pos = Vector(0, 0, 0), ang = Angle(0, 0, 0) },
+        ["EyesLeft"] = { pos = Vector(0, 0, 0), ang = Angle(0, 0, 0) },
+        ["EyesRight"] = { pos = Vector(0, 0, 0), ang = Angle(0, 0, 0) }
+    },
+    [1] = { -- swallow
+        ["ValveBiped.Bip01_Head1"] = { pos = Vector(0, 0, 0), ang = Angle(0, 10, 0) },
+        ["ValveBiped.Bip01_R_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(80, -10, 0) },
+        ["ValveBiped.Bip01_R_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(25, -100, 50) },
+        ["ValveBiped.Bip01_R_Hand"] = { pos = Vector(0, 0, 0), ang = Angle(30, -20, 20) },
+        ["ValveBiped.Bip01_L_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(-50, 20, 0) },
+        ["ValveBiped.Bip01_L_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(-145, 40, -180) },
+        ["ValveBiped.Bip01_L_Hand"] = { pos = Vector(0, 0, 0), ang = Angle(-15, -20, -30) },
+        ["EyesLeft"] = { pos = Vector(0, 0, 0), ang = Angle(0, 0, 0) },
+        ["EyesRight"] = { pos = Vector(0, 0, 0), ang = Angle(0, 0, 0) }
+    },
+    [2] = { -- full
+        length = 1.0,
+        keyframes = {
+            [0.00] = {
+                ["ValveBiped.Bip01_Head1"] = { pos = Vector(0, 0, 0), ang = Angle(0, -20, 0) },
+                ["ValveBiped.Bip01_R_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(10, -10, 0) },
+                ["ValveBiped.Bip01_R_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(155, 40, 150) },
+                ["ValveBiped.Bip01_R_Hand"] = { pos = Vector(0, 0, 0), ang = Angle(-10, -60, 20) },
+                ["ValveBiped.Bip01_L_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(-10, -10, 0) },
+                ["ValveBiped.Bip01_L_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(-145, 40, -150) },
+                ["ValveBiped.Bip01_L_Hand"] = { pos = Vector(0, 0, 0), ang = Angle(5, -63, -15) },
+                ["EyesLeft"] = { pos = Vector(-0.7, 0, 0), ang = Angle(0, 0, 0) },
+                ["EyesRight"] = { pos = Vector(-0.7, 0, 0), ang = Angle(0, 0, 0) }
+            },
+            [0.50] = {
+                ["ValveBiped.Bip01_Head1"] = { pos = Vector(0, 0, 0), ang = Angle(0, -20, 0) },
+                ["ValveBiped.Bip01_R_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(10, -10, 0) },
+                ["ValveBiped.Bip01_R_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(155, 40, 150) },
+                ["ValveBiped.Bip01_R_Hand"] = { pos = Vector(0, 0, 0), ang = Angle(-10, -60, 20) },
+                ["ValveBiped.Bip01_L_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(-10, -10, 0) },
+                ["ValveBiped.Bip01_L_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(-145, 40, -150) },
+                ["ValveBiped.Bip01_L_Hand"] = { pos = Vector(0, 0, 0), ang = Angle(5, -63, -15) },
+                ["EyesLeft"] = { pos = Vector(-0.7, 0, 0), ang = Angle(0, 0, 0) },
+                ["EyesRight"] = { pos = Vector(-0.7, 0, 0), ang = Angle(0, 0, 0) }
+            },
+            [1.00] = {
+                ["ValveBiped.Bip01_Head1"] = { pos = Vector(0, 0, 0), ang = Angle(0, -20, 0) },
+                ["ValveBiped.Bip01_R_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(10, -10, 0) },
+                ["ValveBiped.Bip01_R_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(155, 40, 150) },
+                ["ValveBiped.Bip01_R_Hand"] = { pos = Vector(0, 0, 0), ang = Angle(-10, -60, 20) },
+                ["ValveBiped.Bip01_L_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(-10, -10, 0) },
+                ["ValveBiped.Bip01_L_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(-145, 40, -150) },
+                ["ValveBiped.Bip01_L_Hand"] = { pos = Vector(0, 0, 0), ang = Angle(5, -63, -15) },
+                ["EyesLeft"] = { pos = Vector(-0.7, 0, 0), ang = Angle(0, 0, 0) },
+                ["EyesRight"] = { pos = Vector(-0.7, 0, 0), ang = Angle(0, 0, 0) }
+            }
+        }
+    },
+    [3] = { -- burp
+        ["ValveBiped.Bip01_Head1"] = { pos = Vector(0, 0, 0), ang = Angle(0, 5, 0) },
+        ["ValveBiped.Bip01_R_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(10, -10, 0) },
+        ["ValveBiped.Bip01_R_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(155, 30, 150) },
+        ["ValveBiped.Bip01_R_Hand"] = { pos = Vector(0, 0, 0), ang = Angle(-10, 30, 0) },
+        ["ValveBiped.Bip01_L_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(-10, -10, 0) },
+        ["ValveBiped.Bip01_L_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(-145, 30, -150) },
+        ["ValveBiped.Bip01_L_Hand"] = { pos = Vector(0, 0, 0), ang = Angle(5, 30, 0) },
+        ["EyesLeft"] = { pos = Vector(0, 0, 0), ang = Angle(0, 0, 0) },
+        ["EyesRight"] = { pos = Vector(0, 0, 0), ang = Angle(0, 0, 0) }
+    },
+    [4] = { -- final gulp
+        ["ValveBiped.Bip01_Head1"] = { pos = Vector(0, 0, 0), ang = Angle(-10, 0, 0) },
+        ["ValveBiped.Bip01_R_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(40, -50, 0) },
+        ["ValveBiped.Bip01_R_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(5, -115, 0) },
+        ["ValveBiped.Bip01_R_Hand"] = { pos = Vector(0, 0, 0), ang = Angle(35, 70, 30) },
+        ["ValveBiped.Bip01_L_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(-70, 20, 0) },
+        ["ValveBiped.Bip01_L_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(-145, 40, -180) },
+        ["ValveBiped.Bip01_L_Hand"] = { pos = Vector(0, 0, 0), ang = Angle(0, -40, 0) },
+        ["EyesLeft"] = { pos = Vector(0, 0, 0), ang = Angle(0, 0, 0) },
+        ["EyesRight"] = { pos = Vector(0, 0, 0), ang = Angle(0, 0, 0) }
+    }
+}
+
+VNPC_BoneMovesets = VNPC_BoneMovesets or {}
+VNPC_BoneMovesets["default"] = VNPC_DefaultAnimatedBoneList
+VNPC_BoneMovesets["bonfie"] = VNPC_BonfieAnimatedBoneList
+
+function VNPC_RegisterBoneMoveset(name, movesetTable)
+    if not name or not istable(movesetTable) then return end
+    VNPC_BoneMovesets = VNPC_BoneMovesets or {}
+    VNPC_BoneMovesets[string.lower(name)] = movesetTable
+end
+
+CreateConVar("vnpcs_random_movesets", "1", {FCVAR_REPLICATED, FCVAR_ARCHIVE}, "Randomize 5-phase bone animation movesets for V-NPC predators")
+
+function VNPC_AssignRandomMoveset(ent)
+    if not IsValid(ent) then return end
+    if ent.VNPC_AssignedMoveset then return end
+    local keys = {}
+    for k, v in pairs(VNPC_BoneMovesets or {}) do
+        if istable(v) then
+            table.insert(keys, k)
+        end
+    end
+    if #keys > 0 then
+        local pick = keys[math.random(1, #keys)]
+        ent.VNPC_AssignedMoveset = pick
+    end
+end
+
 function VNPC_GetAnimatedBoneList(ent)
     if not IsValid(ent) then return VNPC_DefaultAnimatedBoneList end
     if ent.AnimatedBoneList and istable(ent.AnimatedBoneList) then
@@ -914,8 +1026,17 @@ function VNPC_GetAnimatedBoneList(ent)
     else
         pers = ent.VNPC_PredatorPersonality or (ent.VoreSettings and ent.VoreSettings.PredatorPersonality)
     end
-    if pers == "shy" then
+    if pers == "shy" and VNPC_ShyAnimatedBoneList then
         return VNPC_ShyAnimatedBoneList
+    end
+    local cvar = GetConVar("vnpcs_random_movesets")
+    if cvar and cvar:GetBool() then
+        if not ent.VNPC_AssignedMoveset then
+            VNPC_AssignRandomMoveset(ent)
+        end
+        if ent.VNPC_AssignedMoveset and VNPC_BoneMovesets[ent.VNPC_AssignedMoveset] then
+            return VNPC_BoneMovesets[ent.VNPC_AssignedMoveset]
+        end
     end
     return VNPC_DefaultAnimatedBoneList
 end
