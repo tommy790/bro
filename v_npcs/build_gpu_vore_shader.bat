@@ -141,6 +141,14 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command ^
 "}" ^
 "'@; [System.IO.File]::WriteAllText('%SHADER_SRC%', $hlsl)"
 
+if not exist "%SHADER_SRC%" (
+    echo [%COLOR_RED%ERROR%COLOR_RESET%] Failed to write HLSL shader file: %SHADER_SRC%
+    echo [%COLOR_RED%ERROR%COLOR_RESET%] Check permissions for your temporary folder.
+    echo [%COLOR_YELLOW%PAUSE%COLOR_RESET%] Press ANY KEY to close this window...
+    pause
+    exit /b 1
+)
+
 echo [%COLOR_GREEN%SUCCESS%COLOR_RESET%] Injected HLSL Gaussian smoothstep vertex deformation function into shader source.
 
 :: ------------------------------------------------------------------------------
@@ -191,14 +199,14 @@ if %ERRORLEVEL% NEQ 0 (
     echo [%COLOR_RED%ERROR%COLOR_RESET%] Failed to copy shader binary to: !TARGET_VCS!
     echo [%COLOR_RED%ERROR%COLOR_RESET%] Please ensure Garry's Mod is closed and you ran as Administrator.
     echo [%COLOR_YELLOW%PAUSE%COLOR_RESET%] Press ANY KEY to close this window...
-    pause >nul
+    pause
     exit /b 1
 )
 copy /y "%SHADER_VCS%" "!TARGET_WIN64_VCS!" >nul
 if %ERRORLEVEL% NEQ 0 (
     echo [%COLOR_RED%ERROR%COLOR_RESET%] Failed to copy win64 shader binary to: !TARGET_WIN64_VCS!
     echo [%COLOR_YELLOW%PAUSE%COLOR_RESET%] Press ANY KEY to close this window...
-    pause >nul
+    pause
     exit /b 1
 )
 echo [%COLOR_GREEN%SUCCESS%COLOR_RESET%] Installed compiled .vcs shader binary to Garry's Mod active runtime directories.
@@ -310,6 +318,14 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command ^
 "print('[V-NPCs] GPU Vore Shader Bridge initialized.')" ^
 "'@; [System.IO.File]::WriteAllText('%BRIDGE_FILE%', $lua)"
 
+if not exist "!BRIDGE_FILE!" (
+    echo [%COLOR_RED%ERROR%COLOR_RESET%] Failed to write Lua bridge file: !BRIDGE_FILE!
+    echo [%COLOR_RED%ERROR%COLOR_RESET%] Please ensure Garry's Mod is closed and you ran as Administrator.
+    echo [%COLOR_YELLOW%PAUSE%COLOR_RESET%] Press ANY KEY to close this window...
+    pause
+    exit /b 1
+)
+
 echo [%COLOR_GREEN%SUCCESS%COLOR_RESET%] Client-side Lua bridge written successfully to: !BRIDGE_FILE!
 
 :: ------------------------------------------------------------------------------
@@ -327,7 +343,7 @@ echo %COLOR_CYAN%===============================================================
 echo %COLOR_CYAN%  SCRIPT FINISHED! YOU CAN SCROLL UP NOW TO REVIEW ALL OUTPUT & LOGS ABOVE.  %COLOR_RESET%
 echo %COLOR_CYAN%=============================================================================%COLOR_RESET%
 echo [%COLOR_YELLOW%PAUSE%COLOR_RESET%] Press ANY KEY to launch Garry's Mod via Steam and close this window...
-pause >nul
+pause
 
 echo [%COLOR_CYAN%LAUNCH%COLOR_RESET%] Launching Garry's Mod via Steam (steam://run/4000) ...
 start "" "steam://run/4000"
@@ -338,5 +354,5 @@ exit /b 0
 :: ==============================================================================
 :ExtractSDKFxc
 set "TARGET_FXC=%~1"
-powershell -NoProfile -ExecutionPolicy Bypass -Command "$sdk = (Get-ChildItem -Path $env:ProgramFiles, ${env:ProgramFiles(x86)} -ErrorAction SilentlyContinue | Where-Object { $_.Name -eq 'Windows Kits' } | ForEach-Object { Get-ChildItem -Path ($_.FullName + '\10\bin') -Filter 'fxc.exe' -Recurse -ErrorAction SilentlyContinue }) | Where-Object { $_.FullName -like '*x86*' } | Select-Object -First 1; if ($sdk) { Copy-Item $sdk.FullName '%TARGET_FXC%' -Force }"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$pf = [Environment]::GetFolderPath('ProgramFilesX86'); if (-not $pf) { $pf = 'C:\Program Files (x86)' }; $sdk = Get-ChildItem -Path $pf -Filter 'fxc.exe' -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.FullName -like '*x86*' } | Select-Object -First 1; if ($sdk) { Copy-Item -Path $sdk.FullName -Destination '%TARGET_FXC%' -Force -ErrorAction SilentlyContinue }"
 goto :eof
