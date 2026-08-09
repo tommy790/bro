@@ -201,9 +201,12 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command ^
 "if not CLIENT then return end" ^
 "-- Garry's Mod GPU Vore Shader Bridge (cl_gpu_vore_bridge.lua)" ^
 "CreateClientConVar('vnpcs_gpu_vore_shader_enabled', '1', true, false, 'Enable GPU-based vertex deformation for vore bellies')" ^
+"CreateClientConVar('vnpcs_gpu_vore_debug', '0', true, false, 'Debug GPU vore uniform injection and 3D visualizer')" ^
 "local g_VoreStomachCenter = Vector(0, 0, 0)" ^
 "local g_VoreRadius = 0" ^
 "local g_VoreIntensity = 0" ^
+"local g_ActivePredator = nil" ^
+"local g_UpdatedMaterialsCount = 0" ^
 "" ^
 "hook.Add('PreDrawOpaqueRenderables', 'VNPCS_GPU_Vore_UpdateUniforms', function()" ^
 "    if not GetConVar('vnpcs_gpu_vore_shader_enabled'):GetBool() then return end" ^
@@ -216,6 +219,21 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command ^
 "            activePred = parent" ^
 "        end" ^
 "    end" ^
+"    if not IsValid(activePred) then" ^
+"        local eyePos = EyePos()" ^
+"        local minDist = 4000000" ^
+"        for _, npc in ipairs(ents.FindByClass('npc_*')) do" ^
+"            if IsValid(npc) and (npc.Predator or npc.VNPC_FemaleModelVore or npc.VNPC_Belly) then" ^
+"                local d = eyePos:DistToSqr(npc:GetPos())" ^
+"                if d < minDist then" ^
+"                    minDist = d" ^
+"                    activePred = npc" ^
+"                end" ^
+"            end" ^
+"        end" ^
+"    end" ^
+"    g_ActivePredator = activePred" ^
+"    g_UpdatedMaterialsCount = 0" ^
 "    if IsValid(activePred) then" ^
 "        local center = activePred:WorldSpaceCenter()" ^
 "        local belly = activePred.VNPC_Belly or activePred.Belly" ^
@@ -227,6 +245,15 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command ^
 "        g_VoreStomachCenter = center" ^
 "        g_VoreRadius = math.max(20.0, 35.0 * (scale + 1.0))" ^
 "        g_VoreIntensity = math.Clamp(scale * 12.0, 0.0, 80.0)" ^
+"        for _, matName in ipairs(activePred:GetMaterials() or {}) do" ^
+"            local mat = Material(matName)" ^
+"            if mat and not mat:IsError() then" ^
+"                mat:SetVector('$gore_center', center)" ^
+"                mat:SetFloat('$gore_radius', g_VoreRadius)" ^
+"                mat:SetFloat('$gore_intensity', g_VoreIntensity)" ^
+"                g_UpdatedMaterialsCount = g_UpdatedMaterialsCount + 1" ^
+"            end" ^
+"        end" ^
 "        render.SetLightingOrigin(center)" ^
 "        if render.SetLightingUniformMatrix then" ^
 "            local mat = Matrix()" ^
@@ -238,6 +265,32 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command ^
 "            pcall(render.SetLightingUniformMatrix, mat)" ^
 "        end" ^
 "    end" ^
+"end)" ^
+"" ^
+"hook.Add('PostDrawTranslucentRenderables', 'VNPCS_GPU_Vore_Debug3D', function()" ^
+"    local dbg = GetConVar('vnpcs_gpu_vore_debug')" ^
+"    if not dbg or not dbg:GetBool() then return end" ^
+"    if not IsValid(g_ActivePredator) or g_VoreRadius <= 0 then return end" ^
+"    render.SetColorMaterial()" ^
+"    render.DrawWireframeSphere(g_VoreStomachCenter, g_VoreRadius, 16, 16, Color(255, 100, 255, 200), true)" ^
+"    render.DrawSphere(g_VoreStomachCenter, 4, 8, 8, Color(255, 255, 0, 255))" ^
+"end)" ^
+"" ^
+"concommand.Add('vnpcs_gpu_vore_status', function()" ^
+"    print('===============================================================')" ^
+"    print('         V-NPCs GPU VORE SHADER BRIDGE STATUS REPORT           ')" ^
+"    print('===============================================================')" ^
+"    print(' - Bridge Enabled: ' .. tostring(GetConVar('vnpcs_gpu_vore_shader_enabled'):GetBool()))" ^
+"    if IsValid(g_ActivePredator) then" ^
+"        print(' - Active Predator: ' .. tostring(g_ActivePredator) .. ' (' .. (g_ActivePredator.PrintName or g_ActivePredator:GetClass()) .. ')')" ^
+"        print(string.format(' - Stomach Center (World): %.2f, %.2f, %.2f', g_VoreStomachCenter.x, g_VoreStomachCenter.y, g_VoreStomachCenter.z))" ^
+"        print(string.format(' - Deformation Radius: %.2f units', g_VoreRadius))" ^
+"        print(string.format(' - Deformation Intensity: %.2f', g_VoreIntensity))" ^
+"        print(' - Bound Materials Count: ' .. g_UpdatedMaterialsCount)" ^
+"    else" ^
+"        print(' - Active Predator: NONE currently in view/range')" ^
+"    end" ^
+"    print('===============================================================')" ^
 "end)" ^
 "print('[V-NPCs] GPU Vore Shader Bridge initialized.')" ^
 "'@; [System.IO.File]::WriteAllText('%BRIDGE_FILE%', $lua)"
