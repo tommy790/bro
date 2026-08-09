@@ -1610,6 +1610,10 @@ function VNPC_AnimatedBoneOffsets(ent)
     elseif ent.GetVelocity and ent:GetVelocity():Length2DSqr() > 25 then
         is_hunting_or_moving = true
     end
+    local is_armed = false
+    if ent.GetActiveWeapon and IsValid(ent:GetActiveWeapon()) then
+        is_armed = true
+    end
 
     for i = 0, boneCount - 1 do
         local boneName = ent:GetBoneName(i)
@@ -1635,8 +1639,14 @@ function VNPC_AnimatedBoneOffsets(ent)
         end
 
         local is_leg_or_pelvis = boneName:find("Pelvis") or boneName:find("Thigh") or boneName:find("Calf") or boneName:find("Foot") or boneName:find("Leg") or boneName:find("leg") or boneName:find("thigh") or boneName:find("calf") or boneName:find("foot") or boneName:find("pelvis")
+        local is_torso_or_arm = boneName:find("Spine") or boneName:find("Clavicle") or boneName:find("UpperArm") or boneName:find("Forearm") or boneName:find("Hand") or boneName:find("spine") or boneName:find("clavicle") or boneName:find("arm") or boneName:find("hand")
         local allow_legs = GetConVar("vnpcs_bone_pose_legs")
+
         if is_leg_or_pelvis and (is_hunting_or_moving or not (allow_legs and allow_legs:GetBool())) then
+            tgtPos, tgtAng = vector_origin, angle_zero
+        elseif phase == 0 then
+            tgtPos, tgtAng = vector_origin, angle_zero
+        elseif is_torso_or_arm and (is_hunting_or_moving or is_armed) then
             tgtPos, tgtAng = vector_origin, angle_zero
         end
 
