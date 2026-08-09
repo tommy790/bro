@@ -577,15 +577,28 @@ hook.Add("Think", "VNPC_FemaleModelVore_AI", function()
 
         -- Target enemy if present
         local enemy = npc:GetEnemy()
+        local prefer_swallow = GetConVar("vnpcs_ai_prefer_swallowing")
         if IsValid(enemy) and enemy ~= npc and not enemy.Vored then
             local dist = npc:GetPos():Distance(enemy:GetPos())
             local battle_grab = math.max(130, eff_grab * 1.5)
             if dist <= battle_grab then
+                if npc.CapabilitiesAdd and npc.VNPC_RemovedRangeAttack then
+                    pcall(npc.CapabilitiesAdd, npc, CAP_WEAPON_RANGE_ATTACK1)
+                    npc.VNPC_RemovedRangeAttack = nil
+                end
                 npc:EatEntity(enemy)
             elseif dist <= eff_detect then
+                if prefer_swallow and prefer_swallow:GetBool() and npc.CapabilitiesRemove then
+                    pcall(npc.CapabilitiesRemove, npc, CAP_WEAPON_RANGE_ATTACK1)
+                    npc.VNPC_RemovedRangeAttack = true
+                end
                 if npc.SetSchedule then pcall(npc.SetSchedule, npc, SCHED_CHASE_ENEMY) end
             end
         else
+            if npc.CapabilitiesAdd and npc.VNPC_RemovedRangeAttack then
+                pcall(npc.CapabilitiesAdd, npc, CAP_WEAPON_RANGE_ATTACK1)
+                npc.VNPC_RemovedRangeAttack = nil
+            end
             if pers_data and pers_data.only_enemies then continue end
             -- Search for nearby hostile target or corpses
             for _, ent in ipairs(ents.FindInSphere(npc:GetPos(), eff_detect)) do
@@ -596,6 +609,10 @@ hook.Add("Think", "VNPC_FemaleModelVore_AI", function()
                             break
                         elseif npc.SetEnemy then
                             pcall(npc.SetEnemy, npc, ent)
+                            if prefer_swallow and prefer_swallow:GetBool() and npc.CapabilitiesRemove then
+                                pcall(npc.CapabilitiesRemove, npc, CAP_WEAPON_RANGE_ATTACK1)
+                                npc.VNPC_RemovedRangeAttack = true
+                            end
                             if npc.SetSchedule then pcall(npc.SetSchedule, npc, SCHED_CHASE_ENEMY) end
                             break
                         end
@@ -612,6 +629,7 @@ hook.Add("Think", "VNPC_FemaleModelVore_AI", function()
     end
 end)
 
+CreateConVar("vnpcs_ai_prefer_swallowing", "1", {FCVAR_REPLICATED, FCVAR_ARCHIVE}, "Make predator NPCs prefer rushing to swallow enemies over standing and shooting ranged weapons")
 CreateConVar("vnpcs_battle_prefer_vore", "1", {FCVAR_REPLICATED, FCVAR_ARCHIVE}, "Make predators prefer swallowing over shooting to kill in battles")
 
 hook.Add("EntityTakeDamage", "VNPC_Battle_PreferVore", function(target, dmginfo)
