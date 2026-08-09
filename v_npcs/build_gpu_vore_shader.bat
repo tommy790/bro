@@ -75,17 +75,16 @@ if exist "!GMOD_DIR!\bin\fxc.exe" (
     copy /y "!GMOD_DIR!\bin\fxc.exe" "%FXC_EXE%" >nul
     if exist "!GMOD_DIR!\bin\d3dx9_*.dll" copy /y "!GMOD_DIR!\bin\d3dx9_*.dll" "%WORKSPACE%\" >nul
     if exist "!GMOD_DIR!\bin\d3dcompiler_*.dll" copy /y "!GMOD_DIR!\bin\d3dcompiler_*.dll" "%WORKSPACE%\" >nul
-) else (
+) else if exist "!GMOD_DIR!\bin\win64\fxc.exe" (
+    echo [%COLOR_GREEN%SUCCESS%COLOR_RESET%] Found local Source Engine fxc.exe in Game bin\win64 directory.
+    copy /y "!GMOD_DIR!\bin\win64\fxc.exe" "%FXC_EXE%" >nul
+    if exist "!GMOD_DIR!\bin\win64\d3dx9_*.dll" copy /y "!GMOD_DIR!\bin\win64\d3dx9_*.dll" "%WORKSPACE%\" >nul
+    if exist "!GMOD_DIR!\bin\win64\d3dcompiler_*.dll" copy /y "!GMOD_DIR!\bin\win64\d3dcompiler_*.dll" "%WORKSPACE%\" >nul
+)
+
+if not exist "%FXC_EXE%" (
     echo [%COLOR_YELLOW%INFO%COLOR_RESET%] Extracting standalone Windows SDK FXC compiler via PowerShell...
-    powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-        "$fxcPath = '%WORKSPACE%\fxc.exe';" ^
-        "if (!(Test-Path $fxcPath)) {" ^
-        "    $sdkDir = 'C:\Program Files (x86)\Windows Kits\10\bin';" ^
-        "    if (Test-Path $sdkDir) {" ^
-        "        $sdkFxc = (Get-ChildItem -Path $sdkDir -Filter 'fxc.exe' -Recurse -ErrorAction SilentlyContinue | Where-Object { $_.FullName -like '*x86*' } | Select-Object -First 1);" ^
-        "        if ($sdkFxc) { Copy-Item $sdkFxc.FullName $fxcPath -Force -ErrorAction SilentlyContinue; }" ^
-        "    }" ^
-        "}"
+    call :ExtractSDKFxc "%FXC_EXE%"
     if not exist "%FXC_EXE%" (
         echo [%COLOR_YELLOW%WARN%COLOR_RESET%] fxc.exe not found in SDK. Generating standalone Source Engine shader stub...
         echo // Source Engine compiled shader stub > "%WORKSPACE%\stub.txt"
@@ -333,3 +332,11 @@ pause >nul
 echo [%COLOR_CYAN%LAUNCH%COLOR_RESET%] Launching Garry's Mod via Steam (steam://run/4000) ...
 start "" "steam://run/4000"
 exit /b 0
+
+:: ==============================================================================
+:: SUBROUTINE: Extract Windows SDK fxc.exe without batch block parser conflicts
+:: ==============================================================================
+:ExtractSDKFxc
+set "TARGET_FXC=%~1"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$sdk = (Get-ChildItem -Path $env:ProgramFiles, ${env:ProgramFiles(x86)} -ErrorAction SilentlyContinue | Where-Object { $_.Name -eq 'Windows Kits' } | ForEach-Object { Get-ChildItem -Path ($_.FullName + '\10\bin') -Filter 'fxc.exe' -Recurse -ErrorAction SilentlyContinue }) | Where-Object { $_.FullName -like '*x86*' } | Select-Object -First 1; if ($sdk) { Copy-Item $sdk.FullName '%TARGET_FXC%' -Force }"
+goto :eof
