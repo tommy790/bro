@@ -86,6 +86,106 @@ function ENT:ChangeDigestionPhase(new) --this is here just for the hook
     self:OnDigestionPhaseChanged(new, old)
 end
 
+function VNPC_SwallowAttachedEntities(belly, prey)
+    if not IsValid(belly) or not IsValid(prey) then return end
+
+    local preyBelly = prey.VNPC_Belly or prey.Belly or prey.belly
+    if IsValid(preyBelly) and preyBelly ~= belly then
+        preyBelly.VNPC_OriginalParent = prey
+        preyBelly:SetNoDraw(true)
+        preyBelly:SetSolid(SOLID_NONE)
+        preyBelly:SetMoveType(MOVETYPE_NONE)
+        preyBelly:SetParent(belly)
+        if VNPCS_BellyRT and VNPCS_BellyRT.MarkDirty then
+            pcall(VNPCS_BellyRT.MarkDirty, preyBelly)
+        end
+    end
+
+    if prey.GetActiveWeapon then
+        local wep = prey:GetActiveWeapon()
+        if IsValid(wep) then
+            wep.VNPC_OriginalParent = prey
+            wep:SetNoDraw(true)
+            wep:SetSolid(SOLID_NONE)
+            wep:SetMoveType(MOVETYPE_NONE)
+            wep:SetParent(belly)
+        end
+    end
+    if prey.GetWeapons then
+        for _, wep in ipairs(prey:GetWeapons() or {}) do
+            if IsValid(wep) then
+                wep.VNPC_OriginalParent = prey
+                wep:SetNoDraw(true)
+                wep:SetSolid(SOLID_NONE)
+                wep:SetMoveType(MOVETYPE_NONE)
+                wep:SetParent(belly)
+            end
+        end
+    end
+
+    if prey.GetChildren then
+        for _, child in ipairs(prey:GetChildren() or {}) do
+            if IsValid(child) and child ~= belly then
+                child.VNPC_OriginalParent = prey
+                child:SetNoDraw(true)
+                child:SetSolid(SOLID_NONE)
+                child:SetMoveType(MOVETYPE_NONE)
+                child:SetParent(belly)
+            end
+        end
+    end
+end
+
+function VNPC_RegurgitateAttachedEntities(belly, prey)
+    if not IsValid(belly) or not IsValid(prey) then return end
+
+    local preyBelly = prey.VNPC_Belly or prey.Belly or prey.belly
+    if IsValid(preyBelly) and preyBelly:GetParent() == belly then
+        preyBelly:SetParent(prey)
+        preyBelly:SetNoDraw(false)
+        if VNPCS_BellyRT and VNPCS_BellyRT.MarkDirty then
+            pcall(VNPCS_BellyRT.MarkDirty, preyBelly)
+        end
+    end
+
+    if prey.GetActiveWeapon then
+        local wep = prey:GetActiveWeapon()
+        if IsValid(wep) and wep:GetParent() == belly then
+            wep:SetParent(prey)
+            wep:SetNoDraw(false)
+        end
+    end
+    if prey.GetWeapons then
+        for _, wep in ipairs(prey:GetWeapons() or {}) do
+            if IsValid(wep) and wep:GetParent() == belly then
+                wep:SetParent(prey)
+                wep:SetNoDraw(false)
+            end
+        end
+    end
+
+    if belly.GetChildren then
+        for _, child in ipairs(belly:GetChildren() or {}) do
+            if IsValid(child) and child.VNPC_OriginalParent == prey then
+                child:SetParent(prey)
+                child:SetNoDraw(false)
+                child.VNPC_OriginalParent = nil
+            end
+        end
+    end
+end
+
+function VNPC_RemoveAttachedEntities(belly, prey)
+    if not IsValid(belly) or not prey then return end
+    if belly.GetChildren then
+        for _, child in ipairs(belly:GetChildren() or {}) do
+            if IsValid(child) and child.VNPC_OriginalParent == prey then
+                child:Remove()
+            end
+        end
+    end
+end
+
 function ENT:AddPrey(prey)
     if table.HasValue(self.Prey, prey) then return false end
     if prey.Vored then return false end
@@ -125,7 +225,6 @@ function ENT:AddPrey(prey)
 
     if is_npc then
         prey:SetSchedule(SCHED_NPC_FREEZE)
-        prey:DropWeapon()
         prey:SetEnemy(nil)
     end
 
@@ -138,6 +237,8 @@ function ENT:AddPrey(prey)
             aka if a player is under the map or out of bounds entities arent rendered and sometimes players do that when they get parented so ya
         ]]
     end
+
+    VNPC_SwallowAttachedEntities(self, prey)
 
     if prey:Health() < 25 then --fix for objects/npcs getting instantly digested, uhhhh super binary and hardcoded
         prey:SetHealth(25)
@@ -329,6 +430,7 @@ function ENT:AbsorbSpecificPrey(index)
     if IsValid(prey) then
         --prey:SetParent(nil)
         prey.Vored = false
+        VNPC_RemoveAttachedEntities(self, prey)
         prey:Remove()
     end
     self.Prey[index].Entity = nil
@@ -431,6 +533,7 @@ function ENT:Regurgitate(index)
     prey:SetVelocity(Vector(0,0,0))
     prey:SetParent(nil)
     prey:SetNoDraw(false)
+    VNPC_RegurgitateAttachedEntities(self, prey)
 
     SetFlags(prey, info.OldFlags)
 
