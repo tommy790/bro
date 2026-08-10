@@ -38,6 +38,15 @@ function VNPC_StartRegurgitationAnimation(pred, prey, belly)
                 end
             end)
         end
+        if VNPC_ApplyEsophagusBulge and VNPC_ResetEsophagusBulge then
+            VNPC_ApplyEsophagusBulge(pred, 0.50)
+            timer.Simple(0.35, function()
+                if IsValid(pred) then VNPC_ApplyEsophagusBulge(pred, 0.15) end
+            end)
+            timer.Simple(0.75, function()
+                if IsValid(pred) then VNPC_ResetEsophagusBulge(pred) end
+            end)
+        end
     end
 
     prey:SetPos(origin)

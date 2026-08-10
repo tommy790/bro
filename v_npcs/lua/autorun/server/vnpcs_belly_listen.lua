@@ -32,6 +32,8 @@ function VNPC_StartBellyListening(ply, pred)
     ply.VNPC_IsListeningToBelly = pred
     pred.VNPC_BellyListener = ply
     ply.VNPC_NextListenSoundTime = 0
+    ply.VNPC_ListenDuration = 0
+    pred.VNPC_LullabyPurrActive = false
 
     ply:ChatPrint("[V-NPCs] You press your ear against " .. pred:GetClass() .. "'s warm belly... Listening to internal stomach acoustics!")
 
@@ -46,8 +48,12 @@ function VNPC_StopBellyListening(ply, quiet)
     if not IsValid(ply) then return end
     local pred = ply.VNPC_IsListeningToBelly
     ply.VNPC_IsListeningToBelly = nil
-    if IsValid(pred) and pred.VNPC_BellyListener == ply then
-        pred.VNPC_BellyListener = nil
+    ply.VNPC_ListenDuration = 0
+    if IsValid(pred) then
+        pred.VNPC_LullabyPurrActive = false
+        if pred.VNPC_BellyListener == ply then
+            pred.VNPC_BellyListener = nil
+        end
     end
     if not quiet and IsValid(ply) then
         ply:ChatPrint("[V-NPCs] You stop listening to the predator's belly.")
@@ -99,22 +105,34 @@ hook.Add("Think", "VNPC_BellyListen_ActiveLoop", function()
             continue
         end
 
+        -- Lullaby Purr check (8+ seconds of continuous listening)
+        ply.VNPC_ListenDuration = (ply.VNPC_ListenDuration or 0) + 0.5
+        local isLullaby = (ply.VNPC_ListenDuration >= 8.0)
+        if isLullaby and not pred.VNPC_LullabyPurrActive then
+            pred.VNPC_LullabyPurrActive = true
+            ply:ChatPrint("[V-NPCs] " .. pred:GetClass() .. " begins a contented Lullaby Purr... Comfort healing doubled (+4 HP/s) and prey struggle soothed!")
+            if pred.EmitSound then
+                pred:EmitSound("vore_stomach/absorption_loop1.wav", 75, 110)
+            end
+        end
+        local healRateEff = healRate * (pred.VNPC_LullabyPurrActive and 2.0 or 1.0)
+
         -- Comfort health regeneration for both listener and predator
         if (ply.VNPC_NextListenHealTime or 0) <= now then
             ply.VNPC_NextListenHealTime = now + 0.5
             local pMax = ply:GetMaxHealth() or 100
             if ply:Health() < pMax then
-                ply:SetHealth(math.min(pMax, ply:Health() + healRate))
+                ply:SetHealth(math.min(pMax, ply:Health() + healRateEff))
             end
             local eMax = pred:GetMaxHealth() or 100
             if pred:Health() < eMax then
-                pred:SetHealth(math.min(eMax, pred:Health() + healRate))
+                pred:SetHealth(math.min(eMax, pred:Health() + healRateEff))
             end
         end
 
         -- Periodic high-fidelity internal stomach acoustics
         if (ply.VNPC_NextListenSoundTime or 0) <= now then
-            ply.VNPC_NextListenSoundTime = now + listen_interval:GetFloat()
+            ply.VNPC_NextListenSoundTime = now + (pred.VNPC_LullabyPurrActive and (listen_interval:GetFloat() * 0.75) or listen_interval:GetFloat())
             local sounds = {
                 "vore_stomach/digestion_loop1.wav",
                 "vore_stomach/absorption_loop1.wav",

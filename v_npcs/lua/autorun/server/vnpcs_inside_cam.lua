@@ -45,6 +45,9 @@ net.Receive("VNPC_StrugglePunch", function(len, ply)
     -- Deal internal struggle damage non-lethally down to 30 HP
     if pred:Health() > 30 then
         local dmg = punch_damage:GetFloat() * (hitScore == 2 and 1.0 or 0.5)
+        if pred.VNPC_LullabyPurrActive then
+            dmg = dmg * 0.5 -- Lullaby Purr soothes struggling prey!
+        end
         pred:TakeDamage(dmg, ply, ply)
     end
 

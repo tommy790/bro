@@ -205,6 +205,44 @@ function VNPC_StartIngestionAnimation(pred, prey, belly)
     return true
 end
 
+function VNPC_ResetEsophagusBulge(pred)
+    if not IsValid(pred) or not pred.LookupBone or not pred.ManipulateBoneScale then return end
+    local neckBone = pred:LookupBone("ValveBiped.Bip01_Neck1") or pred:LookupBone("Neck1") or pred:LookupBone("neck")
+    local chestBone = pred:LookupBone("ValveBiped.Bip01_Spine2") or pred:LookupBone("Spine2") or pred:LookupBone("spine2")
+    if neckBone then
+        pred:ManipulateBoneScale(neckBone, Vector(1, 1, 1))
+    end
+    if chestBone then
+        pred:ManipulateBoneScale(chestBone, Vector(1, 1, 1))
+    end
+end
+
+function VNPC_ApplyEsophagusBulge(pred, tNorm)
+    if not IsValid(pred) or not pred.LookupBone or not pred.ManipulateBoneScale then return end
+    local neckBone = pred:LookupBone("ValveBiped.Bip01_Neck1") or pred:LookupBone("Neck1") or pred:LookupBone("neck")
+    local chestBone = pred:LookupBone("ValveBiped.Bip01_Spine2") or pred:LookupBone("Spine2") or pred:LookupBone("spine2")
+
+    if tNorm >= 0.05 and tNorm < 0.38 then
+        -- Wave passing Neck/Throat
+        if neckBone then
+            pred:ManipulateBoneScale(neckBone, Vector(1.35, 1.35, 1.10))
+        end
+        if chestBone then
+            pred:ManipulateBoneScale(chestBone, Vector(1, 1, 1))
+        end
+    elseif tNorm >= 0.38 and tNorm < 0.75 then
+        -- Wave passing Chest/Upper Esophagus
+        if neckBone then
+            pred:ManipulateBoneScale(neckBone, Vector(1, 1, 1))
+        end
+        if chestBone then
+            pred:ManipulateBoneScale(chestBone, Vector(1.40, 1.35, 1.25))
+        end
+    else
+        VNPC_ResetEsophagusBulge(pred)
+    end
+end
+
 hook.Add("Think", "VNPCS_IngestionAnimation_Loop", function()
     local enabled = GetConVar("vnpcs_ingestion_animation")
     if enabled and not enabled:GetBool() then return end
@@ -222,6 +260,9 @@ hook.Add("Think", "VNPCS_IngestionAnimation_Loop", function()
                 resetAllBoneScales(prey)
                 prey:SetNoDraw(true)
                 prey.VNPC_IsBeingSwallowed = false
+            end
+            if IsValid(pred) then
+                VNPC_ResetEsophagusBulge(pred)
             end
             table.remove(activeIngestions, i)
             continue
@@ -246,6 +287,7 @@ hook.Add("Think", "VNPCS_IngestionAnimation_Loop", function()
         end
 
         VNPC_AnimatePreyStruggling(prey, anim.stage, tNorm, pred.VNPC_AssignedMoveset)
+        VNPC_ApplyEsophagusBulge(pred, tNorm)
 
         -- STAGE 1 (tNorm >= 0.05): Head enters mouth -> Deflate head & neck bones so there is zero clipping!
         if tNorm >= 0.05 and anim.stage < 1 then
@@ -288,6 +330,7 @@ hook.Add("Think", "VNPCS_IngestionAnimation_Loop", function()
             if pred.SetFacialExpression then
                 pcall(pred.SetFacialExpression, pred, 2) -- Full Belly face!
             end
+            VNPC_ResetEsophagusBulge(pred)
 
             table.remove(activeIngestions, i)
         end
