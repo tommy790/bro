@@ -271,9 +271,13 @@ hook.Add("Think", "VNPCS_IngestionAnimation_Loop", function()
         -- STAGE 4 (tNorm >= 1.00): Ingestion complete! Store prey inside belly and reset bone manipulations!
         if tNorm >= 1.00 then
             resetAllBoneManipulations(prey)
-            prey:SetNoDraw(true)
-            prey:SetParent(belly)
-            prey:SetPos(belly:GetPos())
+            if VNPC_HideSwallowedPrey then
+                VNPC_HideSwallowedPrey(prey, belly)
+            else
+                prey:SetNoDraw(true)
+                prey:SetParent(belly)
+                prey:SetPos(belly:GetPos())
+            end
             prey.VNPC_IsBeingSwallowed = false
             prey.VNPC_IngestionDepth = 1.0
 

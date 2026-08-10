@@ -89,6 +89,57 @@ function ENT:ChangeDigestionPhase(new) --this is here just for the hook
     self:OnDigestionPhaseChanged(new, old)
 end
 
+function VNPC_HideSwallowedPrey(prey, belly)
+    if not IsValid(prey) then return end
+    prey:SetNoDraw(true)
+    prey:AddEffects(EF_NODRAW)
+    prey:SetRenderMode(RENDERMODE_NONE)
+    prey:SetColor(Color(0, 0, 0, 0))
+    prey:DrawShadow(false)
+    prey:SetSolid(SOLID_NONE)
+    prey:SetMoveType(MOVETYPE_NONE)
+    if IsValid(belly) and not prey:IsPlayer() then
+        prey:SetPos(belly:GetPos())
+        prey:SetParent(belly)
+    end
+end
+
+function VNPC_UnhideRegurgitatedPrey(prey)
+    if not IsValid(prey) then return end
+    prey:SetNoDraw(false)
+    prey:RemoveEffects(EF_NODRAW)
+    prey:SetRenderMode(RENDERMODE_NORMAL)
+    prey:SetColor(Color(255, 255, 255, 255))
+    prey:DrawShadow(true)
+end
+
+hook.Add("Think", "VNPCS_SwallowedPrey_SafetyLoop", function()
+    local now = CurTime()
+    if (VNPC_NextPreySafetyThink or 0) > now then return end
+    VNPC_NextPreySafetyThink = now + 0.5
+
+    for _, belly in ipairs(ents.GetAll()) do
+        if IsValid(belly) and belly.Prey and istable(belly.Prey) then
+            for _, info in ipairs(belly.Prey) do
+                local prey = info.Entity
+                if IsValid(prey) and not prey.VNPC_IsBeingSwallowed then
+                    prey:SetNoDraw(true)
+                    prey:AddEffects(EF_NODRAW)
+                    prey:SetRenderMode(RENDERMODE_NONE)
+                    prey:SetColor(Color(0, 0, 0, 0))
+                    prey:DrawShadow(false)
+                    prey:SetSolid(SOLID_NONE)
+                    prey:SetMoveType(MOVETYPE_NONE)
+                    if not prey:IsPlayer() and prey:GetParent() ~= belly then
+                        prey:SetParent(belly)
+                        prey:SetPos(belly:GetPos())
+                    end
+                end
+            end
+        end
+    end
+end)
+
 function VNPC_SwallowAttachedEntities(belly, prey)
     if not IsValid(belly) or not IsValid(prey) then return end
 
@@ -227,7 +278,7 @@ function ENT:AddPrey(prey)
     prey:SetMoveType(MOVETYPE_NONE)
     prey:AddEFlags(EFL_NOCLIP_ACTIVE)
     prey:AddFlags(FL_NOTARGET)
-    prey:SetNoDraw(true)
+    VNPC_HideSwallowedPrey(prey, self)
 
     if is_npc then
         prey:SetSchedule(SCHED_NPC_FREEZE)
@@ -542,7 +593,7 @@ function ENT:Regurgitate(index)
 
     prey:SetVelocity(Vector(0,0,0))
     prey:SetParent(nil)
-    prey:SetNoDraw(false)
+    VNPC_UnhideRegurgitatedPrey(prey)
     VNPC_RegurgitateAttachedEntities(self, prey)
 
     SetFlags(prey, info.OldFlags)
