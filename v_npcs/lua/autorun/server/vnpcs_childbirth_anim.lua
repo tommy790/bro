@@ -5,6 +5,13 @@ local growth_rate = CreateConVar("vnpcs_prey_camp_baby_growth_rate", "1.0", {FCV
 local child_grow_time = CreateConVar("vnpcs_prey_camp_child_grow_time", "60.0", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Duration in seconds for a born baby citizen to grow from 0.35 to full size 1.0")
 local childbirth_enabled = CreateConVar("vnpcs_childbirth_anim_enabled", "1", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Enable sitting childbirth bone pose animation and pregnancy belly bulge")
 
+function VNPC_IsProtectedChildPrey(ent)
+    if not IsValid(ent) then return false end
+    if ent.VNPC_IsUnbornBaby or ent.VNPC_IsGrowingBaby or ent.VNPC_ProtectedChild then return true end
+    if ent.VNPC_PreyCampID and (ent:GetModelScale() or 1) < 0.95 then return true end
+    return false
+end
+
 VNPC_ChildbirthSittingPoseKeyframe = {
     ["ValveBiped.Bip01_Head1"] = { pos = Vector(0, 0, 0), ang = Angle(15, 0, 0) },
     ["ValveBiped.Bip01_Spine"] = { pos = Vector(0, 0, 0), ang = Angle(-12, 0, 0) },
@@ -106,6 +113,7 @@ function VNPC_StartChildbirthAnimation(mother, child, camp)
 
         child.VNPC_IsUnbornBaby = nil
         child.VNPC_IsGrowingBaby = true
+        child.VNPC_ProtectedChild = true
         child.VNPC_BabyBirthTime = CurTime()
         child.VNPC_BabyGrowDuration = child_grow_time:GetFloat()
 
@@ -158,6 +166,7 @@ hook.Add("Think", "VNPC_BabyCitizenGrowth_Loop", function()
             if tNorm >= 1.00 then
                 ent:SetModelScale(1.0, 0)
                 ent.VNPC_IsGrowingBaby = nil
+                ent.VNPC_ProtectedChild = nil
                 if ent.EmitSound then
                     ent:EmitSound("npc/citizen/vo/readytohelp.wav", 80, 105)
                 end

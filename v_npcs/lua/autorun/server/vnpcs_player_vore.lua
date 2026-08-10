@@ -94,6 +94,11 @@ concommand.Add("vnpcs_player_swallow", function(ply)
         return
     end
 
+    if VNPC_IsProtectedChildPrey and VNPC_IsProtectedChildPrey(target) then
+        ply:ChatPrint("[V-NPCs] You cannot swallow a growing baby citizen!")
+        return
+    end
+
     -- Swallow the target into player's belly!
     if belly.AddPrey and belly:AddPrey(target) then
         ply:EmitSound("gulps/g" .. math.random(1, 10) .. ".wav", 85, math.random(95, 105))
