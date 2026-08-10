@@ -83,7 +83,9 @@ function VNPC_PredatorCampMatesGreeting_AI(camp, now)
         local predPos = pred:GetPos()
         for _, male in ipairs(nearbyMales) do
             if predPos:DistToSqr(male:GetPos()) <= (250 * 250) then
-                pred.VNPC_NextMateHelloTime = now + 20.0
+                local pers, _ = VNPC_GetPredatorPersonality and VNPC_GetPredatorPersonality(pred) or "opportunistic"
+                local isLoving = (string.lower(tostring(pers or "")) == "loving")
+                pred.VNPC_NextMateHelloTime = now + (isLoving and 10.0 or 20.0)
 
                 if pred.EmitSound then
                     local helloSounds = {
@@ -98,7 +100,11 @@ function VNPC_PredatorCampMatesGreeting_AI(camp, now)
                 end
 
                 for _, p in ipairs(player.GetAll()) do
-                    p:ChatPrint("[V-NPCs] " .. pred:GetClass() .. " says hello to " .. (male.PrintName or male:GetClass()) .. " at Predator Camp #" .. camp.id .. "!")
+                    if isLoving then
+                        p:ChatPrint("[V-NPCs] LOVING PREDATOR! " .. pred:GetClass() .. " smiles affectionately and says hello to " .. (male.PrintName or male:GetClass()) .. " at Predator Camp #" .. camp.id .. "!")
+                    else
+                        p:ChatPrint("[V-NPCs] " .. pred:GetClass() .. " says hello to " .. (male.PrintName or male:GetClass()) .. " at Predator Camp #" .. camp.id .. "!")
+                    end
                 end
                 break
             end

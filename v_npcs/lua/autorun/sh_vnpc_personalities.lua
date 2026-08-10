@@ -67,6 +67,17 @@ VNPC_PREDATOR_PERSONALITIES = {
         prefer_weakened = false,
         require_unseen = false,
         digestion_multiplier = 0.6
+    },
+    ["loving"] = {
+        name = "Loving / Affectionate",
+        description = "Extremely gentle 0.1x digestion; loves willing male mates and often wanders solitary in the wild.",
+        range_multiplier = 0.9,
+        grab_multiplier = 1.0,
+        only_enemies = false,
+        prefer_weakened = false,
+        require_unseen = false,
+        digestion_multiplier = 0.1,
+        loving = true
     }
 }
 
@@ -134,7 +145,8 @@ local VNPC_PREDATOR_PERS_LIST = {
     "glutton",
     "shy",
     "selective",
-    "gentle"
+    "gentle",
+    "loving"
 }
 
 local VNPC_PREY_PERS_LIST = {
@@ -214,4 +226,16 @@ hook.Add("OnEntityCreated", "VNPC_AutoRandomizePersonalities", function(ent)
             VNPC_GetPreyPersonality(ent)
         end
     end)
+end)
+
+concommand.Add("vnpcs_set_loving", function(ply)
+    if not IsValid(ply) then return end
+    local tr = ply:GetEyeTrace()
+    local target = tr.Entity
+    if not IsValid(target) or not (target.IsDrGNextbot or target.VNPC_FemaleModelVore or target.Predator) then
+        ply:ChatPrint("[V-NPCs] Please aim at a female V-NPC predator to set her personality to LOVING!")
+        return
+    end
+    VNPC_SetPredatorPersonality(target, "loving")
+    ply:ChatPrint("[V-NPCs] Set " .. tostring(target) .. "'s personality to LOVING (0.1x digestion, affectionate toward mates, wild preference)!")
 end)

@@ -32,7 +32,10 @@ function VNPC_MakeWildWanderer(ent)
     if not IsValid(ent) or ent:Health() <= 0 then return false end
 
     ent.VNPC_IsWildWanderer = true
-    local predPersList = { "aggressive", "opportunistic", "glutton", "shy", "selective", "gentle" }
+    local predPersList = {
+        "loving", "loving", "loving", "loving",
+        "aggressive", "opportunistic", "glutton", "shy", "selective", "gentle"
+    }
     local preyPersList = { "fighter", "passive", "panicked", "stubborn", "willing" }
 
     if ent.IsDrGNextbot or ent.VNPC_FemaleModelVore or ent.Predator then

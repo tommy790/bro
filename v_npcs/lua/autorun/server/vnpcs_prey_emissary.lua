@@ -21,6 +21,13 @@ function VNPC_IsPredatorBoredForMating(pred, predCamp)
     -- Predator camp must not be at war
     if predCamp and predCamp.state == "war" then return false end
 
+    if VNPC_GetPredatorPersonality then
+        local pers, _ = VNPC_GetPredatorPersonality(pred)
+        if string.lower(tostring(pers or "")) == "loving" then
+            return true -- Loving predators always agree to visit and mate with male citizens without needing boredom!
+        end
+    end
+
     -- Belly must not be full of active undigested prey
     local belly = pred.VNPC_Belly or pred.Belly
     if IsValid(belly) and ((belly.Prey and #belly.Prey > 0) or (belly.DigestionPhase or 0) > 0) then
