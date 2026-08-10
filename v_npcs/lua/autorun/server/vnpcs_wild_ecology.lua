@@ -5,6 +5,9 @@ local ecology_enabled = CreateConVar("vnpcs_wild_ecology_enabled", "1", {FCVAR_A
 local wild_chance = CreateConVar("vnpcs_wild_spawn_chance", "25", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Percentage chance that an unassigned NPC becomes a Wild Wanderer instead of joining a camp")
 local pred_danger = CreateConVar("vnpcs_wild_pred_danger_scale", "1.35", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Health and combat danger multiplier for wild solitary predators")
 local recon_range = CreateConVar("vnpcs_prey_agent_recon_range", "900.0", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Distance within which an Intelligence Agent discovers a predator camp or wild hotspot")
+local spawner_interval = CreateConVar("vnpcs_wild_spawner_interval", "20.0", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Interval in seconds between spawning wild wandering NPCs in the map")
+local max_wild_prey = CreateConVar("vnpcs_wild_max_prey", "12", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Maximum number of active wild wandering prey NPCs in the map")
+local max_wild_preds = CreateConVar("vnpcs_wild_max_preds", "4", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Maximum number of active wild wandering solitary predators in the map")
 
 VNPC_WildPredatorHotspots = VNPC_WildPredatorHotspots or {}
 VNPC_ActiveWildWanderers = VNPC_ActiveWildWanderers or {}
@@ -50,6 +53,90 @@ function VNPC_MakeWildWanderer(ent)
     end
 
     return true
+end
+
+function VNPC_FindWildernessSpawnPos()
+    local players = player.GetAll()
+    local origin = Vector(0, 0, 0)
+    if #players > 0 and IsValid(players[1]) then
+        origin = players[1]:GetPos()
+    end
+
+    for attempt = 1, 10 do
+        local angle = math.rad(math.random(0, 360))
+        local dist = math.random(1300, 2600)
+        local candidatePos = origin + Vector(math.cos(angle) * dist, math.sin(angle) * dist, 100)
+
+        -- Ensure minimum distance from all camps and players
+        local tooClose = false
+        for _, camp in ipairs(VNPC_ActivePredatorCamps or {}) do
+            if camp.pos and candidatePos:DistToSqr(camp.pos) < (1100 * 1100) then
+                tooClose = true
+                break
+            end
+        end
+        if not tooClose then
+            for _, camp in ipairs(VNPC_ActivePreyCamps or {}) do
+                if camp.pos and candidatePos:DistToSqr(camp.pos) < (1100 * 1100) then
+                    tooClose = true
+                    break
+                end
+            end
+        end
+        if not tooClose then
+            for _, p in ipairs(players) do
+                if IsValid(p) and candidatePos:DistToSqr(p:GetPos()) < (1000 * 1000) then
+                    tooClose = true
+                    break
+                end
+            end
+        end
+
+        if not tooClose then
+            local tr = util.TraceLine({
+                start = candidatePos,
+                endpos = candidatePos - Vector(0, 0, 400),
+                mask = MASK_SOLID_BRUSHONLY
+            })
+            if tr.Hit and tr.HitNormal.z > 0.6 then
+                return tr.HitPos + Vector(0, 0, 10)
+            end
+        end
+    end
+    return nil
+end
+
+function VNPC_SpawnWildNPC(isPredator, posOverride)
+    if not ecology_enabled:GetBool() then return nil end
+    local spawnPos = posOverride or VNPC_FindWildernessSpawnPos()
+    if not spawnPos then return nil end
+
+    local ent = nil
+    if isPredator then
+        ent = ents.Create("npc_citizen")
+        if IsValid(ent) then
+            ent:SetModel("models/Humans/Group01/Female_01.mdl")
+            ent:SetPos(spawnPos)
+            ent:SetAngles(Angle(0, math.random(0, 360), 0))
+            ent:Spawn()
+            ent:Activate()
+            if VNPC_GiveFemaleModelVore then
+                VNPC_GiveFemaleModelVore(ent)
+            end
+            VNPC_MakeWildWanderer(ent)
+        end
+    else
+        local preyClasses = { "npc_citizen", "npc_headcrab", "npc_vortigaunt" }
+        ent = ents.Create(preyClasses[math.random(1, #preyClasses)])
+        if IsValid(ent) then
+            ent:SetPos(spawnPos)
+            ent:SetAngles(Angle(0, math.random(0, 360), 0))
+            ent:Spawn()
+            ent:Activate()
+            VNPC_MakeWildWanderer(ent)
+        end
+    end
+    return ent
 end
 
 function VNPC_AgentGatherIntelligence(agent, targetPos, targetType)
@@ -207,6 +294,22 @@ hook.Add("Think", "VNPC_WildEcology_AI_Loop", function()
             if ent.SetSchedule then pcall(ent.SetSchedule, ent, SCHED_FORCED_GO) end
         end
     end
+
+    if (VNPC_NextWildSpawnTime or 0) <= now then
+        VNPC_NextWildSpawnTime = now + spawner_interval:GetFloat()
+        local wPreds, wPrey = 0, 0
+        for _, w in ipairs(VNPC_ActiveWildWanderers) do
+            if IsValid(w) then
+                if w.VNPC_WildType == "predator" then wPreds = wPreds + 1 else wPrey = wPrey + 1 end
+            end
+        end
+        if wPrey < max_wild_prey:GetInt() then
+            VNPC_SpawnWildNPC(false, nil)
+        end
+        if wPreds < max_wild_preds:GetInt() then
+            VNPC_SpawnWildNPC(true, nil)
+        end
+    end
 end)
 
 concommand.Add("vnpcs_wild_ecology_status", function(ply)
@@ -261,4 +364,18 @@ concommand.Add("vnpcs_test_prey_agent", function(ply)
     target.VNPC_ReconTargetPos = target:GetPos() + Vector(math.random(-800,800), math.random(-800,800), 0)
     target:AddFlags(FL_NOTARGET)
     ply:ChatPrint("[V-NPCs] Assigned " .. tostring(target) .. " as an Intelligence Agent and dispatched on recon mission!")
+end)
+
+concommand.Add("vnpcs_test_spawn_wild_prey", function(ply)
+    if not IsValid(ply) then return end
+    local tr = ply:GetEyeTrace()
+    local ent = VNPC_SpawnWildNPC(false, tr.HitPos)
+    ply:ChatPrint("[V-NPCs] Spawned wild wandering prey: " .. tostring(ent) .. "!")
+end)
+
+concommand.Add("vnpcs_test_spawn_wild_pred", function(ply)
+    if not IsValid(ply) then return end
+    local tr = ply:GetEyeTrace()
+    local ent = VNPC_SpawnWildNPC(true, tr.HitPos)
+    ply:ChatPrint("[V-NPCs] Spawned dangerous wild solitary predator (1.35x HP/Resistance): " .. tostring(ent) .. "!")
 end)

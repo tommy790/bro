@@ -103,12 +103,6 @@ function VNPC_AssignPreyToCamp(npc)
     if not camps_enabled:GetBool() or not VNPC_IsEligiblePreyNPC(npc) then return nil end
     if npc.VNPC_IsWildWanderer then return nil end
 
-    if math.random(1, 100) <= (GetConVar("vnpcs_wild_spawn_chance") and GetConVar("vnpcs_wild_spawn_chance"):GetInt() or 25) then
-        if VNPC_MakeWildWanderer and VNPC_MakeWildWanderer(npc) then
-            return nil
-        end
-    end
-
     local current = VNPC_GetPreyCamp(npc)
     if current then return current end
 

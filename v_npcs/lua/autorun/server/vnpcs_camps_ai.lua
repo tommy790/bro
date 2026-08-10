@@ -68,12 +68,6 @@ function VNPC_AssignPredatorToCamp(pred)
     if not IsValid(pred) or pred:Health() <= 0 then return nil end
     if pred.VNPC_IsWildWanderer then return nil end
 
-    if math.random(1, 100) <= (GetConVar("vnpcs_wild_spawn_chance") and GetConVar("vnpcs_wild_spawn_chance"):GetInt() or 25) then
-        if VNPC_MakeWildWanderer and VNPC_MakeWildWanderer(pred) then
-            return nil
-        end
-    end
-
     local currentCamp = VNPC_GetPredatorCamp(pred)
     if currentCamp then return currentCamp end
 
