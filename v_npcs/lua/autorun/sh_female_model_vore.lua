@@ -1765,17 +1765,48 @@ end
 CreateConVar("vnpcs_random_movesets", "1", {FCVAR_REPLICATED, FCVAR_ARCHIVE}, "Randomize 5-phase bone animation movesets for V-NPC predators")
 CreateConVar("vnpcs_bone_pose_legs", "0", {FCVAR_REPLICATED, FCVAR_ARCHIVE}, "Allow 5-phase bone animations to manipulate leg and pelvis bones (default 0 to prevent IK leg breaking)")
 
+VNPC_PersonalityMovesetWeights = {
+    ["shy"] = {
+        ["default"] = 5,
+        ["breamsatel"] = 5,
+        ["carmelita"] = 3
+    },
+    ["aggressive"] = {
+        ["bonfie"] = 4,
+        ["dasha"] = 4,
+        ["chiku"] = 4
+    },
+    ["opportunistic"] = {
+        ["ballerpuppy"] = 3,
+        ["femasriel"] = 3
+    }
+}
+
 function VNPC_AssignRandomMoveset(ent)
     if not IsValid(ent) then return end
     if ent.VNPC_AssignedMoveset then return end
-    local keys = {}
+
+    local pers = "opportunistic"
+    if VNPC_GetPredatorPersonality then
+        pers = VNPC_GetPredatorPersonality(ent) or "opportunistic"
+    else
+        pers = ent.VNPC_PredatorPersonality or (ent.VoreSettings and ent.VoreSettings.PredatorPersonality) or "opportunistic"
+    end
+
+    local weights = VNPC_PersonalityMovesetWeights[string.lower(tostring(pers))] or {}
+    local pool = {}
+
     for k, v in pairs(VNPC_BoneMovesets or {}) do
         if istable(v) then
-            table.insert(keys, k)
+            local w = weights[k] or 1
+            for _ = 1, w do
+                table.insert(pool, k)
+            end
         end
     end
-    if #keys > 0 then
-        local pick = keys[math.random(1, #keys)]
+
+    if #pool > 0 then
+        local pick = pool[math.random(1, #pool)]
         ent.VNPC_AssignedMoveset = pick
     end
 end
@@ -1794,7 +1825,8 @@ concommand.Add("vnpcs_movesets_list", function(ply)
     for _, ent in ipairs(ents.FindByClass("npc_*")) do
         if IsValid(ent) and (ent.IsDrGNextbot or ent.VNPC_FemaleModelVore or ent.Predator) then
             count = count + 1
-            print(string.format("   #%d [%s]: Assigned Moveset = '%s'", ent:EntIndex(), ent.PrintName or ent:GetClass(), ent.VNPC_AssignedMoveset or "default"))
+            local pers = VNPC_GetPredatorPersonality and VNPC_GetPredatorPersonality(ent) or "opportunistic"
+            print(string.format("   #%d [%s]: Assigned Moveset = '%s' (Personality: %s)", ent:EntIndex(), ent.PrintName or ent:GetClass(), ent.VNPC_AssignedMoveset or "default", tostring(pers)))
         end
     end
     if count == 0 then
