@@ -30,11 +30,51 @@ local function deflateBoneCategory(ent, category, targetScale)
     end
 end
 
-local function resetAllBoneScales(ent)
+local function resetAllBoneManipulations(ent)
     if not IsValid(ent) then return end
     local count = ent:GetBoneCount() or 0
     for i = 0, count - 1 do
         ent:ManipulateBoneScale(i, Vector(1, 1, 1))
+        ent:ManipulateBoneAngles(i, angle_zero)
+    end
+end
+
+local function VNPC_AnimatePreyStruggling(prey, stage, tNorm)
+    if not IsValid(prey) then return end
+    local now = CurTime()
+
+    local spine = prey:LookupBone("ValveBiped.Bip01_Spine1") or prey:LookupBone("Spine1") or prey:LookupBone("ValveBiped.Bip01_Spine")
+    if spine then
+        prey:ManipulateBoneAngles(spine, Angle(0, math.sin(now * 12) * 15, math.cos(now * 10) * 10))
+    end
+
+    if stage < 2 then
+        local rArm = prey:LookupBone("ValveBiped.Bip01_R_UpperArm") or prey:LookupBone("R_UpperArm")
+        local lArm = prey:LookupBone("ValveBiped.Bip01_L_UpperArm") or prey:LookupBone("L_UpperArm")
+        local rFore = prey:LookupBone("ValveBiped.Bip01_R_Forearm") or prey:LookupBone("R_Forearm")
+        local lFore = prey:LookupBone("ValveBiped.Bip01_L_Forearm") or prey:LookupBone("L_Forearm")
+
+        if rArm then prey:ManipulateBoneAngles(rArm, Angle(math.sin(now * 14) * 30 - 15, -20, 10)) end
+        if lArm then prey:ManipulateBoneAngles(lArm, Angle(-math.sin(now * 14) * 30 + 15, -20, -10)) end
+        if rFore then prey:ManipulateBoneAngles(rFore, Angle(math.cos(now * 16) * 35 - 30, 0, 0)) end
+        if lFore then prey:ManipulateBoneAngles(lFore, Angle(-math.cos(now * 16) * 35 + 30, 0, 0)) end
+    end
+
+    if stage < 3 then
+        local rThigh = prey:LookupBone("ValveBiped.Bip01_R_Thigh") or prey:LookupBone("R_Thigh")
+        local lThigh = prey:LookupBone("ValveBiped.Bip01_L_Thigh") or prey:LookupBone("L_Thigh")
+        local rCalf = prey:LookupBone("ValveBiped.Bip01_R_Calf") or prey:LookupBone("R_Calf")
+        local lCalf = prey:LookupBone("ValveBiped.Bip01_L_Calf") or prey:LookupBone("L_Calf")
+
+        local kickA = math.sin(now * 15) * 40 - 15
+        local kickB = -math.sin(now * 15) * 40 - 15
+        local calfA = math.abs(math.cos(now * 15)) * 50 + 10
+        local calfB = math.abs(math.cos(now * 15 + math.pi)) * 50 + 10
+
+        if rThigh then prey:ManipulateBoneAngles(rThigh, Angle(0, kickA, 0)) end
+        if lThigh then prey:ManipulateBoneAngles(lThigh, Angle(0, kickB, 0)) end
+        if rCalf then prey:ManipulateBoneAngles(rCalf, Angle(0, calfA, 0)) end
+        if lCalf then prey:ManipulateBoneAngles(lCalf, Angle(0, calfB, 0)) end
     end
 end
 
@@ -122,6 +162,8 @@ hook.Add("Think", "VNPCS_IngestionAnimation_Loop", function()
             end
         end
 
+        VNPC_AnimatePreyStruggling(prey, anim.stage, tNorm)
+
         -- STAGE 1 (tNorm >= 0.05): Head enters mouth -> Deflate head & neck bones so there is zero clipping!
         if tNorm >= 0.05 and anim.stage < 1 then
             anim.stage = 1
@@ -143,9 +185,9 @@ hook.Add("Think", "VNPCS_IngestionAnimation_Loop", function()
             end
         end
 
-        -- STAGE 4 (tNorm >= 1.00): Ingestion complete! Store prey inside belly and reset bone scales!
+        -- STAGE 4 (tNorm >= 1.00): Ingestion complete! Store prey inside belly and reset bone manipulations!
         if tNorm >= 1.00 then
-            resetAllBoneScales(prey)
+            resetAllBoneManipulations(prey)
             prey:SetNoDraw(true)
             prey:SetParent(belly)
             prey:SetPos(belly:GetPos())
