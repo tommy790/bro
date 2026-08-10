@@ -181,10 +181,28 @@ function VNPC_ForagerFeedCamp(forager, camp, belly)
             belly.VNPC_NoDigestion = false
             belly.DigestionStrength = forager.VoreSettings and forager.VoreSettings.DigestionStrength or 2
 
+            local wasDangerous = false
             local sBelly = hungrySister.VNPC_Belly or hungrySister.Belly
             if IsValid(sBelly) then
                 sBelly.VNPC_NoDigestion = false
                 sBelly.DigestionStrength = hungrySister.VoreSettings and hungrySister.VoreSettings.DigestionStrength or 2
+                if sBelly.Prey then
+                    for _, pTable in ipairs(sBelly.Prey) do
+                        if pTable and IsValid(pTable.Entity) and VNPC_IsDangerousPrey and VNPC_IsDangerousPrey(pTable.Entity) then
+                            wasDangerous = true
+                            pTable.Value = (pTable.Value or 50) * 2.0
+                            pTable.TrueValue = (pTable.TrueValue or 50) * 2.0
+                        end
+                    end
+                end
+            end
+
+            if wasDangerous then
+                for _, m in ipairs(camp.members) do
+                    if IsValid(m) then
+                        m.VNPC_Hunger = math.max(0, (m.VNPC_Hunger or 0) - 30)
+                    end
+                end
             end
 
             if hungrySister.EmitSound then
@@ -195,7 +213,11 @@ function VNPC_ForagerFeedCamp(forager, camp, belly)
             if (camp.lastFeedMsgTime or 0) <= now then
                 camp.lastFeedMsgTime = now + 6.0
                 for _, p in ipairs(player.GetAll()) do
-                    p:ChatPrint("[V-NPCs] Forager " .. forager:GetClass() .. " returns to camp and feeds captured prey to her hungry sister " .. hungrySister:GetClass() .. "!")
+                    if wasDangerous then
+                        p:ChatPrint("[V-NPCs] HIGH-VALUE FORAGE! Forager " .. forager:GetClass() .. " captured DANGEROUS PREY and fed her camp! (All campmates -30% Hunger)")
+                    else
+                        p:ChatPrint("[V-NPCs] Forager " .. forager:GetClass() .. " returns to camp and feeds captured prey to her hungry sister " .. hungrySister:GetClass() .. "!")
+                    end
                 end
             end
 

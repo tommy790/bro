@@ -154,6 +154,26 @@ function VNPC_ForceGiveWildPredatorVore(ent)
     return true
 end
 
+local WILD_PREY_CLASSES = {
+    { cls = "npc_citizen",       danger = false },
+    { cls = "npc_headcrab",      danger = false },
+    { cls = "npc_vortigaunt",    danger = false },
+    { cls = "npc_antlion",       danger = true },
+    { cls = "npc_antlionguard",  danger = true },
+    { cls = "npc_combine_s",     danger = true },
+    { cls = "npc_headcrab_fast", danger = true }
+}
+
+function VNPC_IsDangerousPrey(ent)
+    if not IsValid(ent) then return false end
+    if ent.VNPC_IsDangerousPreyFlag then return true end
+    local cls = string.lower(ent:GetClass() or "")
+    if cls:find("antlion") or cls:find("guard") or cls:find("combine") or cls:find("hunter") or cls:find("manhack") or cls:find("fast") or cls:find("poison") then
+        return true
+    end
+    return false
+end
+
 function VNPC_SpawnWildNPC(isPredator, posOverride)
     if not ecology_enabled:GetBool() then return nil end
     local spawnPos = posOverride or VNPC_FindWildernessSpawnPos()
@@ -175,13 +195,14 @@ function VNPC_SpawnWildNPC(isPredator, posOverride)
             VNPC_MakeWildWanderer(ent)
         end
     else
-        local preyClasses = { "npc_citizen", "npc_headcrab", "npc_vortigaunt" }
-        ent = ents.Create(preyClasses[math.random(1, #preyClasses)])
+        local info = WILD_PREY_CLASSES[math.random(1, #WILD_PREY_CLASSES)]
+        ent = ents.Create(info.cls)
         if IsValid(ent) then
             ent:SetPos(spawnPos)
             ent:SetAngles(Angle(0, math.random(0, 360), 0))
             ent:Spawn()
             ent:Activate()
+            ent.VNPC_IsDangerousPreyFlag = info.danger
             VNPC_MakeWildWanderer(ent)
         end
     end
