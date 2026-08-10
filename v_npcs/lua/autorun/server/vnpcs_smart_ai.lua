@@ -9,6 +9,7 @@ function VNPC_SelectSmartPreyTarget(pred, search_radius)
     if not IsValid(pred) then return nil end
     local enabled = GetConVar("vnpcs_smart_ai_enabled")
     if enabled and not enabled:GetBool() then return nil end
+    if pred.VNPC_IsCarryingPreyForCamp then return nil end
 
     local bestTarget = nil
     local bestScore = -1e9
