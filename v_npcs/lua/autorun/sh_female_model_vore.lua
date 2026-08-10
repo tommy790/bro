@@ -1671,94 +1671,9 @@ VNPC_BoneMovesets["carmelita"] = VNPC_CarmelitaAnimatedBoneList
 VNPC_BoneMovesets["dasha"] = VNPC_DashaAnimatedBoneList
 VNPC_BoneMovesets["femasriel"] = VNPC_FemAsrielAnimatedBoneList
 
-VNPC_UniversalSwallowKeyframes = {
-    length = 1.20,
-    keyframes = {
-        [0.00] = { -- 0.0s: Initial reach & grab
-            ["ValveBiped.Bip01_Head1"] = { pos = Vector(0, 0, 0), ang = Angle(10, 15, 0) },
-            ["ValveBiped.Bip01_Spine1"] = { pos = Vector(0, 0, 0), ang = Angle(0, -3, 0) },
-            ["ValveBiped.Bip01_R_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(50, -20, 30) },
-            ["ValveBiped.Bip01_R_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(-70, 30, -30) },
-            ["ValveBiped.Bip01_R_Hand"] = { pos = Vector(0, 0, 0), ang = Angle(10, 0, 0) },
-            ["ValveBiped.Bip01_L_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(-50, -20, -30) },
-            ["ValveBiped.Bip01_L_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(70, 30, 30) },
-            ["ValveBiped.Bip01_L_Hand"] = { pos = Vector(0, 0, 0), ang = Angle(-10, 0, 0) }
-        },
-        [0.33] = { -- 0.4s: Lifting prey model to open mouth
-            ["ValveBiped.Bip01_Head1"] = { pos = Vector(0, 0, 0), ang = Angle(0, 28, 0) },
-            ["ValveBiped.Bip01_Spine1"] = { pos = Vector(0, 0, 0), ang = Angle(0, -5, 0) },
-            ["ValveBiped.Bip01_R_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(65, -35, 40) },
-            ["ValveBiped.Bip01_R_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(-120, 45, -70) },
-            ["ValveBiped.Bip01_R_Hand"] = { pos = Vector(0, 0, 0), ang = Angle(15, -10, 20) },
-            ["ValveBiped.Bip01_L_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(-65, -35, -40) },
-            ["ValveBiped.Bip01_L_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(120, 45, 70) },
-            ["ValveBiped.Bip01_L_Hand"] = { pos = Vector(0, 0, 0), ang = Angle(-15, -10, -20) }
-        },
-        [0.66] = { -- 0.8s: Guiding torso down esophagus
-            ["ValveBiped.Bip01_Head1"] = { pos = Vector(0, 0, 0), ang = Angle(0, 35, 0) },
-            ["ValveBiped.Bip01_Spine1"] = { pos = Vector(0, 0, 0), ang = Angle(0, -8, 0) },
-            ["ValveBiped.Bip01_R_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(55, -40, 30) },
-            ["ValveBiped.Bip01_R_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(-140, 50, -100) },
-            ["ValveBiped.Bip01_R_Hand"] = { pos = Vector(0, 0, 0), ang = Angle(20, -30, 40) },
-            ["ValveBiped.Bip01_L_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(-55, -40, -30) },
-            ["ValveBiped.Bip01_L_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(140, 50, 100) },
-            ["ValveBiped.Bip01_L_Hand"] = { pos = Vector(0, 0, 0), ang = Angle(-20, -30, -40) }
-        },
-        [1.00] = { -- 1.2s: Swallowing whole / throat squeeze
-            ["ValveBiped.Bip01_Head1"] = { pos = Vector(0, 0, 0), ang = Angle(-10, -15, 5) },
-            ["ValveBiped.Bip01_Spine1"] = { pos = Vector(0, 0, 0), ang = Angle(0, 5, 0) },
-            ["ValveBiped.Bip01_R_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(25, -30, 20) },
-            ["ValveBiped.Bip01_R_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(-155, 45, -120) },
-            ["ValveBiped.Bip01_R_Hand"] = { pos = Vector(0, 0, 0), ang = Angle(30, 40, 60) },
-            ["ValveBiped.Bip01_L_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(-25, -30, -20) },
-            ["ValveBiped.Bip01_L_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(155, 45, 120) },
-            ["ValveBiped.Bip01_L_Hand"] = { pos = Vector(0, 0, 0), ang = Angle(-30, 40, -60) }
-        }
-    }
-}
-
-VNPC_UniversalGulpKeyframes = {
-    length = 0.70,
-    keyframes = {
-        [0.00] = {
-            ["ValveBiped.Bip01_Head1"] = { pos = Vector(0, 0, 0), ang = Angle(0, 20, 0) },
-            ["ValveBiped.Bip01_Spine1"] = { pos = Vector(0, 0, 0), ang = Angle(0, -20, 0) },
-            ["ValveBiped.Bip01_R_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(70, -115, -20) },
-            ["ValveBiped.Bip01_R_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(-15, -25, 0) },
-            ["ValveBiped.Bip01_L_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(-70, -115, 35) },
-            ["ValveBiped.Bip01_L_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(-15, -50, 0) }
-        },
-        [0.50] = {
-            ["ValveBiped.Bip01_Head1"] = { pos = Vector(0, 0, 0), ang = Angle(15, 45, 0) },
-            ["ValveBiped.Bip01_Spine1"] = { pos = Vector(0, 0, 0), ang = Angle(0, 0, 0) },
-            ["ValveBiped.Bip01_R_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(45, -155, -20) },
-            ["ValveBiped.Bip01_R_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(-10, -15, 0) },
-            ["ValveBiped.Bip01_L_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(-40, -155, 35) },
-            ["ValveBiped.Bip01_L_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(-10, -25, 0) }
-        },
-        [1.00] = {
-            ["ValveBiped.Bip01_Head1"] = { pos = Vector(0, 0, 0), ang = Angle(-10, -15, 5) },
-            ["ValveBiped.Bip01_Spine1"] = { pos = Vector(0, 0, 0), ang = Angle(0, 5, 0) },
-            ["ValveBiped.Bip01_R_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(30, -145, -10) },
-            ["ValveBiped.Bip01_R_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(-15, -10, 0) },
-            ["ValveBiped.Bip01_L_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(-30, -145, 25) },
-            ["ValveBiped.Bip01_L_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(-15, -15, 0) }
-        }
-    }
-}
-
-for _, moveset in pairs(VNPC_BoneMovesets) do
-    if istable(moveset) then
-        moveset[1] = VNPC_UniversalSwallowKeyframes
-        moveset[4] = VNPC_UniversalGulpKeyframes
-    end
-end
-
 function VNPC_RegisterBoneMoveset(name, movesetTable)
     if not name or not istable(movesetTable) then return end
     VNPC_BoneMovesets = VNPC_BoneMovesets or {}
-    movesetTable[1] = VNPC_UniversalSwallowKeyframes
-    movesetTable[4] = VNPC_UniversalGulpKeyframes
     VNPC_BoneMovesets[string.lower(name)] = movesetTable
 end
 
