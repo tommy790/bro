@@ -120,6 +120,10 @@ function VNPC_SpitDigestedBones(pred, countOverride)
             end
         end)
     end
+
+    if VNPC_CreateTerritoryScentNode then
+        VNPC_CreateTerritoryScentNode(pred, origin, "bones")
+    end
 end
 
 function VNPC_ScheduleDigestedBoneSpit(pred, belly)

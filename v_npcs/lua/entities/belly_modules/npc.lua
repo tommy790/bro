@@ -81,6 +81,9 @@ function ENT:OnDigestionPhaseChanged(new, old)
         if VNPC_ScheduleDigestedBoneSpit then
             VNPC_ScheduleDigestedBoneSpit(self.NPC or self:GetOwner() or self:GetParent(), self)
         end
+        if VNPC_CreateTerritoryScentNode then
+            VNPC_CreateTerritoryScentNode(self.NPC or self:GetOwner() or self, self:GetPos(), "digestion")
+        end
     end
 
     if new == 1 and old == 0 then
