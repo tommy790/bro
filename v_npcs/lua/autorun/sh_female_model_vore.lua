@@ -1831,15 +1831,6 @@ function VNPC_GetAnimatedBoneList(ent)
     if ent.VoreSettings and ent.VoreSettings.AnimatedBoneList and istable(ent.VoreSettings.AnimatedBoneList) then
         return ent.VoreSettings.AnimatedBoneList
     end
-    local pers = nil
-    if VNPC_GetPredatorPersonality then
-        pers = VNPC_GetPredatorPersonality(ent)
-    else
-        pers = ent.VNPC_PredatorPersonality or (ent.VoreSettings and ent.VoreSettings.PredatorPersonality)
-    end
-    if pers == "shy" and VNPC_ShyAnimatedBoneList then
-        return VNPC_ShyAnimatedBoneList
-    end
     local cvar = GetConVar("vnpcs_random_movesets")
     if cvar and cvar:GetBool() then
         if not ent.VNPC_AssignedMoveset then
@@ -1848,6 +1839,15 @@ function VNPC_GetAnimatedBoneList(ent)
         if ent.VNPC_AssignedMoveset and VNPC_BoneMovesets[ent.VNPC_AssignedMoveset] then
             return VNPC_BoneMovesets[ent.VNPC_AssignedMoveset]
         end
+    end
+    local pers = nil
+    if VNPC_GetPredatorPersonality then
+        pers = VNPC_GetPredatorPersonality(ent)
+    else
+        pers = ent.VNPC_PredatorPersonality or (ent.VoreSettings and ent.VoreSettings.PredatorPersonality)
+    end
+    if pers == "shy" and VNPC_ShyAnimatedBoneList then
+        return VNPC_ShyAnimatedBoneList
     end
     return VNPC_DefaultAnimatedBoneList
 end
