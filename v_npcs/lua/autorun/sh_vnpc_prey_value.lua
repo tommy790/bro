@@ -8,19 +8,31 @@ function VNPC_CalculatePreyValue(ent, override_scale)
     if not IsValid(ent) then return 10, "Invalid" end
 
     local enabled = GetConVar("vnpcs_advanced_prey_value")
-    if enabled and not enabled:GetBool() then
-        local _, max_bounds = ent:GetModelBounds()
-        local l = max_bounds and max_bounds:Length() or 75
-        return l * (override_scale or ent:GetModelScale() or 1), "Legacy Bounding Diagonal"
+    local scale = tonumber(override_scale) or (ent.GetModelScale and ent:GetModelScale()) or 1
+    if not isnumber(scale) then scale = 1 end
+
+    local mins, maxs = Vector(-16, -16, 0), Vector(16, 16, 72)
+    if ent.GetModelBounds then
+        local r1, r2 = ent:GetModelBounds()
+        if isvector(r1) and isvector(r2) then
+            mins, maxs = r1, r2
+        end
     end
 
-    local scale = override_scale or ent:GetModelScale() or 1
-    local mins, maxs = ent:GetModelBounds()
     local dim = (maxs - mins) * scale
+    if not isvector(dim) then
+        dim = Vector(32, 32, 72) * scale
+    end
+
+    if enabled and not enabled:GetBool() then
+        local l = dim:Length()
+        return l, "Legacy Bounding Diagonal"
+    end
+
     local diag = dim:Length()
 
     -- 1. Bounding volume contribution (normalized against standard human volume ~ 32x32x72 = 73728)
-    local vol = math.max(1, dim.x * dim.y * dim.z)
+    local vol = math.max(1, (dim.x or 32) * (dim.y or 32) * (dim.z or 72))
     local vol_factor = math.sqrt(vol / 73728.0) * 35.0
 
     -- 2. Diagonal size contribution
