@@ -91,6 +91,7 @@ function VNPC_StartSleepingCrawlAnimation(pred, prey)
     if not IsValid(belly) then return false end
 
     prey.VNPC_IsCrawlingInBelly = true
+    pred.VNPC_IsSleepCrawled = true
     prey:SetNoDraw(false)
     prey:SetSolid(SOLID_NONE)
     prey:SetMoveType(MOVETYPE_NONE)
@@ -192,6 +193,7 @@ hook.Add("Think", "VNPCS_SleepCrawlAnimation_Loop", function()
         if tNorm >= 1.00 then
             resetAllBoneManipulations(prey)
             prey.VNPC_IsCrawlingInBelly = false
+            pred.VNPC_IsSleepCrawled = false
             prey.VNPC_IngestionDepth = 1.0
 
             if belly.AddPrey then

@@ -1869,6 +1869,52 @@ VNPC_SleepingFullBellyKeyframes = {
     }
 }
 
+VNPC_SleepingCrawlReceiveKeyframes = {
+    length = 7.5,
+    keyframes = {
+        [0.00] = {
+            ["ValveBiped.Bip01_Head1"] = { pos = Vector(0, 0, 0), ang = Angle(25, -25, -10) },
+            ["ValveBiped.Bip01_Spine"] = { pos = Vector(0, 0, 0), ang = Angle(0, -5, 0) },
+            ["ValveBiped.Bip01_Spine1"] = { pos = Vector(0, 0, 0), ang = Angle(0, -10, 0) },
+            ["ValveBiped.Bip01_R_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(30, 20, -10) },
+            ["ValveBiped.Bip01_R_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(-80, 20, -40) },
+            ["ValveBiped.Bip01_L_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(-30, 20, 10) },
+            ["ValveBiped.Bip01_L_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(80, 20, -40) },
+            ["ValveBiped.Bip01_Pelvis"] = { pos = Vector(0, 0, -39.5), ang = Angle(0, 0, -15) }
+        },
+        [0.30] = {
+            ["ValveBiped.Bip01_Head1"] = { pos = Vector(0, 0, 0), ang = Angle(15, -22, -5) },
+            ["ValveBiped.Bip01_Spine"] = { pos = Vector(0, 0, 0), ang = Angle(0, -4, 0) },
+            ["ValveBiped.Bip01_Spine1"] = { pos = Vector(0, 0, 0), ang = Angle(0, -8, 0) },
+            ["ValveBiped.Bip01_R_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(30, 20, -10) },
+            ["ValveBiped.Bip01_R_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(-80, 20, -40) },
+            ["ValveBiped.Bip01_L_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(-30, 20, 10) },
+            ["ValveBiped.Bip01_L_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(80, 20, -40) },
+            ["ValveBiped.Bip01_Pelvis"] = { pos = Vector(0, 0, -39.5), ang = Angle(0, 0, -15) }
+        },
+        [0.70] = {
+            ["ValveBiped.Bip01_Head1"] = { pos = Vector(0, 0, 0), ang = Angle(18, -20, -5) },
+            ["ValveBiped.Bip01_Spine"] = { pos = Vector(0, 0, 0), ang = Angle(0, -4, 0) },
+            ["ValveBiped.Bip01_Spine1"] = { pos = Vector(0, 0, 0), ang = Angle(0, -8, 0) },
+            ["ValveBiped.Bip01_R_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(30, 20, -10) },
+            ["ValveBiped.Bip01_R_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(-80, 20, -40) },
+            ["ValveBiped.Bip01_L_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(-30, 20, 10) },
+            ["ValveBiped.Bip01_L_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(80, 20, -40) },
+            ["ValveBiped.Bip01_Pelvis"] = { pos = Vector(0, 0, -39.5), ang = Angle(0, 0, -15) }
+        },
+        [1.00] = {
+            ["ValveBiped.Bip01_Head1"] = { pos = Vector(0, 0, 0), ang = Angle(25, -25, -10) },
+            ["ValveBiped.Bip01_Spine"] = { pos = Vector(0, 0, 0), ang = Angle(0, -5, 0) },
+            ["ValveBiped.Bip01_Spine1"] = { pos = Vector(0, 0, 0), ang = Angle(0, -10, 0) },
+            ["ValveBiped.Bip01_R_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(30, 20, -10) },
+            ["ValveBiped.Bip01_R_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(-80, 20, -40) },
+            ["ValveBiped.Bip01_L_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(-30, 20, 10) },
+            ["ValveBiped.Bip01_L_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(80, 20, -40) },
+            ["ValveBiped.Bip01_Pelvis"] = { pos = Vector(0, 0, -39.5), ang = Angle(0, 0, -15) }
+        }
+    }
+}
+
 function VNPC_AnimatedBoneOffsets(ent)
     if not IsValid(ent) then return end
     if VNPC_IsHL2ScriptedScene and VNPC_IsHL2ScriptedScene(ent) then return end
@@ -1881,7 +1927,9 @@ function VNPC_AnimatedBoneOffsets(ent)
     local phase = ent:GetNWInt("FacialPhase", -1)
     local animList = VNPC_GetAnimatedBoneList(ent)
     local data = animList[phase] or animList[0]
-    if ent.VNPC_IsSleeping and VNPC_SleepingFullBellyKeyframes then
+    if ent.VNPC_IsSleepCrawled and VNPC_SleepingCrawlReceiveKeyframes then
+        data = VNPC_SleepingCrawlReceiveKeyframes
+    elseif ent.VNPC_IsSleeping and VNPC_SleepingFullBellyKeyframes then
         data = VNPC_SleepingFullBellyKeyframes
     end
 
