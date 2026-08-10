@@ -109,8 +109,8 @@ end
 local WILD_PREDATOR_CLASSES = {
     { cls = "npc_vortigaunt",  mdl = nil },
     { cls = "npc_metropolice", mdl = nil },
+    { cls = "npc_combine_s",   mdl = nil },
     { cls = "npc_zombie",      mdl = nil },
-    { cls = "npc_fastzombie",  mdl = nil },
     { cls = "npc_alyx",        mdl = "models/alyx.mdl" },
     { cls = "npc_mossman",     mdl = "models/mossman.mdl" },
     { cls = "npc_citizen",     mdl = "models/Humans/Group01/Female_01.mdl" },
@@ -157,10 +157,8 @@ end
 local WILD_PREY_CLASSES = {
     { cls = "npc_citizen",       danger = false },
     { cls = "npc_headcrab",      danger = false },
-    { cls = "npc_vortigaunt",    danger = false },
     { cls = "npc_antlion",       danger = true },
     { cls = "npc_antlionguard",  danger = true },
-    { cls = "npc_combine_s",     danger = true },
     { cls = "npc_headcrab_fast", danger = true }
 }
 
