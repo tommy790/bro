@@ -32,6 +32,8 @@ function VNPC_MakeWildWanderer(ent)
     if not IsValid(ent) or ent:Health() <= 0 then return false end
 
     ent.VNPC_IsWildWanderer = true
+    local predPersList = { "aggressive", "opportunistic", "glutton", "shy", "selective", "gentle" }
+    local preyPersList = { "fighter", "passive", "panicked", "stubborn", "willing" }
 
     if ent.IsDrGNextbot or ent.VNPC_FemaleModelVore or ent.Predator then
         ent.VNPC_WildType = "predator"
@@ -43,9 +45,21 @@ function VNPC_MakeWildWanderer(ent)
         if ent.VoreSettings then
             ent.VoreSettings.DigestionStrength = (ent.VoreSettings.DigestionStrength or 3) * scale
         end
+        local pPers = predPersList[math.random(1, #predPersList)]
+        ent.VNPC_PredatorPersonality = pPers
+        if ent.VoreSettings then
+            ent.VoreSettings.PredatorPersonality = pPers
+        end
     else
         ent.VNPC_WildType = "prey"
         ent.VNPC_PreyCampID = "wild"
+        local rPers = preyPersList[math.random(1, #preyPersList)]
+        ent.VNPC_PreyPersonality = rPers
+        ent.PreyPersonality = rPers
+    end
+
+    if VNPC_RandomizePersonalities then
+        pcall(VNPC_RandomizePersonalities, ent)
     end
 
     if not table.HasValue(VNPC_ActiveWildWanderers, ent) then
@@ -391,7 +405,17 @@ concommand.Add("vnpcs_wild_ecology_status", function(ply)
     local wPreds, wPrey = 0, 0
     for _, w in ipairs(VNPC_ActiveWildWanderers) do
         if IsValid(w) then
-            if w.VNPC_WildType == "predator" then wPreds = wPreds + 1 else wPrey = wPrey + 1 end
+            if w.VNPC_WildType == "predator" then
+                wPreds = wPreds + 1
+                local pers = w.VNPC_PredatorPersonality or (w.VoreSettings and w.VoreSettings.PredatorPersonality) or "opportunistic"
+                print(string.format(" -> Wild Predator [#%d] %s | Pers: %s | HP: %d",
+                    w:EntIndex(), w:GetClass(), string.upper(pers), w:Health()))
+            else
+                wPrey = wPrey + 1
+                local pers = w.VNPC_PreyPersonality or w.PreyPersonality or "fighter"
+                print(string.format(" -> Wild Prey [#%d] %s | Pers: %s | HP: %d",
+                    w:EntIndex(), w:GetClass(), string.upper(pers), w:Health()))
+            end
         end
     end
     print("Active Wild Wanderers -> Predators: " .. wPreds .. " | Prey: " .. wPrey)
