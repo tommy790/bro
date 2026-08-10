@@ -1678,7 +1678,6 @@ function VNPC_RegisterBoneMoveset(name, movesetTable)
 end
 
 CreateConVar("vnpcs_random_movesets", "1", {FCVAR_REPLICATED, FCVAR_ARCHIVE}, "Randomize 5-phase bone animation movesets for V-NPC predators")
-CreateConVar("vnpcs_bone_pose_legs", "0", {FCVAR_REPLICATED, FCVAR_ARCHIVE}, "Allow 5-phase bone animations to manipulate leg and pelvis bones (default 0 to prevent IK leg breaking)")
 
 VNPC_PersonalityMovesetWeights = {
     ["shy"] = {
@@ -1980,9 +1979,8 @@ function VNPC_AnimatedBoneOffsets(ent)
 
         local is_leg_or_pelvis = boneName:find("Pelvis") or boneName:find("Thigh") or boneName:find("Calf") or boneName:find("Foot") or boneName:find("Leg") or boneName:find("leg") or boneName:find("thigh") or boneName:find("calf") or boneName:find("foot") or boneName:find("pelvis")
         local is_torso_or_arm = boneName:find("Spine") or boneName:find("Clavicle") or boneName:find("UpperArm") or boneName:find("Forearm") or boneName:find("Hand") or boneName:find("spine") or boneName:find("clavicle") or boneName:find("arm") or boneName:find("hand")
-        local allow_legs = GetConVar("vnpcs_bone_pose_legs")
 
-        if is_leg_or_pelvis and (is_hunting_or_moving or not (allow_legs and allow_legs:GetBool())) then
+        if is_leg_or_pelvis and is_hunting_or_moving then
             tgtPos, tgtAng = vector_origin, angle_zero
         elseif phase == 0 then
             tgtPos, tgtAng = vector_origin, angle_zero
