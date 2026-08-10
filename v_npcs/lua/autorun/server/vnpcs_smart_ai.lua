@@ -50,6 +50,9 @@ function VNPC_SelectSmartPreyTarget(pred, search_radius)
         if ent:IsPlayer() then
             score = score + 60 -- Prioritize players
         end
+        if ent.VNPC_PreyCampID then
+            score = score + 75 -- Prioritize prey camp members!
+        end
         if ent:Health() > 0 and ent:Health() <= 40 then
             score = score + 45 -- Prioritize wounded targets
         end
