@@ -685,8 +685,8 @@ hook.Add("Think", "VNPC_WillingPrey_AI", function()
                 if IsValid(pred) and pred ~= npc and (pred.Predator or pred.VNPC_FemaleModelVore or VNPC_IsFemaleModelNPC(pred)) and not pred.Vored then
                     local dist = npc:GetPos():Distance(pred:GetPos())
                     if dist <= 140 then
-                        if pred.VNPC_IsSleeping and VNPC_StartWillingCrawlAnimation then
-                            VNPC_StartWillingCrawlAnimation(pred, npc, pred.VNPC_Belly or pred.Belly)
+                        if pred.VNPC_IsSleeping and VNPC_StartSleepingCrawlAnimation then
+                            VNPC_StartSleepingCrawlAnimation(pred, npc)
                         elseif pred.EatEntity then
                             pcall(pred.EatEntity, pred, npc)
                         end
