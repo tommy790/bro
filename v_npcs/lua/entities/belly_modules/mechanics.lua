@@ -329,6 +329,7 @@ function ENT:AddPrey(prey)
     self:OnPreyAdded(prey_index, preyValue, prey)
     self:SetNWInt("AliveFactor", self:GetAliveFactor()) --uhhh probably shouldnt be in mechanics but idc, this number is used for animations
 
+    hook.Run("VNPC_OnPreySwallowed", self.NPC or self:GetOwner() or self, prey, self)
     self:TransferPreyFrom(prey)
 
     return true 
