@@ -1712,6 +1712,7 @@ end
 
 function VNPC_AnimatedBoneOffsets(ent)
     if not IsValid(ent) then return end
+    if VNPC_IsHL2ScriptedScene and VNPC_IsHL2ScriptedScene(ent) then return end
     local enabled = GetConVar("vnpcs_bone_pose_animations")
     if enabled and not enabled:GetBool() then return end
 
