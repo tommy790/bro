@@ -488,6 +488,10 @@ hook.Add("Think", "VNPC_PreyCamps_AI_Loop", function()
             end
         end
 
+        if VNPC_CheckPreyCampConquest then
+            VNPC_CheckPreyCampConquest(camp)
+        end
+
         if #camp.members == 0 then
             table.remove(VNPC_ActivePreyCamps, i)
             continue

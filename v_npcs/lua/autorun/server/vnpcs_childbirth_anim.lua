@@ -111,6 +111,13 @@ function VNPC_StartChildbirthAnimation(mother, child, camp)
         child:SetAngles(Angle(0, mother:GetAngles().y, 0))
         child:SetModelScale(0.35, 0)
 
+        child.VNPC_ChildGender = math.random() < 0.5 and "female" or "male"
+        if child.VNPC_ChildGender == "female" then
+            child:SetModel("models/Humans/Group01/Female_01.mdl")
+        else
+            child:SetModel("models/Humans/Group01/Male_01.mdl")
+        end
+
         child.VNPC_IsUnbornBaby = nil
         child.VNPC_IsGrowingBaby = true
         child.VNPC_ProtectedChild = true
@@ -167,6 +174,12 @@ hook.Add("Think", "VNPC_BabyCitizenGrowth_Loop", function()
                 ent:SetModelScale(1.0, 0)
                 ent.VNPC_IsGrowingBaby = nil
                 ent.VNPC_ProtectedChild = nil
+
+                if ent.VNPC_AdoptedByPredator and VNPC_TransformToPredator then
+                    VNPC_TransformToPredator(ent, ent.VNPC_AdoptedByPredator)
+                    return
+                end
+
                 if ent.EmitSound then
                     ent:EmitSound("npc/citizen/vo/readytohelp.wav", 80, 105)
                 end
