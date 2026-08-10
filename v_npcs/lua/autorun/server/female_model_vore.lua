@@ -573,6 +573,15 @@ hook.Add("Think", "VNPC_FemaleModelVore_AI", function()
         if (npc.VNPC_NextAIThink or 0) > now then continue end
         npc.VNPC_NextAIThink = now + 0.5
         
+        local belly = npc.VNPC_Belly or npc.Belly
+        if IsValid(belly) and (belly.DigestionPhase ~= 0 or (belly.Prey and #belly.Prey > 0)) then
+            if VNPC_IsPredatorCalm and VNPC_IsPredatorCalm(npc) then
+                if npc.ClearSchedule then pcall(npc.ClearSchedule, npc) end
+                if npc.SetSchedule then pcall(npc.SetSchedule, npc, SCHED_IDLE_STAND) end
+                continue
+            end
+        end
+        
         local pers, pers_data = "opportunistic", nil
         if VNPC_GetPredatorPersonality then
             pers, pers_data = VNPC_GetPredatorPersonality(npc)

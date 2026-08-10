@@ -1769,6 +1769,58 @@ concommand.Add("vnpcs_set_moveset", function(ply, cmd, args)
     print("[V-NPCs] Set entity #" .. id .. " moveset to: " .. name)
 end)
 
+function VNPC_IsPredatorCalm(pred)
+    if not IsValid(pred) then return false end
+
+    -- 1. Check if damaged recently (last 8 seconds)
+    if (pred.VNPC_LastDamagedTime or 0) > (CurTime() - 8) then
+        return false
+    end
+
+    -- 2. Check if currently fighting an enemy
+    local enemy = pred:GetEnemy()
+    if IsValid(enemy) and enemy ~= pred and not enemy.Vored and not enemy.VNPC_Vored then
+        return false
+    end
+
+    -- 3. Check if any valid prey OR enemy predator is within detection range
+    local detect_range = pred.SightRange or 600
+    local predPos = pred:GetPos()
+
+    for _, ent in ipairs(ents.FindInSphere(predPos, detect_range)) do
+        if not IsValid(ent) or ent == pred or ent.Vored or ent.VNPC_Vored or ent.VNPC_Surrendered then continue end
+
+        local isPrey = (ent:IsPlayer() or ent:IsNPC() or ent.IsDrGNextbot or ent:GetClass() == "prop_ragdoll" or ent.VNPC_IsCorpse)
+        if isPrey then
+            if ent:IsPlayer() then
+                return false
+            elseif pred.GetRelationship and (pred:GetRelationship(ent) == D_HT or pred:GetRelationship(ent) == D_FR) then
+                return false
+            elseif (ent:GetClass() == "prop_ragdoll" or ent.VNPC_IsCorpse) and pred.CanEatCorpse and pred:CanEatCorpse(ent) then
+                if predPos:DistToSqr(ent:GetPos()) < (250 * 250) then
+                    return false
+                end
+            elseif ent.IsDrGNextbot or ent.VNPC_FemaleModelVore or ent.Predator then
+                if pred.GetRelationship and pred:GetRelationship(ent) == D_HT then
+                    return false
+                end
+            end
+        end
+    end
+
+    return true
+end
+
+if SERVER then
+    hook.Add("EntityTakeDamage", "VNPC_TrackPredatorDamageForCalm", function(ent, dmginfo)
+        if IsValid(ent) and (ent.IsDrGNextbot or ent.VNPC_FemaleModelVore or ent.Predator) then
+            if dmginfo:GetDamage() > 0 then
+                ent.VNPC_LastDamagedTime = CurTime()
+            end
+        end
+    end)
+end
+
 function VNPC_GetAnimatedBoneList(ent)
     if not IsValid(ent) then return VNPC_DefaultAnimatedBoneList end
     if ent.AnimatedBoneList and istable(ent.AnimatedBoneList) then
