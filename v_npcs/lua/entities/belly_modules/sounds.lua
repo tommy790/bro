@@ -1,4 +1,9 @@
 ENT.Sounds = ENT.Sounds or {
+    Sloshes = { --Belly slosh foley during locomotion
+        "belly/snd_slosh1.wav",
+        "belly/snd_slosh2.wav",
+        "belly/snd_slosh3.wav",
+    },
     Gurgles = { --Digesting Foley
         "belly/snd_digesting.wav",
 		"belly/snd_qdigestend3.wav",
@@ -104,6 +109,22 @@ function ENT:PlayRandomGurgle()
             end
         end)
     end
+end
+
+function ENT:PlayRandomSlosh(pitch_override, vol_override)
+    if self.SloshSoundDebounce then return end
+    self.SloshSoundDebounce = true
+
+    local snd = GetRandomFromTable(self.Sounds.Sloshes)
+    if snd then
+        self:EmitSound(snd, vol_override or 75, pitch_override or math.random(85, 105), 1)
+    end
+
+    timer.Simple(0.4, function()
+        if self and IsValid(self) then
+            self.SloshSoundDebounce = nil
+        end
+    end)
 end
 
 function ENT:PlayRandomStruggle()
