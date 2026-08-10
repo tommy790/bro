@@ -8,6 +8,9 @@ local camp_wall_cost = CreateConVar("vnpcs_prey_camp_wall_cost", "25.0", {FCVAR_
 local camp_max_walls = CreateConVar("vnpcs_prey_camp_max_walls", "16", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Maximum number of defensive wall props around a prey camp perimeter")
 local camp_hut_cost = CreateConVar("vnpcs_prey_camp_hut_cost", "45.0", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Resource cost to construct a little hut inside a fortified prey camp")
 local camp_max_huts = CreateConVar("vnpcs_prey_camp_max_huts", "4", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Maximum number of little huts inside a fortified prey camp courtyard")
+local love_enabled = CreateConVar("vnpcs_prey_camp_love_enabled", "1", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Enable love and pregnancy population growth in fortified prey camps")
+local pregnancy_time = CreateConVar("vnpcs_prey_camp_pregnancy_time", "45.0", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Duration in seconds for a pregnant female citizen to bear a new citizen")
+local camp_max_members = CreateConVar("vnpcs_prey_camp_max_members", "25", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Maximum total member capacity per prey camp")
 
 VNPC_ActivePreyCamps = VNPC_ActivePreyCamps or {}
 
@@ -34,6 +37,29 @@ function VNPC_IsEligiblePreyNPC(ent)
     if ent.IsDrGNextbot or ent.VNPC_FemaleModelVore or ent.Predator then return false end
     if VNPC_IsShyPredator and VNPC_IsShyPredator(ent) then return false end
     return (ent:IsNPC() or ent:IsNextBot())
+end
+
+function VNPC_IsFemalePreyCitizen(ent)
+    if not VNPC_IsEligiblePreyNPC(ent) then return false end
+    local mdl = string.lower(ent:GetModel() or "")
+    local cls = string.lower(ent:GetClass() or "")
+    if cls:find("citizen") or cls:find("rebel") or cls:find("refugee") or cls:find("mossman") or cls:find("alyx") or (ent.Classify and ent:Classify() == CLASS_CITIZEN) then
+        if mdl:find("female") or mdl:find("alyx") or mdl:find("mossman") or mdl:find("f_") or mdl:find("citizen_female") then
+            return true
+        end
+    end
+    return false
+end
+
+function VNPC_IsMalePreyCitizen(ent)
+    if not VNPC_IsEligiblePreyNPC(ent) then return false end
+    if VNPC_IsFemalePreyCitizen(ent) then return false end
+    local mdl = string.lower(ent:GetModel() or "")
+    local cls = string.lower(ent:GetClass() or "")
+    if cls:find("citizen") or cls:find("rebel") or cls:find("refugee") or cls:find("barney") or cls:find("monk") or (ent.Classify and ent:Classify() == CLASS_CITIZEN) then
+        return true
+    end
+    return false
 end
 
 function VNPC_GetPreyCamp(npc)
@@ -340,6 +366,68 @@ function VNPC_PredatorBreachPreyCampHut(pred, hut, camp)
     end
 end
 
+function VNPC_PreyCampLove_AI(camp, now)
+    if not love_enabled:GetBool() or not camp or not camp.fortified then return end
+    local maxMembers = camp_max_members:GetInt()
+    if #camp.members >= maxMembers then return end
+
+    local females = {}
+    local males = {}
+    for _, mem in ipairs(camp.members) do
+        if IsValid(mem) and mem:Health() > 0 then
+            if VNPC_IsFemalePreyCitizen(mem) then
+                table.insert(females, mem)
+            elseif VNPC_IsMalePreyCitizen(mem) then
+                table.insert(males, mem)
+            end
+        end
+    end
+
+    if #females == 0 or #males == 0 then return end
+
+    -- 1. Check existing pregnancies for childbirth
+    for _, f in ipairs(females) do
+        if f.VNPC_IsPregnant and now >= f.VNPC_IsPregnant then
+            f.VNPC_IsPregnant = nil
+            local child = ents.Create("npc_citizen")
+            if IsValid(child) then
+                local spawnPos = f:GetPos() + Vector(math.random(-40, 40), math.random(-40, 40), 8)
+                child:SetPos(spawnPos)
+                child:SetAngles(Angle(0, math.random(0, 360), 0))
+                child:Spawn()
+                child:Activate()
+                table.insert(camp.members, child)
+                child.VNPC_PreyCampID = camp.id
+
+                if f.EmitSound then
+                    f:EmitSound("npc/citizen/vo/citizen_we_are_safe.wav", 80, math.random(100, 115))
+                end
+
+                for _, p in ipairs(player.GetAll()) do
+                    p:ChatPrint("[V-NPCs] POPULATION GROWTH! A female citizen in Prey Camp #" .. camp.id .. " gave birth to a new citizen! (Fort population: " .. #camp.members .. ")")
+                end
+            end
+        end
+    end
+
+    -- 2. Check if a new couple falls in love inside the fort
+    if (camp.lastLoveTriggerTime or 0) <= now and #camp.members < maxMembers then
+        for _, f in ipairs(females) do
+            if not f.VNPC_IsPregnant then
+                f.VNPC_IsPregnant = now + pregnancy_time:GetFloat()
+                camp.lastLoveTriggerTime = now + 25.0
+                if f.EmitSound then
+                    f:EmitSound("npc/citizen/vo/nice.wav", 75, math.random(105, 115))
+                end
+                for _, p in ipairs(player.GetAll()) do
+                    p:ChatPrint("[V-NPCs] Love blooms in Prey Camp #" .. camp.id .. "! A female citizen is expecting a new fort member.")
+                end
+                break
+            end
+        end
+    end
+end
+
 -- Main Prey Camps & Fortification AI Loop
 hook.Add("Think", "VNPC_PreyCamps_AI_Loop", function()
     if not camps_enabled:GetBool() then return end
@@ -463,6 +551,11 @@ hook.Add("Think", "VNPC_PreyCamps_AI_Loop", function()
                 end
             end
         end
+
+        -- 5. Population growth via Love & Pregnancy System in fortified camps with huts
+        if camp.fortified and #camp.huts > 0 then
+            VNPC_PreyCampLove_AI(camp, now)
+        end
     end
 end)
 
@@ -476,16 +569,39 @@ concommand.Add("vnpcs_prey_camps_status", function(ply)
     print("Max Walls/Camp: " .. tostring(camp_max_walls:GetInt()))
     print("Hut Cost: " .. tostring(camp_hut_cost:GetFloat()))
     print("Max Huts/Camp: " .. tostring(camp_max_huts:GetInt()))
+    print("Love/Pregnancy Enabled: " .. tostring(love_enabled:GetBool()))
     print("-----------------------------------------")
     for idx, camp in ipairs(VNPC_ActivePreyCamps) do
-        print(string.format(" -> Prey Camp [#%d] | Members: %d | Walls: %d | Huts: %d | Resources: %.1f | Fortified: %s | Pos: (%d, %d, %d)",
-            camp.id, #camp.members, #camp.walls, #(camp.huts or {}), camp.resources or 0, tostring(camp.fortified or false), camp.pos.x, camp.pos.y, camp.pos.z))
+        local pregCount = 0
+        for _, m in ipairs(camp.members) do
+            if IsValid(m) and m.VNPC_IsPregnant then
+                pregCount = pregCount + 1
+            end
+        end
+        print(string.format(" -> Prey Camp [#%d] | Members: %d (Pregnant: %d) | Walls: %d | Huts: %d | Resources: %.1f | Fortified: %s",
+            camp.id, #camp.members, pregCount, #camp.walls, #(camp.huts or {}), camp.resources or 0, tostring(camp.fortified or false)))
     end
     print("Total active prey camps: " .. #VNPC_ActivePreyCamps)
     print("=========================================")
     if IsValid(ply) then
         ply:ChatPrint("[V-NPCs] Prey camp status printed to console. Active prey camps: " .. #VNPC_ActivePreyCamps)
     end
+end)
+
+concommand.Add("vnpcs_test_prey_love", function(ply)
+    if not IsValid(ply) then return end
+    local tr = ply:GetEyeTrace()
+    local target = tr.Entity
+    if not IsValid(target) or not VNPC_IsEligiblePreyNPC(target) then
+        ply:ChatPrint("[V-NPCs] Please aim at a valid citizen in a Prey Camp to trigger love and pregnancy!")
+        return
+    end
+    local camp = VNPC_GetPreyCamp(target)
+    if not camp then
+        camp = VNPC_AssignPreyToCamp(target)
+    end
+    target.VNPC_IsPregnant = CurTime() + 5.0
+    ply:ChatPrint("[V-NPCs] Triggered love & pregnancy on " .. tostring(target) .. " in Prey Camp #" .. camp.id .. "! Baby citizen in 5 seconds!")
 end)
 
 concommand.Add("vnpcs_test_create_prey_camp", function(ply)

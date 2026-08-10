@@ -5,8 +5,17 @@ local camps_enabled = CreateConVar("vnpcs_camps_enabled", "1", {FCVAR_ARCHIVE, F
 local camp_min_dist = CreateConVar("vnpcs_camp_min_distance", "1400.0", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Minimum distance required between distinct predator camps")
 local camp_cap = CreateConVar("vnpcs_camp_member_cap", "4", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Maximum number of sister predators belonging to a single camp")
 local camp_hunger_thresh = CreateConVar("vnpcs_camp_hunger_thresh", "45.0", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Hunger percentage required for a camp to dispatch foragers to capture prey")
+local camp_max_tents = CreateConVar("vnpcs_pred_camp_max_tents", "2", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Maximum number of tents built at a predator camp")
 
 VNPC_ActivePredatorCamps = VNPC_ActivePredatorCamps or {}
+
+local PRED_TENT_MODELS = {
+    "models/props_wasteland/wood_room001a.mdl",       -- Wooden cabin / tent shelter
+    "models/props_c17/FurnitureShack001a.mdl",        -- Tin/wood shack shelter
+    "models/props_buildings/collapsedbuilding01a.mdl",-- Canopy / collapsed shelter
+    "models/props_c17/canister01a.mdl",               -- Compact shelter
+    "models/props_wasteland/cargo_container01.mdl"    -- Container shelter
+}
 
 function VNPC_GetPredatorCamp(pred)
     if not IsValid(pred) or not pred.VNPC_CampID then return nil end
@@ -39,6 +48,8 @@ function VNPC_CreatePredatorCamp(pos, founder)
         id = math.random(100000, 999999),
         pos = origin,
         members = { founder },
+        tents = {},
+        createTime = CurTime(),
         state = "idle",
         lastUpdateTime = CurTime()
     }
@@ -80,6 +91,62 @@ function VNPC_AssignPredatorToCamp(pred)
     else
         return VNPC_CreatePredatorCamp(predPos, pred)
     end
+end
+
+function VNPC_ConstructPredatorCampTent(camp)
+    if not camps_enabled:GetBool() or not camp or not camp.pos then return false end
+    local maxTents = camp_max_tents:GetInt()
+    camp.tents = camp.tents or {}
+    if #camp.tents >= maxTents then return false end
+
+    local angle = math.rad(math.random(0, 360))
+    local dist = 60 + (#camp.tents * 55)
+    local candidatePos = camp.pos + Vector(math.cos(angle) * dist, math.sin(angle) * dist, 50)
+
+    local tr = util.TraceLine({
+        start = candidatePos,
+        endpos = candidatePos - Vector(0, 0, 200),
+        mask = MASK_SOLID_BRUSHONLY
+    })
+
+    if not tr.Hit or tr.HitNormal.z < 0.6 then return false end
+
+    local tent = ents.Create("prop_physics")
+    if not IsValid(tent) then return false end
+
+    local mdl = PRED_TENT_MODELS[math.random(1, #PRED_TENT_MODELS)]
+    if not util.IsValidModel(mdl) then
+        mdl = "models/props_c17/FurnitureShack001a.mdl"
+    end
+
+    tent:SetModel(mdl)
+    tent:SetPos(tr.HitPos + Vector(0, 0, 8))
+    tent:SetAngles(Angle(0, math.random(0, 360), 0))
+    tent:Spawn()
+    tent:Activate()
+
+    tent.VNPC_IsPredatorTent = true
+    tent.VNPC_PredatorCampID = camp.id
+    tent:SetHealth(400)
+
+    table.insert(camp.tents, tent)
+
+    local phys = tent:GetPhysicsObject()
+    if IsValid(phys) then
+        phys:SetVelocity(Vector(0,0,0))
+        phys:EnableMotion(false)
+        phys:Sleep()
+    end
+
+    if tent.EmitSound then
+        tent:EmitSound("physics/wood/wood_box_impact_hard1.wav", 80, math.random(90, 105))
+    end
+
+    for _, p in ipairs(player.GetAll()) do
+        p:ChatPrint("[V-NPCs] Predator Camp #" .. camp.id .. " constructed a Camp Tent/Shelter! (Active tents: " .. #camp.tents .. ")")
+    end
+
+    return true
 end
 
 function VNPC_ForagerFeedCamp(forager, camp, belly)
@@ -192,6 +259,22 @@ hook.Add("Think", "VNPC_PredatorCamps_AI_Loop", function()
         if #camp.members == 0 then
             table.remove(VNPC_ActivePredatorCamps, i)
             continue
+        end
+
+        -- Prune destroyed tents
+        camp.tents = camp.tents or {}
+        for t = #camp.tents, 1, -1 do
+            local tent = camp.tents[t]
+            if not IsValid(tent) then
+                table.remove(camp.tents, t)
+            end
+        end
+
+        -- Construct a Camp Tent/Shelter when resting at camp
+        if camp.state == "idle" and #camp.tents < camp_max_tents:GetInt() and (now - (camp.createTime or now)) > 15.0 and (camp.lastTentBuildTime or 0) <= now then
+            if VNPC_ConstructPredatorCampTent(camp) then
+                camp.lastTentBuildTime = now + 35.0
+            end
         end
 
         -- Count how many members are hungry
@@ -319,16 +402,39 @@ concommand.Add("vnpcs_test_camp_forage", function(ply)
     end
 end)
 
+concommand.Add("vnpcs_test_create_pred_tent", function(ply)
+    if not IsValid(ply) then return end
+    local bestCamp = nil
+    for _, camp in ipairs(VNPC_ActivePredatorCamps) do
+        bestCamp = camp
+        break
+    end
+    if not bestCamp then
+        ply:ChatPrint("[V-NPCs] No active predator camp found to construct a tent!")
+        return
+    end
+    if VNPC_ConstructPredatorCampTent(bestCamp) then
+        ply:ChatPrint("[V-NPCs] Forced construction of a Camp Tent for Predator Camp #" .. bestCamp.id .. "!")
+    else
+        ply:ChatPrint("[V-NPCs] Could not find valid ground geometry to construct a tent in Predator Camp #" .. bestCamp.id .. "!")
+    end
+end)
+
 concommand.Add("vnpcs_clear_camps", function(ply)
     local count = #VNPC_ActivePredatorCamps
+    for _, camp in ipairs(VNPC_ActivePredatorCamps) do
+        for _, t in ipairs(camp.tents or {}) do
+            if IsValid(t) then t:Remove() end
+        end
+    end
     for _, pred in ipairs(ents.GetAll()) do
         pred.VNPC_CampID = nil
         pred.VNPC_CampRole = nil
         pred.VNPC_IsCarryingPreyForCamp = false
     end
     table.Empty(VNPC_ActivePredatorCamps)
-    print("[V-NPCs] Cleared " .. count .. " predator camps from the map.")
+    print("[V-NPCs] Cleared " .. count .. " predator camps and all tents from the map.")
     if IsValid(ply) then
-        ply:ChatPrint("[V-NPCs] Cleared " .. count .. " predator camps from the map.")
+        ply:ChatPrint("[V-NPCs] Cleared " .. count .. " predator camps and all tents from the map.")
     end
 end)
