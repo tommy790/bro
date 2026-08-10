@@ -66,6 +66,9 @@ function ENT:OnDigestionPhaseChanged(new, old)
         if self.NPC then
             self.NPC:SetFacialExpression(0)
         end
+        if VNPC_ScheduleDigestedBoneSpit and (old == 1 or old == 2) then
+            VNPC_ScheduleDigestedBoneSpit(self.NPC or self:GetOwner() or self:GetParent(), self)
+        end
     end
 
     if new == 2 and old == 1 then --from digesting to abosrbing
@@ -74,6 +77,9 @@ function ENT:OnDigestionPhaseChanged(new, old)
 
         if self.NPC then       
             self.NPC:SetFacialExpression(2)
+        end
+        if VNPC_ScheduleDigestedBoneSpit then
+            VNPC_ScheduleDigestedBoneSpit(self.NPC or self:GetOwner() or self:GetParent(), self)
         end
     end
 

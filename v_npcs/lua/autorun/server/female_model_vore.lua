@@ -413,10 +413,16 @@ function VNPC_GiveFemaleModelVore(ent)
         if IsValid(self.VNPC_Belly) and self.VNPC_Belly.PlayFinalAbsorbSound then
             self.VNPC_Belly:PlayFinalAbsorbSound()
         end
+        if VNPC_ScheduleDigestedBoneSpit then
+            VNPC_ScheduleDigestedBoneSpit(self, self.VNPC_Belly)
+        end
     end
     function ent:OnPreyKilled()
         if IsValid(self.VNPC_Belly) and self.VNPC_Belly.PlayFinalDigestSound then
             self.VNPC_Belly:PlayFinalDigestSound()
+        end
+        if VNPC_ScheduleDigestedBoneSpit then
+            VNPC_ScheduleDigestedBoneSpit(self, self.VNPC_Belly)
         end
     end
 

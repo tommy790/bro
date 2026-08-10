@@ -479,6 +479,10 @@ function ENT:AbsorbPrey(dt)
             table.remove(self.Prey, i)
             self:OnPreyAbsorbed()
 
+            if VNPC_ScheduleDigestedBoneSpit then
+                VNPC_ScheduleDigestedBoneSpit(self.NPC or self:GetOwner() or self:GetParent(), self)
+            end
+
             if #self.Prey == 0 then
                 self:ChangeDigestionPhase(0) --belly full of nothing
             end
@@ -500,6 +504,11 @@ function ENT:AbsorbSpecificPrey(index)
     end
     self.Prey[index].Entity = nil
     self:OnPreyKilled()
+
+    if VNPC_ScheduleDigestedBoneSpit then
+        VNPC_ScheduleDigestedBoneSpit(self.NPC or self:GetOwner() or self:GetParent(), self)
+    end
+
     self:SetNWInt("AliveFactor", self:GetAliveFactor()) --uhhh probably shouldnt be in mechanics but idc, this number is used for animations
 
     if self.DigestionPhase ~= 2 then
