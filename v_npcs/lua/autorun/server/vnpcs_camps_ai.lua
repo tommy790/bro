@@ -44,11 +44,13 @@ function VNPC_CreatePredatorCamp(pos, founder)
         end
     end
 
+    local myFaction = (VNPC_GetPredatorFaction and VNPC_GetPredatorFaction(founder)) or "metrocop"
     local camp = {
         id = math.random(100000, 999999),
         pos = origin,
         members = { founder },
         tents = {},
+        faction = myFaction,
         createTime = CurTime(),
         state = "idle",
         lastUpdateTime = CurTime()
@@ -68,13 +70,14 @@ function VNPC_AssignPredatorToCamp(pred)
     local currentCamp = VNPC_GetPredatorCamp(pred)
     if currentCamp then return currentCamp end
 
+    local myFaction = (VNPC_GetPredatorFaction and VNPC_GetPredatorFaction(pred)) or "metrocop"
     local maxCap = camp_cap:GetInt() or 4
     local predPos = pred:GetPos()
     local bestCamp = nil
     local bestDistSqr = 1800 * 1800
 
     for _, camp in ipairs(VNPC_ActivePredatorCamps) do
-        if #camp.members < maxCap then
+        if #camp.members < maxCap and camp.faction == myFaction then
             local dSqr = camp.pos:DistToSqr(predPos)
             if dSqr <= bestDistSqr then
                 bestCamp = camp
@@ -355,8 +358,8 @@ concommand.Add("vnpcs_camps_status", function(ply)
     print("Hunger Threshold: " .. tostring(camp_hunger_thresh:GetFloat()) .. "%")
     print("-----------------------------------------")
     for idx, camp in ipairs(VNPC_ActivePredatorCamps) do
-        print(string.format(" -> Camp [#%d] | State: %s | Members: %d | Pos: (%d, %d, %d)",
-            camp.id, string.upper(camp.state), #camp.members, camp.pos.x, camp.pos.y, camp.pos.z))
+        print(string.format(" -> Camp [#%d] | Faction: %s | State: %s | Members: %d | Pos: (%d, %d, %d)",
+            camp.id, string.upper(camp.faction or "METROCOP"), string.upper(camp.state), #camp.members, camp.pos.x, camp.pos.y, camp.pos.z))
         for mIdx, mem in ipairs(camp.members) do
             if IsValid(mem) then
                 print(string.format("      -> Member [%d] %s | Role: %s | Carrying Prey: %s",
