@@ -6,6 +6,8 @@ local camp_target_size = CreateConVar("vnpcs_prey_camp_target_size", "10", {FCVA
 local camp_resource_rate = CreateConVar("vnpcs_prey_camp_resource_rate", "1.5", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Base resource accumulation rate per second for prey camps")
 local camp_wall_cost = CreateConVar("vnpcs_prey_camp_wall_cost", "25.0", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Resource cost to construct one defensive wall prop")
 local camp_max_walls = CreateConVar("vnpcs_prey_camp_max_walls", "16", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Maximum number of defensive wall props around a prey camp perimeter")
+local camp_hut_cost = CreateConVar("vnpcs_prey_camp_hut_cost", "45.0", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Resource cost to construct a little hut inside a fortified prey camp")
+local camp_max_huts = CreateConVar("vnpcs_prey_camp_max_huts", "4", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Maximum number of little huts inside a fortified prey camp courtyard")
 
 VNPC_ActivePreyCamps = VNPC_ActivePreyCamps or {}
 
@@ -16,6 +18,14 @@ local PREY_WALL_MODELS = {
     "models/props_fortifications/barricade01a.mdl",
     "models/props_c17/concrete_barrier001a.mdl",
     "models/props_junk/wood_crate001a.mdl"
+}
+
+local PREY_HUT_MODELS = {
+    "models/props_wasteland/wood_room001a.mdl",       -- Small wooden shack / cabin
+    "models/props_c17/FurnitureShack001a.mdl",        -- Compact tin/wood shack
+    "models/props_buildings/collapsedbuilding01a.mdl",-- Small shelter
+    "models/props_c17/canister01a.mdl",               -- Compact shelter canister
+    "models/props_wasteland/cargo_container01.mdl"    -- Cargo container shelter
 }
 
 function VNPC_IsEligiblePreyNPC(ent)
@@ -52,6 +62,8 @@ function VNPC_CreatePreyCamp(pos, founder)
         pos = origin,
         members = { founder },
         walls = {},
+        huts = {},
+        fortified = false,
         resources = 15.0,
         lastUpdateTime = CurTime()
     }
@@ -211,6 +223,123 @@ function VNPC_PredatorBreachPreyCampWall(pred, wall, camp)
     end
 end
 
+function VNPC_CalculateCampHutPosition(camp)
+    if not camp or not camp.pos then return nil, nil end
+    local numHuts = math.Clamp(camp_max_huts:GetInt(), 1, 6)
+    local radius = 90 + ((#(camp.huts or {})) * 55)
+    local center = camp.pos + Vector(0, 0, 32)
+
+    for i = 0, numHuts - 1 do
+        local theta = (i / numHuts) * (2 * math.pi) + math.rad(45)
+        local candidatePos = center + Vector(math.cos(theta) * radius, math.sin(theta) * radius, 65)
+
+        local tr = util.TraceLine({
+            start = candidatePos,
+            endpos = candidatePos - Vector(0, 0, 220),
+            mask = MASK_SOLID_BRUSHONLY
+        })
+
+        if tr.Hit and tr.HitNormal.z > 0.6 then
+            local occupied = false
+            for _, h in ipairs(camp.huts or {}) do
+                if IsValid(h) and h:GetPos():DistToSqr(tr.HitPos) < (130 * 130) then
+                    occupied = true
+                    break
+                end
+            end
+
+            if not occupied then
+                local outwardDir = (tr.HitPos - center):GetNormalized()
+                local yaw = outwardDir:Angle().y
+                local ang = Angle(0, yaw, 0)
+                return tr.HitPos + Vector(0, 0, 10), ang
+            end
+        end
+    end
+    return nil, nil
+end
+
+function VNPC_ConstructPreyCampHut(camp)
+    if not camps_enabled:GetBool() or not camp then return false end
+
+    local pos, ang = VNPC_CalculateCampHutPosition(camp)
+    if not pos or not ang then return false end
+
+    local hut = ents.Create("prop_physics")
+    if not IsValid(hut) then return false end
+
+    local mdl = PREY_HUT_MODELS[math.random(1, #PREY_HUT_MODELS)]
+    if not util.IsValidModel(mdl) then
+        mdl = "models/props_c17/FurnitureShack001a.mdl"
+    end
+
+    hut:SetModel(mdl)
+    hut:SetPos(pos)
+    hut:SetAngles(ang)
+    hut:Spawn()
+    hut:Activate()
+
+    hut.VNPC_IsPreyCampHut = true
+    hut.VNPC_PreyCampID = camp.id
+    hut.VNPC_CampRef = camp
+    hut:SetHealth(300)
+
+    camp.huts = camp.huts or {}
+    table.insert(camp.huts, hut)
+
+    local phys = hut:GetPhysicsObject()
+    if IsValid(phys) then
+        phys:SetVelocity(Vector(0,0,0))
+        phys:EnableMotion(false)
+        phys:Sleep()
+    end
+
+    if hut.EmitSound then
+        hut:EmitSound("physics/wood/wood_box_impact_hard1.wav", 80, math.random(90, 105))
+    end
+
+    for _, p in ipairs(player.GetAll()) do
+        p:ChatPrint("[V-NPCs] Prey Camp #" .. camp.id .. " finished perimeter defenses and constructed a Little Hut in the fort! (Active huts: " .. #camp.huts .. ")")
+    end
+
+    return true
+end
+
+function VNPC_PredatorBreachPreyCampHut(pred, hut, camp)
+    if not IsValid(pred) or not IsValid(hut) or not camp then return end
+    if not hut.VNPC_IsPreyCampHut then return end
+
+    if camp.huts then
+        for idx, h in ipairs(camp.huts) do
+            if h == hut then
+                table.remove(camp.huts, idx)
+                break
+            end
+        end
+    end
+
+    local belly = pred.VNPC_Belly or pred.Belly
+    if IsValid(belly) and belly.AddPrey then
+        pcall(belly.AddPrey, belly, hut)
+    elseif pred.EatEntity then
+        pcall(pred.EatEntity, pred, hut)
+    else
+        hut:SetNoDraw(true)
+        hut:SetSolid(0)
+        hut:SetParent(pred)
+        if pred.EmitSound then
+            pred:EmitSound("physics/wood/wood_box_break1.wav", 85, math.random(90, 105))
+        end
+        timer.Simple(0.1, function()
+            if IsValid(hut) then hut:Remove() end
+        end)
+    end
+
+    for _, p in ipairs(player.GetAll()) do
+        p:ChatPrint("[V-NPCs] WARNING! Predator " .. pred:GetClass() .. " swallowed a Little Hut in Prey Camp #" .. camp.id .. " and exposed the prey inside!")
+    end
+end
+
 -- Main Prey Camps & Fortification AI Loop
 hook.Add("Think", "VNPC_PreyCamps_AI_Loop", function()
     if not camps_enabled:GetBool() then return end
@@ -247,6 +376,15 @@ hook.Add("Think", "VNPC_PreyCamps_AI_Loop", function()
             end
         end
 
+        -- Prune destroyed huts
+        camp.huts = camp.huts or {}
+        for h = #camp.huts, 1, -1 do
+            local hut = camp.huts[h]
+            if not IsValid(hut) then
+                table.remove(camp.huts, h)
+            end
+        end
+
         if #camp.members == 0 then
             table.remove(VNPC_ActivePreyCamps, i)
             continue
@@ -262,6 +400,31 @@ hook.Add("Think", "VNPC_PreyCamps_AI_Loop", function()
         if camp.resources >= cost and #camp.walls < maxWalls then
             if VNPC_ConstructPreyCampWall(camp) then
                 camp.resources = math.max(0, camp.resources - cost)
+            end
+        end
+
+        -- Check if perimeter wall ring is finished (fortified!)
+        camp.fortified = (#camp.walls >= maxWalls or #camp.walls >= 10)
+
+        -- When fortified, build Little Huts in the inner courtyard for shelter
+        local hutCost = camp_hut_cost:GetFloat()
+        local maxHuts = camp_max_huts:GetInt()
+        if camp.fortified and camp.resources >= hutCost and #camp.huts < maxHuts then
+            if VNPC_ConstructPreyCampHut(camp) then
+                camp.resources = math.max(0, camp.resources - hutCost)
+            end
+        end
+
+        -- Instruct idle prey members to take shelter inside/near built little huts
+        if #camp.huts > 0 then
+            for idx, mem in ipairs(camp.members) do
+                if IsValid(mem) and not IsValid(mem:GetEnemy()) then
+                    local targetHut = camp.huts[((idx - 1) % #camp.huts) + 1]
+                    if IsValid(targetHut) and mem:GetPos():DistToSqr(targetHut:GetPos()) > (160 * 160) then
+                        if mem.SetLastPosition then pcall(mem.SetLastPosition, mem, targetHut:GetPos()) end
+                        if mem.SetSchedule then pcall(mem.SetSchedule, mem, SCHED_FORCED_GO) end
+                    end
+                end
             end
         end
 
@@ -282,6 +445,24 @@ hook.Add("Think", "VNPC_PreyCamps_AI_Loop", function()
                 end
             end
         end
+
+        -- 4. Check for predators swallowing Little Huts in the fort courtyard
+        for _, hut in ipairs(camp.huts) do
+            if not IsValid(hut) then continue end
+            local hutPos = hut:GetPos()
+            for _, pred in ipairs(ents.FindInSphere(hutPos, 160)) do
+                if not IsValid(pred) or pred:Health() <= 0 then continue end
+                if pred.IsDrGNextbot or pred.VNPC_FemaleModelVore or pred.Predator then
+                    local belly = pred.VNPC_Belly or pred.Belly
+                    local hasSpace = not IsValid(belly) or not belly.Prey or #belly.Prey < 5
+                    if hasSpace and (pred.VNPC_NextHutBreachTime or 0) <= now then
+                        pred.VNPC_NextHutBreachTime = now + 5.0
+                        VNPC_PredatorBreachPreyCampHut(pred, hut, camp)
+                        break
+                    end
+                end
+            end
+        end
     end
 end)
 
@@ -293,10 +474,12 @@ concommand.Add("vnpcs_prey_camps_status", function(ply)
     print("Resource Accumulation Rate: " .. tostring(camp_resource_rate:GetFloat()) .. " / sec")
     print("Wall Cost: " .. tostring(camp_wall_cost:GetFloat()))
     print("Max Walls/Camp: " .. tostring(camp_max_walls:GetInt()))
+    print("Hut Cost: " .. tostring(camp_hut_cost:GetFloat()))
+    print("Max Huts/Camp: " .. tostring(camp_max_huts:GetInt()))
     print("-----------------------------------------")
     for idx, camp in ipairs(VNPC_ActivePreyCamps) do
-        print(string.format(" -> Prey Camp [#%d] | Members: %d | Walls: %d | Resources: %.1f | Pos: (%d, %d, %d)",
-            camp.id, #camp.members, #camp.walls, camp.resources or 0, camp.pos.x, camp.pos.y, camp.pos.z))
+        print(string.format(" -> Prey Camp [#%d] | Members: %d | Walls: %d | Huts: %d | Resources: %.1f | Fortified: %s | Pos: (%d, %d, %d)",
+            camp.id, #camp.members, #camp.walls, #(camp.huts or {}), camp.resources or 0, tostring(camp.fortified or false), camp.pos.x, camp.pos.y, camp.pos.z))
     end
     print("Total active prey camps: " .. #VNPC_ActivePreyCamps)
     print("=========================================")
@@ -335,19 +518,41 @@ concommand.Add("vnpcs_test_build_wall", function(ply)
     end
 end)
 
+concommand.Add("vnpcs_test_build_hut", function(ply)
+    if not IsValid(ply) then return end
+    local bestCamp = nil
+    for _, camp in ipairs(VNPC_ActivePreyCamps) do
+        bestCamp = camp
+        break
+    end
+    if not bestCamp then
+        ply:ChatPrint("[V-NPCs] No active prey camp found to build a hut!")
+        return
+    end
+    bestCamp.fortified = true
+    if VNPC_ConstructPreyCampHut(bestCamp) then
+        ply:ChatPrint("[V-NPCs] Forced construction of a Little Hut for Prey Camp #" .. bestCamp.id .. "!")
+    else
+        ply:ChatPrint("[V-NPCs] Could not find valid courtyard terrain geometry to place a hut in Prey Camp #" .. bestCamp.id .. "!")
+    end
+end)
+
 concommand.Add("vnpcs_clear_prey_camps", function(ply)
     local count = #VNPC_ActivePreyCamps
     for _, camp in ipairs(VNPC_ActivePreyCamps) do
         for _, wall in ipairs(camp.walls) do
             if IsValid(wall) then wall:Remove() end
         end
+        for _, hut in ipairs(camp.huts or {}) do
+            if IsValid(hut) then hut:Remove() end
+        end
     end
     for _, ent in ipairs(ents.GetAll()) do
         ent.VNPC_PreyCampID = nil
     end
     table.Empty(VNPC_ActivePreyCamps)
-    print("[V-NPCs] Cleared " .. count .. " prey camps and all defensive walls from the map.")
+    print("[V-NPCs] Cleared " .. count .. " prey camps, defensive walls, and huts from the map.")
     if IsValid(ply) then
-        ply:ChatPrint("[V-NPCs] Cleared " .. count .. " prey camps and all defensive walls from the map.")
+        ply:ChatPrint("[V-NPCs] Cleared " .. count .. " prey camps, defensive walls, and huts from the map.")
     end
 end)
