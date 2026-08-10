@@ -385,26 +385,21 @@ function VNPC_PreyCampLove_AI(camp, now)
 
     if #females == 0 or #males == 0 then return end
 
-    -- 1. Check existing pregnancies for childbirth
+    -- 1. Check existing pregnancies for womb growth (value 10 to 50) and childbirth
     for _, f in ipairs(females) do
-        if f.VNPC_IsPregnant and now >= f.VNPC_IsPregnant then
-            f.VNPC_IsPregnant = nil
-            local child = ents.Create("npc_citizen")
-            if IsValid(child) then
-                local spawnPos = f:GetPos() + Vector(math.random(-40, 40), math.random(-40, 40), 8)
-                child:SetPos(spawnPos)
-                child:SetAngles(Angle(0, math.random(0, 360), 0))
-                child:Spawn()
-                child:Activate()
-                table.insert(camp.members, child)
-                child.VNPC_PreyCampID = camp.id
+        if f.VNPC_IsPregnant then
+            local dt = math.max(0.1, now - (f.VNPC_LastGrowthTime or now))
+            f.VNPC_LastGrowthTime = now
+            local gRate = GetConVar("vnpcs_prey_camp_baby_growth_rate") and GetConVar("vnpcs_prey_camp_baby_growth_rate"):GetFloat() or 1.0
+            f.VNPC_BabyGrowthValue = (f.VNPC_BabyGrowthValue or 10.0) + (gRate * dt)
 
-                if f.EmitSound then
-                    f:EmitSound("npc/citizen/vo/citizen_we_are_safe.wav", 80, math.random(100, 115))
-                end
+            if VNPC_ApplyPregnancyBellyBulge then
+                VNPC_ApplyPregnancyBellyBulge(f, f.VNPC_BabyGrowthValue)
+            end
 
-                for _, p in ipairs(player.GetAll()) do
-                    p:ChatPrint("[V-NPCs] POPULATION GROWTH! A female citizen in Prey Camp #" .. camp.id .. " gave birth to a new citizen! (Fort population: " .. #camp.members .. ")")
+            if f.VNPC_BabyGrowthValue >= 50.0 then
+                if VNPC_StartChildbirthAnimation then
+                    VNPC_StartChildbirthAnimation(f, f.VNPC_UnbornChild, camp)
                 end
             end
         end
@@ -414,13 +409,33 @@ function VNPC_PreyCampLove_AI(camp, now)
     if (camp.lastLoveTriggerTime or 0) <= now and #camp.members < maxMembers then
         for _, f in ipairs(females) do
             if not f.VNPC_IsPregnant then
-                f.VNPC_IsPregnant = now + pregnancy_time:GetFloat()
+                f.VNPC_IsPregnant = true
+                f.VNPC_BabyGrowthValue = 10.0
+                f.VNPC_LastGrowthTime = now
                 camp.lastLoveTriggerTime = now + 25.0
+
+                -- Immediately spawn small citizen baby inside the female belly
+                local child = ents.Create("npc_citizen")
+                if IsValid(child) then
+                    child:SetPos(f:GetPos() + Vector(0, 0, 32))
+                    child:SetAngles(Angle(0, f:GetAngles().y, 0))
+                    child:Spawn()
+                    child:Activate()
+                    child:SetModelScale(0.15, 0)
+                    child:SetNoDraw(true)
+                    child:SetSolid(0)
+                    child:SetMoveType(MOVETYPE_NONE)
+                    child:SetParent(f)
+                    child.VNPC_IsUnbornBaby = true
+                    child.VNPC_MotherRef = f
+                    f.VNPC_UnbornChild = child
+                end
+
                 if f.EmitSound then
                     f:EmitSound("npc/citizen/vo/nice.wav", 75, math.random(105, 115))
                 end
                 for _, p in ipairs(player.GetAll()) do
-                    p:ChatPrint("[V-NPCs] Love blooms in Prey Camp #" .. camp.id .. "! A female citizen is expecting a new fort member.")
+                    p:ChatPrint("[V-NPCs] Love blooms in Prey Camp #" .. camp.id .. "! A female citizen is pregnant with an unborn citizen (value 10 -> 50).")
                 end
                 break
             end
@@ -600,8 +615,27 @@ concommand.Add("vnpcs_test_prey_love", function(ply)
     if not camp then
         camp = VNPC_AssignPreyToCamp(target)
     end
-    target.VNPC_IsPregnant = CurTime() + 5.0
-    ply:ChatPrint("[V-NPCs] Triggered love & pregnancy on " .. tostring(target) .. " in Prey Camp #" .. camp.id .. "! Baby citizen in 5 seconds!")
+    target.VNPC_IsPregnant = true
+    target.VNPC_BabyGrowthValue = 46.0
+    target.VNPC_LastGrowthTime = CurTime()
+
+    local child = ents.Create("npc_citizen")
+    if IsValid(child) then
+        child:SetPos(target:GetPos() + Vector(0, 0, 32))
+        child:SetAngles(Angle(0, target:GetAngles().y, 0))
+        child:Spawn()
+        child:Activate()
+        child:SetModelScale(0.30, 0)
+        child:SetNoDraw(true)
+        child:SetSolid(0)
+        child:SetMoveType(MOVETYPE_NONE)
+        child:SetParent(target)
+        child.VNPC_IsUnbornBaby = true
+        child.VNPC_MotherRef = target
+        target.VNPC_UnbornChild = child
+    end
+
+    ply:ChatPrint("[V-NPCs] Triggered love & pregnancy on " .. tostring(target) .. " in Prey Camp #" .. camp.id .. "! Baby citizen inside womb at value 46 (birth at 50 in 4s)!")
 end)
 
 concommand.Add("vnpcs_test_create_prey_camp", function(ply)

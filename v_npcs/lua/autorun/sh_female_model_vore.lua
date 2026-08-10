@@ -2101,6 +2101,8 @@ function VNPC_AnimatedBoneOffsets(ent)
         data = VNPC_SleepingCrawlReceiveKeyframes
     elseif ent.VNPC_IsSleeping and VNPC_SleepingFullBellyKeyframes then
         data = VNPC_SleepingFullBellyKeyframes
+    elseif (ent.VNPC_InChildbirthPose or 0) > CurTime() and VNPC_ChildbirthSittingPoseKeyframe then
+        data = VNPC_ChildbirthSittingPoseKeyframe
     elseif (ent.VNPC_IsEmbarrassed or 0) > CurTime() and VNPC_ShyAnimatedBoneList then
         data = VNPC_ShyAnimatedBoneList[2]
     end
