@@ -3,6 +3,7 @@
 
 local clashing_enabled = CreateConVar("vnpcs_camp_clashing_enabled", "1", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Enable predator camp faction wars and tension clashing")
 local tension_rate = CreateConVar("vnpcs_camp_tension_rate", "1.0", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Tension growth per second between rival predator camps within 3500 units")
+local tension_passive_rate = CreateConVar("vnpcs_camp_tension_passive_rate", "0.0", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Passive distance-based tension growth (0 = dynamic incident-only tension)")
 local war_thresh = CreateConVar("vnpcs_camp_war_thresh", "100.0", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Tension threshold required to trigger an open Faction War battle")
 
 VNPC_CampTensions = VNPC_CampTensions or {}
@@ -35,6 +36,27 @@ end
 
 function VNPC_GetTensionKey(id1, id2)
     return math.min(id1, id2) .. "_" .. math.max(id1, id2)
+end
+
+function VNPC_AddCampTension(campA, campB, amount, reason)
+    if not clashing_enabled:GetBool() or not campA or not campB then return end
+    if campA == campB or campA.faction == campB.faction then return end
+
+    local key = VNPC_GetTensionKey(campA.id, campB.id)
+    local current = VNPC_CampTensions[key] or 0
+    local newTension = math.Clamp(current + amount, 0, 100.0)
+    VNPC_CampTensions[key] = newTension
+
+    if amount >= 10.0 then
+        for _, p in ipairs(player.GetAll()) do
+            p:ChatPrint(string.format("[V-NPCs] TENSION SPIKE (+%d)! %s -> Faction %s Camp #%d vs Faction %s Camp #%d (Tension: %.1f%%)",
+                math.floor(amount), tostring(reason or "Rival Incident"), string.upper(campA.faction), campA.id, string.upper(campB.faction), campB.id, newTension))
+        end
+    end
+
+    if newTension >= war_thresh:GetFloat() and campA.state ~= "war" and campB.state ~= "war" then
+        VNPC_TriggerCampWar(campA, campB)
+    end
 end
 
 function VNPC_TriggerCampWar(campA, campB)
@@ -115,7 +137,7 @@ hook.Add("Think", "VNPC_PredatorCampFactions_Loop", function()
                     if dist <= 3500 then
                         local key = VNPC_GetTensionKey(campA.id, campB.id)
                         local current = VNPC_CampTensions[key] or 25.0
-                        local rate = (1.0 + (3500 - dist) / 1500) * tension_rate:GetFloat()
+                        local rate = (1.0 + (3500 - dist) / 1500) * tension_passive_rate:GetFloat()
                         local newTension = math.min(100.0, current + rate)
                         VNPC_CampTensions[key] = newTension
 
@@ -130,11 +152,58 @@ hook.Add("Think", "VNPC_PredatorCampFactions_Loop", function()
     end
 end)
 
+-- Incident 1: Predator-on-predator swallowing (+45.0 Tension)
+hook.Add("VNPC_OnPreySwallowed", "VNPC_CampTension_VoreIncident", function(pred, prey, belly)
+    if not clashing_enabled:GetBool() then return end
+    if not IsValid(pred) or not IsValid(prey) then return end
+    if not (prey.IsDrGNextbot or prey.VNPC_FemaleModelVore or prey.Predator) then return end
+
+    local predCamp = VNPC_GetPredatorCamp and VNPC_GetPredatorCamp(pred)
+    local preyCamp = VNPC_GetPredatorCamp and VNPC_GetPredatorCamp(prey)
+
+    if predCamp and preyCamp and predCamp ~= preyCamp and predCamp.faction ~= preyCamp.faction then
+        VNPC_AddCampTension(predCamp, preyCamp, 45.0, pred:GetClass() .. " swallowed rival " .. prey:GetClass())
+    elseif predCamp and not preyCamp then
+        -- Poaching incident (+20.0 Tension) when swallowing prey near a rival camp
+        for _, campB in ipairs(VNPC_ActivePredatorCamps or {}) do
+            if campB ~= predCamp and campB.faction ~= predCamp.faction then
+                if prey:GetPos():DistToSqr(campB.pos) < (900 * 900) then
+                    VNPC_AddCampTension(predCamp, campB, 20.0, pred:GetClass() .. " poached prey near Camp #" .. campB.id)
+                    break
+                end
+            end
+        end
+    end
+end)
+
+-- Incident 2: Attacking / Damaging a Rival Campmate (+15.0 Tension)
+hook.Add("EntityTakeDamage", "VNPC_CampTension_DamageIncident", function(target, dmginfo)
+    if not clashing_enabled:GetBool() then return end
+    local attacker = dmginfo:GetAttacker()
+    if not IsValid(attacker) or not IsValid(target) or attacker == target then return end
+    if not (attacker.IsDrGNextbot or attacker.VNPC_FemaleModelVore or attacker.Predator) then return end
+    if not (target.IsDrGNextbot or target.VNPC_FemaleModelVore or target.Predator) then return end
+
+    local campA = VNPC_GetPredatorCamp and VNPC_GetPredatorCamp(attacker)
+    local campB = VNPC_GetPredatorCamp and VNPC_GetPredatorCamp(target)
+
+    if campA and campB and campA ~= campB and campA.faction ~= campB.faction then
+        local now = CurTime()
+        local key = VNPC_GetTensionKey(campA.id, campB.id)
+        VNPC_NextDamageTensionMsg = VNPC_NextDamageTensionMsg or {}
+        if (VNPC_NextDamageTensionMsg[key] or 0) <= now then
+            VNPC_NextDamageTensionMsg[key] = now + 8.0
+            VNPC_AddCampTension(campA, campB, 15.0, attacker:GetClass() .. " attacked rival " .. target:GetClass())
+        end
+    end
+end)
+
 concommand.Add("vnpcs_camp_factions_status", function(ply)
     print("=========================================")
     print("[V-NPCs] Predator Camp Factions & Clashing / War AI Status")
     print("Enabled: " .. tostring(clashing_enabled:GetBool()))
-    print("Tension Rate: " .. tostring(tension_rate:GetFloat()) .. " / sec")
+    print("Dynamic Incident Tension: ACTIVE (+45 Vore, +15 Damage, +20 Poaching)")
+    print("Passive Distance Rate: " .. tostring(tension_passive_rate:GetFloat()) .. " / sec (0 = Dynamic Only)")
     print("War Threshold: " .. tostring(war_thresh:GetFloat()))
     print("-----------------------------------------")
     local camps = VNPC_ActivePredatorCamps or {}
@@ -150,6 +219,20 @@ concommand.Add("vnpcs_camp_factions_status", function(ply)
     if IsValid(ply) then
         ply:ChatPrint("[V-NPCs] Factions status printed to console. Camps: " .. #camps)
     end
+end)
+
+concommand.Add("vnpcs_test_camp_tension", function(ply, cmd, args)
+    if not IsValid(ply) then return end
+    local amt = tonumber(args[1]) or 45.0
+    local camps = VNPC_ActivePredatorCamps or {}
+    if #camps < 2 then
+        ply:ChatPrint("[V-NPCs] At least 2 active predator camps are needed to test tension!")
+        return
+    end
+    local campA, campB = camps[1], camps[2]
+    campA.faction = "metrocop"
+    campB.faction = "zombie"
+    VNPC_AddCampTension(campA, campB, amt, "Testing Dynamic Tension Command")
 end)
 
 concommand.Add("vnpcs_test_camp_war", function(ply)
