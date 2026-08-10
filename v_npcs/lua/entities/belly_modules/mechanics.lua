@@ -250,6 +250,9 @@ function ENT:AddPrey(prey)
     end
 
     prey.Vored = true
+    if VNPC_UnfreezeRagdollPhysics then
+        VNPC_UnfreezeRagdollPhysics(prey)
+    end
     if VNPC_FeedHunger then
         VNPC_FeedHunger(self.NPC or self:GetOwner() or self, 40)
     end 
