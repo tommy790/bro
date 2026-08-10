@@ -106,6 +106,54 @@ function VNPC_FindWildernessSpawnPos()
     return nil
 end
 
+local WILD_PREDATOR_CLASSES = {
+    { cls = "npc_vortigaunt",  mdl = nil },
+    { cls = "npc_metropolice", mdl = nil },
+    { cls = "npc_zombie",      mdl = nil },
+    { cls = "npc_fastzombie",  mdl = nil },
+    { cls = "npc_alyx",        mdl = "models/alyx.mdl" },
+    { cls = "npc_mossman",     mdl = "models/mossman.mdl" },
+    { cls = "npc_citizen",     mdl = "models/Humans/Group01/Female_01.mdl" },
+    { cls = "npc_citizen",     mdl = "models/Humans/Group01/Female_02.mdl" }
+}
+
+function VNPC_ForceGiveWildPredatorVore(ent)
+    if not IsValid(ent) then return false end
+    if ent.VNPC_FemaleModelVore then return true end
+
+    ent.VNPC_FemaleModelVore = true
+    ent.Predator = true
+    ent.Belly_Angles = ent.Belly_Angles or Angle(0, 90, 90)
+    ent.Belly_Offset = VNPC_GetFixedFemaleBellyOffset and VNPC_GetFixedFemaleBellyOffset(ent) or Vector(0, 3.5, 0)
+
+    ent.VoreSettings = ent.VoreSettings or {
+        EatsPlayers = true,
+        OnlyEatsEnemies = false,
+        BurpsEnabled = true,
+        DigestionStrength = 3,
+        AbsorptionSpeed = 2,
+        StruggleMultiplier = 1.5,
+        HasWeightGain = true,
+        FatFoldsMaxSize = 0.5
+    }
+    ent.BellyProperties = ent.BellyProperties or {
+        BellyColor = Color(195,145,122), 
+        DigestionStrength = 3,
+        AbsorptionPower = 1.5,
+        StruggleMultiplier = 1.25,
+        MaxBaseSize = 0.5,
+        BaseSize = 0,
+        FatFoldsMaxSize = 1
+    }
+
+    if VNPC_AttachFemaleModelVore then
+        VNPC_AttachFemaleModelVore(ent)
+    elseif VNPC_GiveFemaleModelVore then
+        VNPC_GiveFemaleModelVore(ent)
+    end
+    return true
+end
+
 function VNPC_SpawnWildNPC(isPredator, posOverride)
     if not ecology_enabled:GetBool() then return nil end
     local spawnPos = posOverride or VNPC_FindWildernessSpawnPos()
@@ -113,16 +161,17 @@ function VNPC_SpawnWildNPC(isPredator, posOverride)
 
     local ent = nil
     if isPredator then
-        ent = ents.Create("npc_citizen")
+        local info = WILD_PREDATOR_CLASSES[math.random(1, #WILD_PREDATOR_CLASSES)]
+        ent = ents.Create(info.cls)
         if IsValid(ent) then
-            ent:SetModel("models/Humans/Group01/Female_01.mdl")
+            if info.mdl then
+                ent:SetModel(info.mdl)
+            end
             ent:SetPos(spawnPos)
             ent:SetAngles(Angle(0, math.random(0, 360), 0))
             ent:Spawn()
             ent:Activate()
-            if VNPC_GiveFemaleModelVore then
-                VNPC_GiveFemaleModelVore(ent)
-            end
+            VNPC_ForceGiveWildPredatorVore(ent)
             VNPC_MakeWildWanderer(ent)
         end
     else
