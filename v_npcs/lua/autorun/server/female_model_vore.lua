@@ -143,6 +143,7 @@ function VNPC_GiveFemaleModelVore(ent)
     function ent:EatEntity(target)
         if not IsValid(target) or (self.Swallowing and not self._InClumpVore) or target.Vored or self.Vored then return false end
         if VNPC_IsProtectedChildPrey and VNPC_IsProtectedChildPrey(target) then return false end
+        if VNPC_IsPreyEmissary and VNPC_IsPreyEmissary(target) then return false end
         if not target:GetModel() or target:GetClass():find("func") then return false end
         
         self.Swallowing = true
@@ -625,6 +626,7 @@ hook.Add("Think", "VNPC_FemaleModelVore_AI", function()
             for _, ent in ipairs(ents.FindInSphere(npc:GetPos(), eff_detect)) do
                 if IsValid(ent) and ent ~= npc and not ent.Vored and (ent:IsPlayer() or ent:IsNPC()) then
                     if VNPC_IsProtectedChildPrey and VNPC_IsProtectedChildPrey(ent) then continue end
+                    if VNPC_IsPreyEmissary and VNPC_IsPreyEmissary(ent) then continue end
                     if npc.GetRelationship and npc:GetRelationship(ent) == D_HT then
                         if npc:GetPos():Distance(ent:GetPos()) <= eff_grab then
                             npc:EatEntity(ent)

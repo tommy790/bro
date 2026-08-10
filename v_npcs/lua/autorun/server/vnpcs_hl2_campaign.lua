@@ -44,6 +44,7 @@ hook.Add("Think", "VNPCS_HL2Campaign_DirectorLoop", function()
         local enemy = npc:GetEnemy()
         if IsValid(enemy) and enemy ~= npc and not enemy.Vored and not enemy.VNPC_Vored then
             if VNPC_IsProtectedChildPrey and VNPC_IsProtectedChildPrey(enemy) then continue end
+            if VNPC_IsPreyEmissary and VNPC_IsPreyEmissary(enemy) then continue end
             local dist = npc:GetPos():Distance(enemy:GetPos())
             local campGrab = GetConVar("vnpcs_hl2_campaign_grab_range"):GetFloat() or 160
 
@@ -81,6 +82,7 @@ hook.Add("EntityTakeDamage", "VNPCS_HL2Campaign_ConstantVoreDamage", function(ta
     if not (target:IsNPC() or target:IsPlayer() or target:IsNextBot()) then return end
     if target.Vored or target.VNPC_Vored then return end
     if VNPC_IsProtectedChildPrey and VNPC_IsProtectedChildPrey(target) then return end
+    if VNPC_IsPreyEmissary and VNPC_IsPreyEmissary(target) then return end
 
     if attacker.VNPC_FemaleModelVore or attacker.IsDrGNextbot or attacker.Predator then
         local dmg = dmginfo:GetDamage()

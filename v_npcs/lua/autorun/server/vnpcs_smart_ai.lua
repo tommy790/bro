@@ -19,6 +19,7 @@ function VNPC_SelectSmartPreyTarget(pred, search_radius)
     for _, ent in ipairs(ents.FindInSphere(predPos, search_radius or 700)) do
         if not IsValid(ent) or ent == pred or ent.Vored or ent.VNPC_Vored or ent.VNPC_Surrendered then continue end
         if VNPC_IsProtectedChildPrey and VNPC_IsProtectedChildPrey(ent) then continue end
+        if VNPC_IsPreyEmissary and VNPC_IsPreyEmissary(ent) then continue end
         if not (ent:IsPlayer() or ent:IsNPC() or ent.IsDrGNextbot or ent:GetClass() == "prop_ragdoll" or ent.VNPC_IsCorpse) then continue end
 
         -- Skip targets that are already being engaged by a closer pack-mate predator

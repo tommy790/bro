@@ -130,6 +130,11 @@ function VNPC_StartChildbirthAnimation(mother, child, camp)
             end
             child.VNPC_PreyCampID = camp.id
         end
+        if mother.VNPC_PreyCampBabyMother then
+            child.VNPC_BornSister = nil
+            child.VNPC_AdoptedByPredator = nil
+            child.VNPC_MotherRef = nil
+        end
 
         if child.EmitSound then
             child:EmitSound("npc/citizen/vo/nice.wav", 80, 135)
