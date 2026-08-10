@@ -101,6 +101,14 @@ end
 
 function VNPC_AssignPreyToCamp(npc)
     if not camps_enabled:GetBool() or not VNPC_IsEligiblePreyNPC(npc) then return nil end
+    if npc.VNPC_IsWildWanderer then return nil end
+
+    if math.random(1, 100) <= (GetConVar("vnpcs_wild_spawn_chance") and GetConVar("vnpcs_wild_spawn_chance"):GetInt() or 25) then
+        if VNPC_MakeWildWanderer and VNPC_MakeWildWanderer(npc) then
+            return nil
+        end
+    end
+
     local current = VNPC_GetPreyCamp(npc)
     if current then return current end
 
@@ -574,6 +582,11 @@ hook.Add("Think", "VNPC_PreyCamps_AI_Loop", function()
         -- 5. Population growth via Love & Pregnancy System in fortified camps with huts
         if camp.fortified and #camp.huts > 0 then
             VNPC_PreyCampLove_AI(camp, now)
+        end
+
+        -- 6. Intelligence Agency recon missions to scout predator camps & wild hotspots
+        if VNPC_PreyCampIntelligence_AI then
+            VNPC_PreyCampIntelligence_AI(camp, now)
         end
     end
 end)
