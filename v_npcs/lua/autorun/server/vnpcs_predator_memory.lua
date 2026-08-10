@@ -61,6 +61,62 @@ function VNPC_CheckRecognizedMateWelcome(predCamp, emissary, preyCamp)
     return false
 end
 
+function VNPC_PredatorCampMatesGreeting_AI(camp, now)
+    if not memory_enabled:GetBool() or not camp or not camp.pos or camp.state == "war" then return end
+
+    local nearbyMales = {}
+    for _, ent in ipairs(ents.FindInSphere(camp.pos, 500)) do
+        if IsValid(ent) and ent:Health() > 0 and not ent.Vored and not ent.VNPC_Vored then
+            if VNPC_IsMalePreyCitizen and VNPC_IsMalePreyCitizen(ent) then
+                table.insert(nearbyMales, ent)
+            end
+        end
+    end
+
+    if #nearbyMales == 0 then return end
+
+    for _, pred in ipairs(camp.members) do
+        if not IsValid(pred) or pred:Health() <= 0 or pred.Vored or pred.VNPC_Vored then continue end
+        if IsValid(pred:GetEnemy()) or (now - (pred.VNPC_LastDamagedTime or 0)) < 15.0 then continue end
+        if (pred.VNPC_NextMateHelloTime or 0) > now then continue end
+
+        local predPos = pred:GetPos()
+        for _, male in ipairs(nearbyMales) do
+            if predPos:DistToSqr(male:GetPos()) <= (250 * 250) then
+                pred.VNPC_NextMateHelloTime = now + 20.0
+
+                if pred.EmitSound then
+                    local helloSounds = {
+                        "npc/citizen/vo/hello.wav",
+                        "npc/citizen/vo/hi.wav",
+                        "npc/alyx/vo/hello.wav",
+                        "npc/alyx/vo/hi.wav",
+                        "npc/citizen/vo/nice.wav"
+                    }
+                    local snd = helloSounds[math.random(1, #helloSounds)]
+                    pred:EmitSound(snd, 75, math.random(106, 114))
+                end
+
+                for _, p in ipairs(player.GetAll()) do
+                    p:ChatPrint("[V-NPCs] " .. pred:GetClass() .. " says hello to " .. (male.PrintName or male:GetClass()) .. " at Predator Camp #" .. camp.id .. "!")
+                end
+                break
+            end
+        end
+    end
+end
+
+hook.Add("Think", "VNPC_PredatorMatesGreeting_Loop", function()
+    if not memory_enabled:GetBool() then return end
+    local now = CurTime()
+    if (VNPC_NextMateGreetingThink or 0) > now then return end
+    VNPC_NextMateGreetingThink = now + 1.0
+
+    for _, camp in ipairs(VNPC_ActivePredatorCamps or {}) do
+        VNPC_PredatorCampMatesGreeting_AI(camp, now)
+    end
+end)
+
 concommand.Add("vnpcs_pred_memory_status", function(ply)
     print("=========================================")
     print("[V-NPCs] Predator Camp Memory & Emissary Mate Recognition Status")
@@ -108,4 +164,24 @@ concommand.Add("vnpcs_test_record_mate", function(ply)
     local pred = predCamp.members[1]
     VNPC_RecordRecognizedMate(predCamp, pred, target)
     ply:ChatPrint("[V-NPCs] Recorded " .. tostring(target) .. " as a recognized mate for Predator Camp #" .. predCamp.id .. " with partner " .. tostring(pred) .. "!")
+end)
+
+concommand.Add("vnpcs_test_pred_hello", function(ply)
+    if not IsValid(ply) then return end
+    local count = 0
+    for _, camp in ipairs(VNPC_ActivePredatorCamps or {}) do
+        for _, pred in ipairs(camp.members) do
+            if IsValid(pred) and pred.EmitSound then
+                count = count + 1
+                local helloSounds = {
+                    "npc/citizen/vo/hello.wav",
+                    "npc/citizen/vo/hi.wav",
+                    "npc/alyx/vo/hello.wav",
+                    "npc/alyx/vo/hi.wav"
+                }
+                pred:EmitSound(helloSounds[math.random(1, #helloSounds)], 80, math.random(106, 114))
+            end
+        end
+    end
+    ply:ChatPrint("[V-NPCs] Tested friendly greeting: " .. count .. " predators say hello!")
 end)
