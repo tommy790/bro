@@ -189,3 +189,18 @@ concommand.Add("vnpcs_set_shy", function(ply)
     if target.VoreSettings then target.VoreSettings.PredatorPersonality = "shy" end
     ply:ChatPrint("[V-NPCs] Set " .. tostring(target) .. " personality to SHY!")
 end)
+
+concommand.Add("vnpcs_test_embarrassed_pose", function(ply)
+    if not IsValid(ply) then return end
+    local tr = ply:GetEyeTrace()
+    local target = tr.Entity
+    if not IsValid(target) or not (target.IsDrGNextbot or target.VNPC_FemaleModelVore or target.Predator) then
+        ply:ChatPrint("[V-NPCs] Please aim at a female V-NPC predator to test the embarrassed pose!")
+        return
+    end
+    target.VNPC_IsEmbarrassed = CurTime() + 15.0
+    if target.SetFacialExpression then
+        pcall(target.SetFacialExpression, target, 4)
+    end
+    ply:ChatPrint("[V-NPCs] Triggered embarrassed pose on " .. tostring(target) .. " for 15 seconds!")
+end)

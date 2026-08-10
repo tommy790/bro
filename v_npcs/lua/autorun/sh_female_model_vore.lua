@@ -896,6 +896,34 @@ VNPC_DefaultAnimatedBoneList = {
     }
 }
 
+VNPC_EmbarrassedPoseKeyframe = {
+    -- 1. Head / Neck tilted shyly down and toward her right shoulder
+    ["ValveBiped.Bip01_Head1"] = { pos = Vector(0, 0, 0), ang = Angle(-15, 20, -10) },
+    ["ValveBiped.Bip01_Neck1"] = { pos = Vector(0, 0, 0), ang = Angle(-5, 8, -5) },
+    -- 2. Right Arm raised to ear / cheek / hair
+    ["ValveBiped.Bip01_R_Clavicle"] = { pos = Vector(0, 0, 0), ang = Angle(0, 15, 10) },
+    ["ValveBiped.Bip01_R_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(-70, -45, 50) },
+    ["ValveBiped.Bip01_R_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(-135, -55, -30) },
+    ["ValveBiped.Bip01_R_Hand"] = { pos = Vector(0, 0, 0), ang = Angle(0, 25, -45) },
+    -- 3. Left Arm reaching down / tucked behind back / hip
+    ["ValveBiped.Bip01_L_Clavicle"] = { pos = Vector(0, 0, 0), ang = Angle(0, -10, -5) },
+    ["ValveBiped.Bip01_L_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(25, -25, -20) },
+    ["ValveBiped.Bip01_L_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(-45, 15, 30) },
+    ["ValveBiped.Bip01_L_Hand"] = { pos = Vector(0, 0, 0), ang = Angle(10, 0, 20) },
+    -- 4. Torso / Spine shy contrapposto curve
+    ["ValveBiped.Bip01_Spine"] = { pos = Vector(0, 0, 0), ang = Angle(-6, 8, -4) },
+    ["ValveBiped.Bip01_Spine1"] = { pos = Vector(0, 0, 0), ang = Angle(-4, 4, 0) },
+    ["ValveBiped.Bip01_Spine2"] = { pos = Vector(0, 0, 0), ang = Angle(-3, 4, 0) },
+    ["ValveBiped.Bip01_Pelvis"] = { pos = Vector(0, 0, 0), ang = Angle(0, 0, -4) },
+    -- 5. Legs / Feet in shy inward-knee cross-legged stance
+    ["ValveBiped.Bip01_R_Thigh"] = { pos = Vector(0, 0, 0), ang = Angle(8, 15, -10) },
+    ["ValveBiped.Bip01_R_Calf"] = { pos = Vector(0, 0, 0), ang = Angle(15, 0, 0) },
+    ["ValveBiped.Bip01_R_Foot"] = { pos = Vector(0, 0, 0), ang = Angle(0, 0, 0) },
+    ["ValveBiped.Bip01_L_Thigh"] = { pos = Vector(0, 0, 0), ang = Angle(-8, -15, 12) },
+    ["ValveBiped.Bip01_L_Calf"] = { pos = Vector(0, 0, 0), ang = Angle(25, 0, 0) },
+    ["ValveBiped.Bip01_L_Foot"] = { pos = Vector(0, 0, 0), ang = Angle(0, 0, 0) }
+}
+
 VNPC_ShyAnimatedBoneList = {
     [0] = { -- rest (shy/cautious stance)
         ["ValveBiped.Bip01_Head1"] = { pos = Vector(0, 0, 0), ang = Angle(-5, 12, -5) },
@@ -913,16 +941,7 @@ VNPC_ShyAnimatedBoneList = {
         ["ValveBiped.Bip01_R_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(-120, 35, -40) },
         ["ValveBiped.Bip01_L_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(-120, -35, 40) }
     },
-    [2] = { -- full belly (shy embarrassed belly-covering pose: hands crossed/resting over big belly, head tilted shyly away)
-        ["ValveBiped.Bip01_Head1"] = { pos = Vector(0, 0, 0), ang = Angle(-18, 25, -8) },
-        ["ValveBiped.Bip01_Spine"] = { pos = Vector(0, 0, 0), ang = Angle(-12, 0, 0) },
-        ["ValveBiped.Bip01_R_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(45, -35, 30) },
-        ["ValveBiped.Bip01_L_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(45, 35, -30) },
-        ["ValveBiped.Bip01_R_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(-130, 45, -45) },
-        ["ValveBiped.Bip01_L_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(-130, -45, 45) },
-        ["ValveBiped.Bip01_R_Hand"] = { pos = Vector(0, 0, 0), ang = Angle(25, 0, 60) },
-        ["ValveBiped.Bip01_L_Hand"] = { pos = Vector(0, 0, 0), ang = Angle(25, 0, -60) }
-    },
+    [2] = VNPC_EmbarrassedPoseKeyframe,
     [3] = { -- burp (shy muffled burp, hand over mouth / belly)
         ["ValveBiped.Bip01_Head1"] = { pos = Vector(0, 0, 0), ang = Angle(-20, 15, -5) },
         ["ValveBiped.Bip01_Spine"] = { pos = Vector(0, 0, 0), ang = Angle(-15, 0, 0) },
@@ -1765,6 +1784,8 @@ VNPC_BoneMovesets["carmelita"] = VNPC_CarmelitaAnimatedBoneList
 VNPC_BoneMovesets["dasha"] = VNPC_DashaAnimatedBoneList
 VNPC_BoneMovesets["femasriel"] = VNPC_FemAsrielAnimatedBoneList
 VNPC_BoneMovesets["unbirth"] = VNPC_UnbirthAnimatedBoneList
+VNPC_BoneMovesets["shy"] = VNPC_ShyAnimatedBoneList
+VNPC_BoneMovesets["embarrassed"] = VNPC_ShyAnimatedBoneList
 
 function VNPC_RegisterBoneMoveset(name, movesetTable)
     if not name or not istable(movesetTable) then return end
