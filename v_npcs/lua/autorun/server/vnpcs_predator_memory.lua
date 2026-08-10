@@ -48,12 +48,21 @@ function VNPC_CheckRecognizedMateWelcome(predCamp, emissary, preyCamp)
 
     -- 2. Her loved mate says YES immediately without requiring boredom
     if not IsValid(lovedPred:GetEnemy()) and predCamp.state ~= "war" and not lovedPred.VNPC_IsVisitingPreyCamp then
-        VNPC_PredatorAgreeToEmissary(lovedPred, emissary, preyCamp, predCamp)
-        if lovedPred.EmitSound then
-            lovedPred:EmitSound("npc/citizen/vo/nice.wav", 85, 115)
-        end
-        for _, p in ipairs(player.GetAll()) do
-            p:ChatPrint("[V-NPCs] LOVED MATE RECOGNIZED! Predator " .. lovedPred:GetClass() .. " recognized her returning mate " .. (emissary.PrintName or emissary:GetClass()) .. " and agreed immediately without needing to be bored!")
+        local pers = (VNPC_GetPredatorPersonality and select(1, VNPC_GetPredatorPersonality(lovedPred))) or "opportunistic"
+        if string.lower(tostring(pers)) == "shy" or (VNPC_IsShyPredator and VNPC_IsShyPredator(lovedPred)) then
+            if VNPC_PredatorShyEmissaryHesitation then
+                VNPC_PredatorShyEmissaryHesitation(lovedPred, emissary, preyCamp, predCamp)
+            else
+                VNPC_PredatorAgreeToEmissary(lovedPred, emissary, preyCamp, predCamp)
+            end
+        else
+            VNPC_PredatorAgreeToEmissary(lovedPred, emissary, preyCamp, predCamp)
+            if lovedPred.EmitSound then
+                lovedPred:EmitSound("npc/citizen/vo/nice.wav", 85, 115)
+            end
+            for _, p in ipairs(player.GetAll()) do
+                p:ChatPrint("[V-NPCs] LOVED MATE RECOGNIZED! Predator " .. lovedPred:GetClass() .. " recognized her returning mate " .. (emissary.PrintName or emissary:GetClass()) .. " and agreed immediately without needing to be bored!")
+            end
         end
         return true
     end

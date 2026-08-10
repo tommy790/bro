@@ -42,6 +42,43 @@ function VNPC_IsPredatorBoredForMating(pred, predCamp)
     return true -- if calm and empty, she is bored enough!
 end
 
+function VNPC_PredatorShyEmissaryHesitation(pred, emissary, camp, predCamp)
+    if not IsValid(pred) or not IsValid(emissary) or not camp then return false end
+    if pred.VNPC_IsHesitatingToMate then return true end
+
+    pred.VNPC_IsHesitatingToMate = true
+    pred.VNPC_IsEmbarrassed = CurTime() + 6.0
+
+    if pred.SetSchedule then pcall(pred.SetSchedule, pred, SCHED_NPC_FREEZE) end
+    if emissary.SetSchedule then pcall(emissary.SetSchedule, emissary, SCHED_NPC_FREEZE) end
+
+    if pred.EmitSound then
+        local snd = math.random() < 0.5 and "npc/alyx/gasp03.wav" or "npc/citizen/sigh01.wav"
+        pred:EmitSound(snd, 75, math.random(108, 115))
+    end
+    if pred.SetFacialExpression then
+        pcall(pred.SetFacialExpression, pred, 4) -- Blushing / flustered face
+    end
+
+    for _, p in ipairs(player.GetAll()) do
+        p:ChatPrint("[V-NPCs] SHY HESITATION! Emissary " .. (emissary.PrintName or emissary:GetClass()) .. " asked shy predator " .. (pred.PrintName or pred:GetClass()) .. " to visit his fort to mate; she blushes deeply and struggles to answer!")
+    end
+
+    timer.Simple(4.0, function()
+        if IsValid(pred) and IsValid(emissary) and IsValid(camp) then
+            pred.VNPC_IsHesitatingToMate = nil
+            if pred.SetFacialExpression then
+                pcall(pred.SetFacialExpression, pred, 2)
+            end
+            VNPC_PredatorAgreeToEmissary(pred, emissary, camp, predCamp)
+            for _, p in ipairs(player.GetAll()) do
+                p:ChatPrint("[V-NPCs] SHY AGREEMENT! After blushing and struggling to answer, shy predator " .. pred:GetClass() .. " softly agreed to follow Emissary " .. emissary:GetClass() .. " to his Prey Camp to mate!")
+            end
+        end
+    end)
+    return true
+end
+
 function VNPC_PredatorAgreeToEmissary(pred, emissary, camp, predCamp)
     if not IsValid(pred) or not IsValid(emissary) or not camp then return false end
 
@@ -92,7 +129,12 @@ function VNPC_EmissarySeekPredatorCamp(emissary, camp)
             end
             for _, mem in ipairs(bestCamp.members) do
                 if VNPC_IsPredatorBoredForMating(mem, bestCamp) then
-                    VNPC_PredatorAgreeToEmissary(mem, emissary, camp, bestCamp)
+                    local pers = (VNPC_GetPredatorPersonality and select(1, VNPC_GetPredatorPersonality(mem))) or "opportunistic"
+                    if string.lower(tostring(pers)) == "shy" or (VNPC_IsShyPredator and VNPC_IsShyPredator(mem)) then
+                        VNPC_PredatorShyEmissaryHesitation(mem, emissary, camp, bestCamp)
+                    else
+                        VNPC_PredatorAgreeToEmissary(mem, emissary, camp, bestCamp)
+                    end
                     break
                 end
             end
