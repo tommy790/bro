@@ -608,6 +608,10 @@ function ENT:Regurgitate(index)
     
 
     self:OnRegurgitate(prey)
+
+    if VNPC_StartRegurgitationAnimation then
+        VNPC_StartRegurgitationAnimation(self.NPC or self:GetOwner() or self:GetParent(), prey, self)
+    end
     return true
 end
 
