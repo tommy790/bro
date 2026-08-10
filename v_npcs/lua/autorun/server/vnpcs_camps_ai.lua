@@ -68,6 +68,18 @@ function VNPC_AssignPredatorToCamp(pred)
     if not IsValid(pred) or pred:Health() <= 0 then return nil end
     if pred.VNPC_IsWildWanderer then return nil end
 
+    if not pred.VNPC_PredatorPersonality and not (pred.VoreSettings and pred.VoreSettings.PredatorPersonality) then
+        local predPersList = { "aggressive", "opportunistic", "glutton", "shy", "selective", "gentle" }
+        local pPers = predPersList[math.random(1, #predPersList)]
+        pred.VNPC_PredatorPersonality = pPers
+        if pred.VoreSettings then
+            pred.VoreSettings.PredatorPersonality = pPers
+        end
+        if VNPC_RandomizePersonalities then
+            pcall(VNPC_RandomizePersonalities, pred)
+        end
+    end
+
     local currentCamp = VNPC_GetPredatorCamp(pred)
     if currentCamp then return currentCamp end
 

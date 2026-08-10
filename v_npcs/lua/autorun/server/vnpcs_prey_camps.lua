@@ -103,6 +103,13 @@ function VNPC_AssignPreyToCamp(npc)
     if not camps_enabled:GetBool() or not VNPC_IsEligiblePreyNPC(npc) then return nil end
     if npc.VNPC_IsWildWanderer then return nil end
 
+    if not npc.VNPC_PreyPersonality and not npc.PreyPersonality then
+        local preyPersList = { "fighter", "passive", "panicked", "stubborn", "willing" }
+        local rPers = preyPersList[math.random(1, #preyPersList)]
+        npc.VNPC_PreyPersonality = rPers
+        npc.PreyPersonality = rPers
+    end
+
     local current = VNPC_GetPreyCamp(npc)
     if current then return current end
 
