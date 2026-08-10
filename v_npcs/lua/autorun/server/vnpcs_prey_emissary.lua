@@ -44,6 +44,10 @@ function VNPC_PredatorAgreeToEmissary(pred, emissary, camp, predCamp)
     pred.VNPC_OriginalCampPos = predCamp and predCamp.pos or pred:GetPos()
     emissary.VNPC_EscortingPredator = pred
 
+    if VNPC_RecordRecognizedMate then
+        VNPC_RecordRecognizedMate(predCamp, pred, emissary)
+    end
+
     if pred.SetEnemy then pcall(pred.SetEnemy, pred, nil) end
     if pred.SetLastPosition then pcall(pred.SetLastPosition, pred, camp.pos) end
     if pred.SetSchedule then pcall(pred.SetSchedule, pred, SCHED_FORCED_GO_RUN) end
@@ -76,6 +80,9 @@ function VNPC_EmissarySeekPredatorCamp(emissary, camp)
 
     if bestCamp then
         if emissary:GetPos():DistToSqr(bestCamp.pos) <= (400 * 400) then
+            if VNPC_CheckRecognizedMateWelcome and VNPC_CheckRecognizedMateWelcome(bestCamp, emissary, camp) then
+                return
+            end
             for _, mem in ipairs(bestCamp.members) do
                 if VNPC_IsPredatorBoredForMating(mem, bestCamp) then
                     VNPC_PredatorAgreeToEmissary(mem, emissary, camp, bestCamp)
