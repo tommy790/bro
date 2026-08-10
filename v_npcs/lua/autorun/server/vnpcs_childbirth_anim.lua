@@ -175,8 +175,8 @@ hook.Add("Think", "VNPC_BabyCitizenGrowth_Loop", function()
                 ent.VNPC_IsGrowingBaby = nil
                 ent.VNPC_ProtectedChild = nil
 
-                if ent.VNPC_AdoptedByPredator and VNPC_TransformToPredator then
-                    VNPC_TransformToPredator(ent, ent.VNPC_AdoptedByPredator)
+                if (ent.VNPC_AdoptedByPredator or ent.VNPC_BornSister) and VNPC_TransformToPredator then
+                    VNPC_TransformToPredator(ent, ent.VNPC_AdoptedByPredator or ent.VNPC_MotherRef)
                     return
                 end
 
