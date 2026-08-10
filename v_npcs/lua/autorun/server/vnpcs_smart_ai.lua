@@ -105,6 +105,23 @@ hook.Add("Think", "VNPCS_SmartAI_TacticalLoop", function()
             continue
         end
 
+        -- OBSTACLE CLEARING: If stuck in or blocked by a prop, swallow the prop to clear the path!
+        for _, prop in ipairs(ents.FindInSphere(pred:GetPos(), 95)) do
+            if not IsValid(prop) or prop == pred or prop.Vored or prop.VNPC_Vored then continue end
+            local cls = prop:GetClass()
+            if cls == "prop_physics" or cls == "prop_dynamic" or cls == "prop_ragdoll" or cls == "func_breakable" then
+                local dist = pred:GetPos():Distance(prop:GetPos())
+                if dist <= 70 or (pred.GetVelocity and pred:GetVelocity():Length2DSqr() < 16 and IsValid(pred:GetEnemy())) then
+                    if pred.EatEntity then
+                        pred:EatEntity(prop)
+                    elseif IsValid(belly) and belly.AddPrey then
+                        belly:AddPrey(prop)
+                    end
+                    break
+                end
+            end
+        end
+
         -- SMART TARGET SELECTION: Choose optimal target
         local smartTarget = VNPC_SelectSmartPreyTarget(pred, pred.SightRange or 700)
         if IsValid(smartTarget) then

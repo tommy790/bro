@@ -1827,6 +1827,48 @@ function VNPC_InterpolateKeyframes(keyframes, tNorm, boneName)
     return LerpVector(f, pos1, pos2), VNPC_LerpAngle(f, ang1, ang2)
 end
 
+VNPC_SleepingFullBellyKeyframes = {
+    length = 4.0,
+    keyframes = {
+        [0.00] = { -- 0.0s: Peaceful sleeping pose over full belly
+            ["ValveBiped.Bip01_Head1"] = { pos = Vector(0, 0, 0), ang = Angle(25, -25, -10) },
+            ["ValveBiped.Bip01_Spine"] = { pos = Vector(0, 0, 0), ang = Angle(0, -5, 0) },
+            ["ValveBiped.Bip01_Spine1"] = { pos = Vector(0, 0, 0), ang = Angle(0, -10, 0) },
+            ["ValveBiped.Bip01_R_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(30, 20, -10) },
+            ["ValveBiped.Bip01_R_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(-80, 20, -40) },
+            ["ValveBiped.Bip01_R_Hand"] = { pos = Vector(0, 0, 0), ang = Angle(-20, 20, 40) },
+            ["ValveBiped.Bip01_L_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(-30, 20, 10) },
+            ["ValveBiped.Bip01_L_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(80, 20, 40) },
+            ["ValveBiped.Bip01_L_Hand"] = { pos = Vector(0, 0, 0), ang = Angle(-20, 20, -40) },
+            ["ValveBiped.Bip01_Pelvis"] = { pos = Vector(0, 0, -39.5), ang = Angle(0, 0, -15) }
+        },
+        [0.50] = { -- 2.0s: Soft sleeping breath (slight head lift and chest rise)
+            ["ValveBiped.Bip01_Head1"] = { pos = Vector(0, 0, 0), ang = Angle(22, -22, -8) },
+            ["ValveBiped.Bip01_Spine"] = { pos = Vector(0, 0, 0), ang = Angle(0, -3, 0) },
+            ["ValveBiped.Bip01_Spine1"] = { pos = Vector(0, 0, 0), ang = Angle(0, -8, 0) },
+            ["ValveBiped.Bip01_R_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(30, 20, -10) },
+            ["ValveBiped.Bip01_R_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(-80, 20, -40) },
+            ["ValveBiped.Bip01_R_Hand"] = { pos = Vector(0, 0, 0), ang = Angle(-20, 20, 40) },
+            ["ValveBiped.Bip01_L_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(-30, 20, 10) },
+            ["ValveBiped.Bip01_L_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(80, 20, 40) },
+            ["ValveBiped.Bip01_L_Hand"] = { pos = Vector(0, 0, 0), ang = Angle(-20, 20, -40) },
+            ["ValveBiped.Bip01_Pelvis"] = { pos = Vector(0, 0, -39.5), ang = Angle(0, 0, -15) }
+        },
+        [1.00] = { -- 4.0s: Loop back to 0.00
+            ["ValveBiped.Bip01_Head1"] = { pos = Vector(0, 0, 0), ang = Angle(25, -25, -10) },
+            ["ValveBiped.Bip01_Spine"] = { pos = Vector(0, 0, 0), ang = Angle(0, -5, 0) },
+            ["ValveBiped.Bip01_Spine1"] = { pos = Vector(0, 0, 0), ang = Angle(0, -10, 0) },
+            ["ValveBiped.Bip01_R_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(30, 20, -10) },
+            ["ValveBiped.Bip01_R_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(-80, 20, -40) },
+            ["ValveBiped.Bip01_R_Hand"] = { pos = Vector(0, 0, 0), ang = Angle(-20, 20, 40) },
+            ["ValveBiped.Bip01_L_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(-30, 20, 10) },
+            ["ValveBiped.Bip01_L_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(80, 20, 40) },
+            ["ValveBiped.Bip01_L_Hand"] = { pos = Vector(0, 0, 0), ang = Angle(-20, 20, -40) },
+            ["ValveBiped.Bip01_Pelvis"] = { pos = Vector(0, 0, -39.5), ang = Angle(0, 0, -15) }
+        }
+    }
+}
+
 function VNPC_AnimatedBoneOffsets(ent)
     if not IsValid(ent) then return end
     if VNPC_IsHL2ScriptedScene and VNPC_IsHL2ScriptedScene(ent) then return end
@@ -1839,6 +1881,9 @@ function VNPC_AnimatedBoneOffsets(ent)
     local phase = ent:GetNWInt("FacialPhase", -1)
     local animList = VNPC_GetAnimatedBoneList(ent)
     local data = animList[phase] or animList[0]
+    if ent.VNPC_IsSleeping and VNPC_SleepingFullBellyKeyframes then
+        data = VNPC_SleepingFullBellyKeyframes
+    end
 
     if phase ~= ent.LastFacialPhase then
         ent.FacialPhaseStartTime = CurTime()

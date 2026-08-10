@@ -684,10 +684,16 @@ hook.Add("Think", "VNPC_WillingPrey_AI", function()
             for _, pred in ipairs(ents.FindInSphere(npc:GetPos(), 600)) do
                 if IsValid(pred) and pred ~= npc and (pred.Predator or pred.VNPC_FemaleModelVore or VNPC_IsFemaleModelNPC(pred)) and not pred.Vored then
                     local dist = npc:GetPos():Distance(pred:GetPos())
-                    if dist <= grab_dist then
+                    if dist <= 125 then
                         if pred.EatEntity then
                             pcall(pred.EatEntity, pred, npc)
                         end
+                        break
+                    elseif dist <= 220 then
+                        if npc.SetTarget then pcall(npc.SetTarget, npc, pred) end
+                        if npc.SetSchedule then pcall(npc.SetSchedule, npc, SCHED_TARGET_FACE) end
+                        if pred.SetEnemy then pcall(pred.SetEnemy, pred, npc) end
+                        if pred.SetSchedule then pcall(pred.SetSchedule, pred, SCHED_CHASE_ENEMY) end
                         break
                     elseif npc.SetSchedule then
                         if npc.SetTarget then pcall(npc.SetTarget, npc, pred) end
