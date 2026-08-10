@@ -39,13 +39,97 @@ local function resetAllBoneManipulations(ent)
     end
 end
 
-local function VNPC_AnimatePreyStruggling(prey, stage, tNorm)
+VNPC_PreyStruggleProfiles = {
+    ["chiku"] = {
+        spine = function(now) return Angle(0, 25, math.sin(now * 16) * 18) end,
+        armR = function(now) return Angle(math.sin(now * 18) * 45 - 20, -25, 15) end,
+        armL = function(now) return Angle(-math.sin(now * 18) * 45 + 20, -25, -15) end,
+        foreR = function(now) return Angle(math.cos(now * 20) * 40 - 35, 0, 0) end,
+        foreL = function(now) return Angle(-math.cos(now * 20) * 40 + 35, 0, 0) end,
+        kickA = function(now) return math.sin(now * 18) * 55 - 10 end,
+        kickB = function(now) return -math.sin(now * 18) * 55 - 10 end,
+        calf = function(now) return math.abs(math.cos(now * 18)) * 55 + 15 end
+    },
+    ["bonfie"] = {
+        spine = function(now) return Angle(0, math.sin(now * 10) * 20, 0) end,
+        armR = function(now) return Angle(60, -30, 20) end,
+        armL = function(now) return Angle(60, 30, -20) end,
+        foreR = function(now) return Angle(-40, 20, 0) end,
+        foreL = function(now) return Angle(-40, -20, 0) end,
+        kickA = function(now) return math.sin(now * 12) * 45 - 20 end,
+        kickB = function(now) return -math.sin(now * 12) * 45 - 20 end,
+        calf = function(now) return math.abs(math.cos(now * 12)) * 40 + 10 end
+    },
+    ["breamsatel"] = {
+        spine = function(now) return Angle(0, 0, math.sin(now * 14) * 15) end,
+        armR = function(now) return Angle(75, -15, 0) end,
+        armL = function(now) return Angle(75, 15, 0) end,
+        foreR = function(now) return Angle(-50, 0, 0) end,
+        foreL = function(now) return Angle(-50, 0, 0) end,
+        kickA = function(now) return math.cos(now * 14) * 40 - 15 end,
+        kickB = function(now) return math.cos(now * 14) * 40 - 15 end,
+        calf = function(now) return math.abs(math.sin(now * 14)) * 50 + 10 end
+    },
+    ["ballerpuppy"] = {
+        spine = function(now) return Angle(0, math.sin(now * 15) * 18, math.cos(now * 15) * 12) end,
+        armR = function(now) return Angle(20, -50, -30) end,
+        armL = function(now) return Angle(20, 50, 30) end,
+        foreR = function(now) return Angle(-70, 0, 0) end,
+        foreL = function(now) return Angle(-70, 0, 0) end,
+        kickA = function(now) return math.sin(now * 16) * 50 - 15 end,
+        kickB = function(now) return -math.sin(now * 16) * 50 - 15 end,
+        calf = function(now) return math.abs(math.cos(now * 16)) * 60 + 15 end
+    },
+    ["carmelita"] = {
+        spine = function(now) return Angle(math.sin(now * 12) * 10, 0, math.cos(now * 14) * 15) end,
+        armR = function(now) return Angle(35, -25, 10) end,
+        armL = function(now) return Angle(35, 25, -10) end,
+        foreR = function(now) return Angle(-25, 45, 0) end,
+        foreL = function(now) return Angle(-25, -45, 0) end,
+        kickA = function(now) return math.sin(now * 14) * 40 - 10 end,
+        kickB = function(now) return -math.sin(now * 14 + 0.5) * 40 - 10 end,
+        calf = function(now) return math.abs(math.cos(now * 14)) * 45 + 10 end
+    },
+    ["dasha"] = {
+        spine = function(now) return Angle(0, math.sin(now * 18) * 12, 0) end,
+        armR = function(now) return Angle(15, -40, -10) end,
+        armL = function(now) return Angle(15, 40, 10) end,
+        foreR = function(now) return Angle(-80, 0, 0) end,
+        foreL = function(now) return Angle(-80, 0, 0) end,
+        kickA = function(now) return math.sin(now * 20) * 35 - 12 end,
+        kickB = function(now) return -math.sin(now * 20) * 35 - 12 end,
+        calf = function(now) return math.abs(math.cos(now * 20)) * 35 + 10 end
+    },
+    ["femasriel"] = {
+        spine = function(now) return Angle(0, math.sin(now * 10) * 14, math.cos(now * 8) * 10) end,
+        armR = function(now) return Angle(40, -20, 15) end,
+        armL = function(now) return Angle(40, 20, -15) end,
+        foreR = function(now) return Angle(-60, 20, 0) end,
+        foreL = function(now) return Angle(-60, -20, 0) end,
+        kickA = function(now) return math.sin(now * 10) * 45 - 15 end,
+        kickB = function(now) return -math.sin(now * 10) * 45 - 15 end,
+        calf = function(now) return math.abs(math.cos(now * 10)) * 45 + 10 end
+    },
+    ["default"] = {
+        spine = function(now) return Angle(0, math.sin(now * 12) * 15, math.cos(now * 10) * 10) end,
+        armR = function(now) return Angle(math.sin(now * 14) * 30 - 15, -20, 10) end,
+        armL = function(now) return Angle(-math.sin(now * 14) * 30 + 15, -20, -10) end,
+        foreR = function(now) return Angle(math.cos(now * 16) * 35 - 30, 0, 0) end,
+        foreL = function(now) return Angle(-math.cos(now * 16) * 35 + 30, 0, 0) end,
+        kickA = function(now) return math.sin(now * 15) * 40 - 15 end,
+        kickB = function(now) return -math.sin(now * 15) * 40 - 15 end,
+        calf = function(now) return math.abs(math.cos(now * 15)) * 50 + 10 end
+    }
+}
+
+local function VNPC_AnimatePreyStruggling(prey, stage, tNorm, movesetName)
     if not IsValid(prey) then return end
     local now = CurTime()
+    local profile = VNPC_PreyStruggleProfiles[string.lower(tostring(movesetName or "default"))] or VNPC_PreyStruggleProfiles["default"]
 
     local spine = prey:LookupBone("ValveBiped.Bip01_Spine1") or prey:LookupBone("Spine1") or prey:LookupBone("ValveBiped.Bip01_Spine")
-    if spine then
-        prey:ManipulateBoneAngles(spine, Angle(0, math.sin(now * 12) * 15, math.cos(now * 10) * 10))
+    if spine and profile.spine then
+        prey:ManipulateBoneAngles(spine, profile.spine(now))
     end
 
     if stage < 2 then
@@ -54,10 +138,10 @@ local function VNPC_AnimatePreyStruggling(prey, stage, tNorm)
         local rFore = prey:LookupBone("ValveBiped.Bip01_R_Forearm") or prey:LookupBone("R_Forearm")
         local lFore = prey:LookupBone("ValveBiped.Bip01_L_Forearm") or prey:LookupBone("L_Forearm")
 
-        if rArm then prey:ManipulateBoneAngles(rArm, Angle(math.sin(now * 14) * 30 - 15, -20, 10)) end
-        if lArm then prey:ManipulateBoneAngles(lArm, Angle(-math.sin(now * 14) * 30 + 15, -20, -10)) end
-        if rFore then prey:ManipulateBoneAngles(rFore, Angle(math.cos(now * 16) * 35 - 30, 0, 0)) end
-        if lFore then prey:ManipulateBoneAngles(lFore, Angle(-math.cos(now * 16) * 35 + 30, 0, 0)) end
+        if rArm and profile.armR then prey:ManipulateBoneAngles(rArm, profile.armR(now)) end
+        if lArm and profile.armL then prey:ManipulateBoneAngles(lArm, profile.armL(now)) end
+        if rFore and profile.foreR then prey:ManipulateBoneAngles(rFore, profile.foreR(now)) end
+        if lFore and profile.foreL then prey:ManipulateBoneAngles(lFore, profile.foreL(now)) end
     end
 
     if stage < 3 then
@@ -66,15 +150,14 @@ local function VNPC_AnimatePreyStruggling(prey, stage, tNorm)
         local rCalf = prey:LookupBone("ValveBiped.Bip01_R_Calf") or prey:LookupBone("R_Calf")
         local lCalf = prey:LookupBone("ValveBiped.Bip01_L_Calf") or prey:LookupBone("L_Calf")
 
-        local kickA = math.sin(now * 15) * 40 - 15
-        local kickB = -math.sin(now * 15) * 40 - 15
-        local calfA = math.abs(math.cos(now * 15)) * 50 + 10
-        local calfB = math.abs(math.cos(now * 15 + math.pi)) * 50 + 10
+        local kA = profile.kickA(now)
+        local kB = profile.kickB(now)
+        local cA = profile.calf(now)
 
-        if rThigh then prey:ManipulateBoneAngles(rThigh, Angle(0, kickA, 0)) end
-        if lThigh then prey:ManipulateBoneAngles(lThigh, Angle(0, kickB, 0)) end
-        if rCalf then prey:ManipulateBoneAngles(rCalf, Angle(0, calfA, 0)) end
-        if lCalf then prey:ManipulateBoneAngles(lCalf, Angle(0, calfB, 0)) end
+        if rThigh then prey:ManipulateBoneAngles(rThigh, Angle(0, kA, 0)) end
+        if lThigh then prey:ManipulateBoneAngles(lThigh, Angle(0, kB, 0)) end
+        if rCalf then prey:ManipulateBoneAngles(rCalf, Angle(0, cA, 0)) end
+        if lCalf then prey:ManipulateBoneAngles(lCalf, Angle(0, cA, 0)) end
     end
 end
 
@@ -162,7 +245,7 @@ hook.Add("Think", "VNPCS_IngestionAnimation_Loop", function()
             end
         end
 
-        VNPC_AnimatePreyStruggling(prey, anim.stage, tNorm)
+        VNPC_AnimatePreyStruggling(prey, anim.stage, tNorm, pred.VNPC_AssignedMoveset)
 
         -- STAGE 1 (tNorm >= 0.05): Head enters mouth -> Deflate head & neck bones so there is zero clipping!
         if tNorm >= 0.05 and anim.stage < 1 then
