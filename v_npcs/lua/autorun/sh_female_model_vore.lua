@@ -1610,6 +1610,49 @@ function VNPC_AssignRandomMoveset(ent)
     end
 end
 
+concommand.Add("vnpcs_movesets_list", function(ply)
+    print("===============================================================")
+    print("           V-NPCs REGISTERED 5-PHASE BONE MOVESETS             ")
+    print("===============================================================")
+    local keys = {}
+    for k, _ in pairs(VNPC_BoneMovesets or {}) do
+        table.insert(keys, k)
+    end
+    table.sort(keys)
+    print(" - Total Registered Movesets (" .. #keys .. "): " .. table.concat(keys, ", "))
+    local count = 0
+    for _, ent in ipairs(ents.FindByClass("npc_*")) do
+        if IsValid(ent) and (ent.IsDrGNextbot or ent.VNPC_FemaleModelVore or ent.Predator) then
+            count = count + 1
+            print(string.format("   #%d [%s]: Assigned Moveset = '%s'", ent:EntIndex(), ent.PrintName or ent:GetClass(), ent.VNPC_AssignedMoveset or "default"))
+        end
+    end
+    if count == 0 then
+        print("   Active Predators: NONE currently spawned")
+    end
+    print("===============================================================")
+end)
+
+concommand.Add("vnpcs_set_moveset", function(ply, cmd, args)
+    if #args < 2 then
+        print("[V-NPCs] Usage: vnpcs_set_moveset <ent_index> <moveset_name>")
+        return
+    end
+    local id = tonumber(args[1])
+    local name = string.lower(args[2])
+    local target = Entity(id)
+    if not IsValid(target) then
+        print("[V-NPCs] Entity #" .. tostring(id) .. " not found.")
+        return
+    end
+    if not VNPC_BoneMovesets[name] then
+        print("[V-NPCs] Moveset '" .. name .. "' not found. Use vnpcs_movesets_list to view available movesets.")
+        return
+    end
+    target.VNPC_AssignedMoveset = name
+    print("[V-NPCs] Set entity #" .. id .. " moveset to: " .. name)
+end)
+
 function VNPC_GetAnimatedBoneList(ent)
     if not IsValid(ent) then return VNPC_DefaultAnimatedBoneList end
     if ent.AnimatedBoneList and istable(ent.AnimatedBoneList) then
