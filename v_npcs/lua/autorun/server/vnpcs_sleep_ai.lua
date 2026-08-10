@@ -18,7 +18,7 @@ hook.Add("Think", "VNPCS_SleepSystem_Loop", function()
         pred.VNPC_NextSleepThink = now + 1.0
 
         local belly = pred.VNPC_Belly or pred.Belly
-        local hasPrey = IsValid(belly) and ((belly.Prey and #belly.Prey > 0) or belly.DigestionPhase == 2)
+        local hasPrey = IsValid(belly) and ((belly.Prey and #belly.Prey > 0) or belly.DigestionPhase == 2 or (belly.BaseScale and belly.BaseScale >= 0.2) or hook.Run("VNPC_ShouldPredatorSleep", pred, belly))
         local inCombat = IsValid(pred:GetEnemy()) or (pred.IsMoving and pred:IsMoving())
 
         if not hasPrey or inCombat then
