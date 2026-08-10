@@ -699,7 +699,8 @@ hook.Add("Think", "VNPC_WillingPrey_AI", function()
             for _, pred in ipairs(ents.FindInSphere(npc:GetPos(), 600)) do
                 if IsValid(pred) and pred ~= npc and (pred.Predator or pred.VNPC_FemaleModelVore or VNPC_IsFemaleModelNPC(pred)) and not pred.Vored then
                     local dist = npc:GetPos():Distance(pred:GetPos())
-                    if dist <= 140 then
+                    local grabDist = (VNPC_IsAnyoneListeningToBelly and VNPC_IsAnyoneListeningToBelly(pred)) and 200 or 140
+                    if dist <= grabDist then
                         if pred.VNPC_IsSleeping and VNPC_StartSleepingCrawlAnimation then
                             VNPC_StartSleepingCrawlAnimation(pred, npc)
                         elseif pred.EatEntity then
