@@ -277,6 +277,215 @@ function VNPC_PlanPreyCampLayout(camp)
     end
 end
 
+function VNPC_ConstructPreyCampFire(camp)
+    if not camps_enabled:GetBool() or not camp or not camp.pos then return false end
+    if IsValid(camp.campfire) then return false end
+
+    local tr = util.TraceLine({
+        start = camp.pos + Vector(0, 0, 40),
+        endpos = camp.pos - Vector(0, 0, 150),
+        mask = MASK_SOLID_BRUSHONLY
+    })
+    if not tr.Hit or tr.HitNormal.z < 0.65 then return false end
+
+    local fire = ents.Create("prop_physics")
+    if not IsValid(fire) then return false end
+
+    fire:SetModel("models/props_c17/FurnitureFireplace001a.mdl")
+    fire:SetPos(tr.HitPos)
+    fire:SetAngles(Angle(0, math.random(0, 360), 0))
+    fire:Spawn()
+    fire:Activate()
+
+    local minZ = fire:OBBMins().z
+    local zOffset = (minZ < 0) and math.abs(minZ) or 0
+    fire:SetPos(tr.HitPos + Vector(0, 0, zOffset + 2))
+
+    fire.VNPC_IsPreyCampFire = true
+    fire.VNPC_PreyCampID = camp.id
+    fire.VNPC_NoVore = true
+    fire:SetHealth(500)
+
+    if fire.Ignite then
+        fire:Ignite(99999, 0)
+    end
+
+    local phys = fire:GetPhysicsObject()
+    if IsValid(phys) then
+        phys:SetVelocity(Vector(0,0,0))
+        phys:EnableMotion(false)
+        phys:Sleep()
+    end
+
+    camp.campfire = fire
+    return true
+end
+
+function VNPC_PreyCampCooking_AI(camp, now)
+    if not camp or not camp.members then return end
+    camp.cookedMeals = camp.cookedMeals or {}
+
+    -- Prune dead or consumed prop meals
+    for i = #camp.cookedMeals, 1, -1 do
+        local prop = camp.cookedMeals[i]
+        if not IsValid(prop) or not prop.VNPC_IsCookedPropMeal then
+            table.remove(camp.cookedMeals, i)
+        end
+    end
+
+    -- Limit cooked prop meals on display at a camp
+    if #camp.cookedMeals >= 4 then return end
+
+    for _, mem in ipairs(camp.members) do
+        if not IsValid(mem) or mem:Health() <= 0 or mem.Vored or mem.VNPC_IsSleeping then continue end
+        if IsValid(mem:GetEnemy()) or mem.VNPC_IsEatingMeal or mem.VNPC_IsCollectingScrap then continue end
+        if not VNPC_IsFemalePreyCitizen(mem) then continue end
+
+        local hunger = VNPC_GetHunger and VNPC_GetHunger(mem) or 0
+        local thirst = VNPC_GetThirst and VNPC_GetThirst(mem) or 0
+        local shouldCook = (mem.VNPC_ForceCookMeal ~= nil) or (hunger >= 60.0) or (thirst >= 60.0) or ((mem.VNPC_NextCookTime or 0) <= now and #camp.members >= 2 and math.random(1, 15) == 1)
+
+        if not mem.VNPC_IsCookingMeal and shouldCook then
+            local mealType = mem.VNPC_ForceCookMeal
+            if not mealType then
+                if thirst >= 60.0 and thirst > hunger then
+                    mealType = "soda"
+                else
+                    mealType = (math.random(1, 2) == 1) and "hotdog" or "burger"
+                end
+            end
+
+            local cookPos = IsValid(camp.campfire) and camp.campfire:GetPos() or camp.pos
+            local dSqr = mem:GetPos():DistToSqr(cookPos)
+            if dSqr > (130 * 130) then
+                if mem.SetLastPosition then pcall(mem.SetLastPosition, mem, cookPos) end
+                if mem.SetSchedule then pcall(mem.SetSchedule, mem, SCHED_FORCED_GO_RUN) end
+                mem.VNPC_PendingMealType = mealType
+            else
+                mem.VNPC_IsCookingMeal = true
+                mem.VNPC_CookingMealType = mealType
+                mem.VNPC_CookingFinishTime = now + 5.0 -- 5s cooking duration
+                if mem.SetEnemy then pcall(mem.SetEnemy, mem, nil) end
+                if mem.SetSchedule then pcall(mem.SetSchedule, mem, SCHED_IDLE_STAND) end
+                if mem.EmitSound then
+                    mem:EmitSound("ambient/fire/fire_small_loop1.wav", 70, math.random(95, 105))
+                end
+            end
+        elseif mem.VNPC_IsCookingMeal then
+            if now >= (mem.VNPC_CookingFinishTime or 0) then
+                local mealType = mem.VNPC_CookingMealType or "hotdog"
+                local mealData = (VNPC_PreyCookedMealModels and VNPC_PreyCookedMealModels[mealType]) or { name = "Hotdog", fallback = "models/props_junk/garbage_takeoutcarton001a.mdl" }
+                local mdl = VNPC_GetCookedMealModel and VNPC_GetCookedMealModel(mealType) or mealData.fallback
+
+                local prop = ents.Create("prop_physics")
+                if IsValid(prop) then
+                    prop:SetModel(mdl)
+                    local fwd = mem:GetForward()
+                    prop:SetPos(mem:GetPos() + fwd * 35 + Vector(0, 0, 15))
+                    prop:SetAngles(Angle(0, mem:GetAngles().y, 0))
+                    prop:Spawn()
+                    prop:Activate()
+                    prop:SetHealth(100)
+                    prop.VNPC_IsCookedPropMeal = true
+                    prop.VNPC_MealType = mealType
+                    prop.VNPC_MealCooker = mem
+                    prop.VNPC_PreyCampID = camp.id
+                    prop.VNPC_NoVore = true
+                    table.insert(camp.cookedMeals, prop)
+
+                    print(string.format("[V-NPCs] Female Prey Citizen #%d [%s] cooked prop meal %s (%s) at Prey Camp #%s!", mem:EntIndex(), mem.PrintName or mem:GetClass(), mealData.name or mealType, mealType, tostring(camp.id)))
+                    if mem.EmitSound then
+                        mem:EmitSound("physics/metal/metal_canister_impact_soft1.wav", 75, 100)
+                    end
+                end
+
+                mem.VNPC_IsCookingMeal = false
+                mem.VNPC_CookingMealType = nil
+                mem.VNPC_ForceCookMeal = nil
+                mem.VNPC_PendingMealType = nil
+                mem.VNPC_NextCookTime = now + math.random(45, 90)
+                if mem.SetSchedule then pcall(mem.SetSchedule, mem, SCHED_IDLE_STAND) end
+            end
+        end
+    end
+end
+
+function VNPC_PreyMealConsumption_AI(camp, now)
+    if not camp or not camp.members or not camp.cookedMeals then return end
+
+    for i = #camp.cookedMeals, 1, -1 do
+        local prop = camp.cookedMeals[i]
+        if not IsValid(prop) or not prop.VNPC_IsCookedPropMeal then
+            table.remove(camp.cookedMeals, i)
+            continue
+        end
+
+        local bestConsumer = nil
+        local bestDistSqr = 800 * 800
+        for _, mem in ipairs(camp.members) do
+            if not IsValid(mem) or mem:Health() <= 0 or mem.Vored or mem.VNPC_IsSleeping then continue end
+            if IsValid(mem:GetEnemy()) or mem.VNPC_IsCookingMeal or mem.VNPC_IsEatingMeal or mem.VNPC_IsCollectingScrap then continue end
+            local hunger = VNPC_GetHunger and VNPC_GetHunger(mem) or 0
+            local thirst = VNPC_GetThirst and VNPC_GetThirst(mem) or 0
+            if hunger >= 30.0 or thirst >= 30.0 or prop.VNPC_MealCooker == mem then
+                local dSqr = mem:GetPos():DistToSqr(prop:GetPos())
+                if dSqr < bestDistSqr then
+                    bestConsumer = mem
+                    bestDistSqr = dSqr
+                end
+            end
+        end
+
+        if bestConsumer then
+            if bestDistSqr > (90 * 90) then
+                if bestConsumer.SetLastPosition then pcall(bestConsumer.SetLastPosition, bestConsumer, prop:GetPos()) end
+                if bestConsumer.SetSchedule then pcall(bestConsumer.SetSchedule, bestConsumer, SCHED_FORCED_GO) end
+            else
+                bestConsumer.VNPC_IsEatingMeal = true
+                bestConsumer.VNPC_EatingMealType = prop.VNPC_MealType
+                local mealData = (VNPC_PreyCookedMealModels and VNPC_PreyCookedMealModels[prop.VNPC_MealType]) or { hungerRelief = 60.0, thirstRelief = 10.0, name = "Hotdog" }
+
+                if VNPC_GetHunger and VNPC_SetHunger then
+                    VNPC_SetHunger(bestConsumer, math.max(0, VNPC_GetHunger(bestConsumer) - (mealData.hungerRelief or 60.0)))
+                end
+                if VNPC_GetThirst and VNPC_SetThirst then
+                    VNPC_SetThirst(bestConsumer, math.max(0, VNPC_GetThirst(bestConsumer) - (mealData.thirstRelief or 60.0)))
+                end
+
+                -- STRICT REQUIREMENT: ZERO BELLY EXPANSION from cooked prop meals (hotdog, burger, soda)
+                bestConsumer.VNPC_NoBellyExpansionFromMeal = true
+                bestConsumer.VNPC_WaterDrank = 0
+                if IsValid(bestConsumer.VNPC_Belly) then
+                    bestConsumer.VNPC_Belly.VNPC_WaterWeight = 0
+                end
+
+                if bestConsumer.EmitSound then
+                    if prop.VNPC_MealType == "soda" then
+                        bestConsumer:EmitSound("gulps/g" .. math.random(1, 10) .. ".wav", 75, math.random(95, 105))
+                    else
+                        bestConsumer:EmitSound("npc/barnacle/barnacle_crunch2.wav", 75, math.random(95, 105))
+                    end
+                end
+
+                print(string.format("[V-NPCs] Prey Citizen #%d [%s] consumed prop meal %s (%s) [Hunger = %.1f%%, Thirst = %.1f%%, Belly Expansion = NONE]!", bestConsumer:EntIndex(), bestConsumer.PrintName or bestConsumer:GetClass(), mealData.name or prop.VNPC_MealType, prop.VNPC_MealType, VNPC_GetHunger(bestConsumer), VNPC_GetThirst(bestConsumer)))
+
+                table.remove(camp.cookedMeals, i)
+                if IsValid(prop) then
+                    prop:Remove()
+                end
+
+                timer.Simple(2.0, function()
+                    if IsValid(bestConsumer) then
+                        bestConsumer.VNPC_IsEatingMeal = false
+                        bestConsumer.VNPC_EatingMealType = nil
+                        if bestConsumer.SetSchedule then pcall(bestConsumer.SetSchedule, bestConsumer, SCHED_IDLE_STAND) end
+                    end
+                end)
+            end
+        end
+    end
+end
+
 function VNPC_ConstructPreyCampWall(camp)
     if not camps_enabled:GetBool() or not camp then return false end
     if not camp.plannedWalls or #camp.plannedWalls == 0 then
@@ -1108,6 +1317,25 @@ hook.Add("Think", "VNPC_PreyCamps_AI_Loop", function()
             end
         end
 
+        camp.cookedMeals = camp.cookedMeals or {}
+        for c = #camp.cookedMeals, 1, -1 do
+            local meal = camp.cookedMeals[c]
+            if not IsValid(meal) then
+                table.remove(camp.cookedMeals, c)
+            end
+        end
+
+        if not IsValid(camp.campfire) and (now - (camp.createTime or now)) > 3.0 then
+            VNPC_ConstructPreyCampFire(camp)
+        end
+
+        if VNPC_PreyCampCooking_AI then
+            VNPC_PreyCampCooking_AI(camp, now)
+        end
+        if VNPC_PreyMealConsumption_AI then
+            VNPC_PreyMealConsumption_AI(camp, now)
+        end
+
         if VNPC_CheckPreyCampConquest then
             VNPC_CheckPreyCampConquest(camp)
         end
@@ -1130,7 +1358,7 @@ hook.Add("Think", "VNPC_PreyCamps_AI_Loop", function()
 
         -- Intelligent Resource Harvesting: scan for nearby scrap/junk props around the camp to harvest
         for _, scrap in ipairs(ents.FindInSphere(camp.pos, 1000)) do
-            if IsValid(scrap) and scrap:GetClass() == "prop_physics" and not scrap.VNPC_IsPreyCampWall and not scrap.VNPC_IsPreyCampHutPiece and not scrap.VNPC_IsCourtyardDefense and not scrap.VNPC_NoVore then
+            if IsValid(scrap) and scrap:GetClass() == "prop_physics" and not scrap.VNPC_IsPreyCampWall and not scrap.VNPC_IsPreyCampHutPiece and not scrap.VNPC_IsCourtyardDefense and not scrap.VNPC_NoVore and not scrap.VNPC_IsCookedPropMeal then
                 if scrap:GetPos():DistToSqr(camp.pos) < (300 * 300) then
                     camp.resources = (camp.resources or 0) + 10.0
                     scrap:Remove()

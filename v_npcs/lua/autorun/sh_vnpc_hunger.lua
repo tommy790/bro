@@ -6,6 +6,10 @@ CreateConVar("vnpcs_hunger_rate", "1.5", {FCVAR_REPLICATED, FCVAR_ARCHIVE}, "How
 CreateConVar("vnpcs_hunger_max_mult", "3.0", {FCVAR_REPLICATED, FCVAR_ARCHIVE}, "Maximum multiplier applied to sight range and swallowing desire when starving")
 CreateConVar("vnpcs_thirst_enabled", "1", {FCVAR_REPLICATED, FCVAR_ARCHIVE}, "Enable dynamic thirst and water drinking for predators")
 CreateConVar("vnpcs_thirst_rate", "0.6", {FCVAR_REPLICATED, FCVAR_ARCHIVE}, "How fast thirst increases per second (0 to 100 scale)")
+CreateConVar("vnpcs_prey_hunger_enabled", "1", {FCVAR_REPLICATED, FCVAR_ARCHIVE}, "Enable dynamic hunger system for prey NPCs")
+CreateConVar("vnpcs_prey_hunger_rate", "0.8", {FCVAR_REPLICATED, FCVAR_ARCHIVE}, "How fast hunger increases per second for prey NPCs (0 to 100 scale)")
+CreateConVar("vnpcs_prey_thirst_enabled", "1", {FCVAR_REPLICATED, FCVAR_ARCHIVE}, "Enable dynamic thirst system for prey NPCs")
+CreateConVar("vnpcs_prey_thirst_rate", "0.5", {FCVAR_REPLICATED, FCVAR_ARCHIVE}, "How fast thirst increases per second for prey NPCs (0 to 100 scale)")
 CreateConVar("vnpcs_stormfox2_enabled", "1", {FCVAR_REPLICATED, FCVAR_ARCHIVE}, "Enable StormFox 2 weather, time-of-day, and temperature compatibility")
 
 VNPC_SimulatedStormFox2Weather = VNPC_SimulatedStormFox2Weather or "clear"
@@ -98,6 +102,52 @@ function VNPC_GetStormFox2EcologyMultiplier()
         return 0.85 -- Clear night slightly reduces active wanderer spawn rate
     end
     return 1.0
+end
+
+function VNPC_IsPreyNPC(ent)
+    if not IsValid(ent) or ent:IsPlayer() or ent:Health() <= 0 then return false end
+    if ent.IsDrGNextbot or ent.VNPC_FemaleModelVore or ent.Predator or ent.EatEntity then return false end
+    if ent.Vored or ent.VNPC_Vored or ent.VNPC_Surrendered then return false end
+    local cls = string.lower(ent:GetClass() or "")
+    if cls:find("citizen") or cls:find("rebel") or cls:find("refugee") or cls:find("alyx") or cls:find("mossman") or ent.VNPC_PreyCampID or (ent.Classify and ent:Classify() == CLASS_CITIZEN) then
+        return true
+    end
+    return false
+end
+
+VNPC_PreyCookedMealModels = VNPC_PreyCookedMealModels or {
+    hotdog = {
+        model = "models/food/hotdog.mdl",
+        fallback = "models/props_junk/garbage_takeoutcarton001a.mdl",
+        name = "Hotdog",
+        type = "food",
+        hungerRelief = 60.0,
+        thirstRelief = 10.0
+    },
+    burger = {
+        model = "models/food/burger.mdl",
+        fallback = "models/props_junk/garbage_takeoutcarton001a.mdl",
+        name = "Burger",
+        type = "food",
+        hungerRelief = 75.0,
+        thirstRelief = 10.0
+    },
+    soda = {
+        model = "models/props_junk/popcan01a.mdl",
+        fallback = "models/props_junk/popcan01a.mdl",
+        name = "Soda",
+        type = "drink",
+        hungerRelief = 15.0,
+        thirstRelief = 75.0
+    }
+}
+
+function VNPC_GetCookedMealModel(mealType)
+    local data = VNPC_PreyCookedMealModels[mealType] or VNPC_PreyCookedMealModels.hotdog
+    if util.IsValidModel(data.model) then
+        return data.model
+    end
+    return data.fallback
 end
 
 function VNPC_GetThirst(ent)
@@ -287,25 +337,36 @@ if SERVER then
                     ent.VNPC_LastMonsterTickTime = now
                     VNPC_PredatorMonsterGrowth(ent, 0)
                 end
-            elseif GetConVar("vnpcs_prey_stamina_enabled"):GetBool() and not ent:IsPlayer() and (ent:GetClass():find("citizen") or ent:GetClass():find("rebel") or ent:GetClass():find("refugee") or ent.VNPC_PreyCampID) then
-                local curStam = VNPC_GetPreyStamina(ent)
-                local isRunning = ent.IsMoving and ent:IsMoving() and (ent:GetSchedule() == SCHED_FORCED_GO_RUN or ent:GetSchedule() == SCHED_CHASE_ENEMY or IsValid(ent:GetEnemy()))
-                if isRunning then
-                    local newStam = math.max(0, curStam - 3.5)
-                    VNPC_SetPreyStamina(ent, newStam)
-                    if newStam <= 0 and not ent.VNPC_IsExhausted then
-                        ent.VNPC_IsExhausted = true
-                        if ent.SetSchedule then pcall(ent.SetSchedule, ent, SCHED_FORCED_GO) end
-                        if ent.EmitSound and (ent.VNPC_NextExhaustSound or 0) <= now then
-                            ent.VNPC_NextExhaustSound = now + 12.0
-                            ent:EmitSound("npc/alyx/sigh01.wav", 75, math.random(90, 98))
+            elseif VNPC_IsPreyNPC(ent) then
+                if GetConVar("vnpcs_prey_hunger_enabled"):GetBool() and not ent.VNPC_IsSleeping and not IsValid(ent:GetEnemy()) and not ent.VNPC_IsEatingMeal then
+                    local preyHungerRate = (GetConVar("vnpcs_prey_hunger_rate"):GetFloat() or 0.8) * VNPC_GetStormFox2HungerMultiplier()
+                    VNPC_SetHunger(ent, VNPC_GetHunger(ent) + preyHungerRate)
+                end
+                if GetConVar("vnpcs_prey_thirst_enabled"):GetBool() and not ent.VNPC_IsSleeping and not IsValid(ent:GetEnemy()) and not ent.VNPC_IsEatingMeal then
+                    local preyThirstRate = (GetConVar("vnpcs_prey_thirst_rate"):GetFloat() or 0.5) * VNPC_GetStormFox2ThirstMultiplier()
+                    VNPC_SetThirst(ent, VNPC_GetThirst(ent) + preyThirstRate)
+                end
+
+                if GetConVar("vnpcs_prey_stamina_enabled"):GetBool() then
+                    local curStam = VNPC_GetPreyStamina(ent)
+                    local isRunning = ent.IsMoving and ent:IsMoving() and (ent:GetSchedule() == SCHED_FORCED_GO_RUN or ent:GetSchedule() == SCHED_CHASE_ENEMY or IsValid(ent:GetEnemy()))
+                    if isRunning then
+                        local newStam = math.max(0, curStam - 3.5)
+                        VNPC_SetPreyStamina(ent, newStam)
+                        if newStam <= 0 and not ent.VNPC_IsExhausted then
+                            ent.VNPC_IsExhausted = true
+                            if ent.SetSchedule then pcall(ent.SetSchedule, ent, SCHED_FORCED_GO) end
+                            if ent.EmitSound and (ent.VNPC_NextExhaustSound or 0) <= now then
+                                ent.VNPC_NextExhaustSound = now + 12.0
+                                ent:EmitSound("npc/alyx/sigh01.wav", 75, math.random(90, 98))
+                            end
                         end
-                    end
-                else
-                    local newStam = math.min(100, curStam + 2.5)
-                    VNPC_SetPreyStamina(ent, newStam)
-                    if newStam >= 30.0 then
-                        ent.VNPC_IsExhausted = nil
+                    else
+                        local newStam = math.min(100, curStam + 2.5)
+                        VNPC_SetPreyStamina(ent, newStam)
+                        if newStam >= 30.0 then
+                            ent.VNPC_IsExhausted = nil
+                        end
                     end
                 end
             end
@@ -317,19 +378,34 @@ concommand.Add("vnpcs_hunger_status", function(ply)
     print("===============================================================")
     print("           V-NPCs DYNAMIC HUNGER SYSTEM STATUS                 ")
     print("===============================================================")
-    print(" - Hunger System Enabled: " .. tostring(GetConVar("vnpcs_hunger_enabled"):GetBool()))
-    print(" - Hunger Growth Rate: " .. tostring(GetConVar("vnpcs_hunger_rate"):GetFloat()) .. " / sec")
-    local count = 0
+    print(" - Predator Hunger Enabled: " .. tostring(GetConVar("vnpcs_hunger_enabled"):GetBool()) .. " | Rate: " .. tostring(GetConVar("vnpcs_hunger_rate"):GetFloat()) .. " / sec")
+    print(" - Prey Hunger Enabled: " .. tostring(GetConVar("vnpcs_prey_hunger_enabled"):GetBool()) .. " | Rate: " .. tostring(GetConVar("vnpcs_prey_hunger_rate"):GetFloat()) .. " / sec")
+    local predCount = 0
+    local preyCount = 0
     for _, ent in ipairs(ents.GetAll()) do
-        if IsValid(ent) and (ent.IsDrGNextbot or ent.VNPC_FemaleModelVore or ent.Predator) and not ent:IsPlayer() then
-            count = count + 1
-            local hunger = VNPC_GetHunger(ent)
-            local mult = VNPC_GetHungerMultiplier(ent)
-            print(string.format(" - Predator #%d [%s]: Hunger = %.1f%% (Sight/Hunt Multiplier = %.2fx)", ent:EntIndex(), ent.PrintName or ent:GetClass(), hunger, mult))
+        if IsValid(ent) and not ent:IsPlayer() then
+            if ent.IsDrGNextbot or ent.VNPC_FemaleModelVore or ent.Predator then
+                predCount = predCount + 1
+                local hunger = VNPC_GetHunger(ent)
+                local mult = VNPC_GetHungerMultiplier(ent)
+                print(string.format(" - Predator #%d [%s]: Hunger = %.1f%% (Sight/Hunt Multiplier = %.2fx)", ent:EntIndex(), ent.PrintName or ent:GetClass(), hunger, mult))
+            elseif VNPC_IsPreyNPC(ent) then
+                preyCount = preyCount + 1
+                local hunger = VNPC_GetHunger(ent)
+                local mealState = "NORMAL"
+                if ent.VNPC_IsCookingMeal then
+                    mealState = "COOKING " .. string.upper(ent.VNPC_CookingMealType or "MEAL")
+                elseif ent.VNPC_IsEatingMeal then
+                    mealState = "EATING " .. string.upper(ent.VNPC_EatingMealType or "MEAL") .. " (No Belly Expansion)"
+                elseif hunger >= 60.0 then
+                    mealState = "SEEKING COOKED PROP MEAL (Hungry)"
+                end
+                print(string.format(" - Prey #%d [%s]: Hunger = %.1f%% | Meal State = %s", ent:EntIndex(), ent.PrintName or ent:GetClass(), hunger, mealState))
+            end
         end
     end
-    if count == 0 then
-        print(" - Active Predators: NONE currently spawned")
+    if predCount == 0 and preyCount == 0 then
+        print(" - Active Predators/Prey: NONE currently spawned")
     end
     print("===============================================================")
 end)
@@ -338,21 +414,75 @@ concommand.Add("vnpcs_thirst_status", function(ply)
     print("===============================================================")
     print("      V-NPCs DYNAMIC THIRST & WATER DRINKING SYSTEM STATUS     ")
     print("===============================================================")
-    print(" - Thirst System Enabled: " .. tostring(GetConVar("vnpcs_thirst_enabled"):GetBool()))
-    print(" - Thirst Growth Rate: " .. tostring(GetConVar("vnpcs_thirst_rate"):GetFloat()) .. " / sec")
-    local count = 0
+    print(" - Predator Thirst Enabled: " .. tostring(GetConVar("vnpcs_thirst_enabled"):GetBool()) .. " | Rate: " .. tostring(GetConVar("vnpcs_thirst_rate"):GetFloat()) .. " / sec")
+    print(" - Prey Thirst Enabled: " .. tostring(GetConVar("vnpcs_prey_thirst_enabled"):GetBool()) .. " | Rate: " .. tostring(GetConVar("vnpcs_prey_thirst_rate"):GetFloat()) .. " / sec")
+    local predCount = 0
+    local preyCount = 0
     for _, ent in ipairs(ents.GetAll()) do
-        if IsValid(ent) and (ent.IsDrGNextbot or ent.VNPC_FemaleModelVore or ent.Predator) and not ent:IsPlayer() then
-            count = count + 1
-            local thirst = VNPC_GetThirst(ent)
-            local stateStr = ent.VNPC_IsDrinkingWater and "DRINKING WATER (Scaled Belly Expansion)" or "SEEKING WATER/AWAKE"
-            print(string.format(" - Predator #%d [%s]: Thirst = %.1f%% | State = %s | Water Drank = %.1f", ent:EntIndex(), ent.PrintName or ent:GetClass(), thirst, stateStr, ent.VNPC_WaterDrank or 0))
+        if IsValid(ent) and not ent:IsPlayer() then
+            if ent.IsDrGNextbot or ent.VNPC_FemaleModelVore or ent.Predator then
+                predCount = predCount + 1
+                local thirst = VNPC_GetThirst(ent)
+                local stateStr = ent.VNPC_IsDrinkingWater and "DRINKING WATER (Scaled Belly Expansion)" or "SEEKING WATER/AWAKE"
+                print(string.format(" - Predator #%d [%s]: Thirst = %.1f%% | State = %s | Water Drank = %.1f", ent:EntIndex(), ent.PrintName or ent:GetClass(), thirst, stateStr, ent.VNPC_WaterDrank or 0))
+            elseif VNPC_IsPreyNPC(ent) then
+                preyCount = preyCount + 1
+                local thirst = VNPC_GetThirst(ent)
+                local stateStr = "NORMAL | No Belly Expansion"
+                if ent.VNPC_IsCookingMeal and ent.VNPC_CookingMealType == "soda" then
+                    stateStr = "COOKING SODA (No Belly Expansion)"
+                elseif ent.VNPC_IsEatingMeal and ent.VNPC_EatingMealType == "soda" then
+                    stateStr = "DRINKING SODA (No Belly Expansion)"
+                elseif thirst >= 60.0 then
+                    stateStr = "THIRSTY (Seeking Cooked Soda / Water | No Belly Expansion)"
+                end
+                print(string.format(" - Prey #%d [%s]: Thirst = %.1f%% | State = %s", ent:EntIndex(), ent.PrintName or ent:GetClass(), thirst, stateStr))
+            end
         end
     end
-    if count == 0 then
-        print(" - Active Predators: NONE currently spawned")
+    if predCount == 0 and preyCount == 0 then
+        print(" - Active Predators/Prey: NONE currently spawned")
     end
     print("===============================================================")
+end)
+
+concommand.Add("vnpcs_test_prey_hunger", function(ply)
+    local count = 0
+    for _, ent in ipairs(ents.GetAll()) do
+        if VNPC_IsPreyNPC(ent) then
+            VNPC_SetHunger(ent, 85.0)
+            count = count + 1
+        end
+    end
+    print("[V-NPCs] Set Hunger to 85.0% for " .. count .. " prey NPC(s).")
+end)
+
+concommand.Add("vnpcs_test_prey_thirst", function(ply)
+    local count = 0
+    for _, ent in ipairs(ents.GetAll()) do
+        if VNPC_IsPreyNPC(ent) then
+            VNPC_SetThirst(ent, 85.0)
+            count = count + 1
+        end
+    end
+    print("[V-NPCs] Set Thirst to 85.0% for " .. count .. " prey NPC(s).")
+end)
+
+concommand.Add("vnpcs_test_prey_cook_meal", function(ply, cmd, args)
+    local mealType = string.lower(args[1] or "hotdog")
+    if not VNPC_PreyCookedMealModels[mealType] then
+        mealType = "hotdog"
+    end
+    local found = 0
+    for _, ent in ipairs(ents.GetAll()) do
+        if VNPC_IsPreyNPC(ent) and (VNPC_IsFemalePreyCitizen(ent) or string.lower(ent:GetModel() or ""):find("female") or string.lower(ent:GetModel() or ""):find("f_") or string.lower(ent:GetModel() or ""):find("alyx")) then
+            ent.VNPC_ForceCookMeal = mealType
+            VNPC_SetHunger(ent, 85.0)
+            VNPC_SetThirst(ent, 85.0)
+            found = found + 1
+        end
+    end
+    print("[V-NPCs] Ordered " .. found .. " female citizen prey at prey camps to cook a prop meal (" .. string.upper(mealType) .. ").")
 end)
 
 CreateConVar("vnpcs_pred_xp_enabled", "1", {FCVAR_REPLICATED, FCVAR_ARCHIVE}, "Enable predator experience (XP) and leveling system")
