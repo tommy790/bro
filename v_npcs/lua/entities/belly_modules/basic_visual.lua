@@ -2,7 +2,9 @@ ENT.BaseScale = 0 --AKA BELLY FAT LEFT OVER
 ENT.MaxBaseScale = 0.5
 
 function ENT:GetBellySize() --this gets the scale of all the stuff in the stomach
-    local scale = self:GetCollectivePreyValue() * 0.013 --no meaning number
+    local waterVal = (self.VNPC_WaterWeight or 0) + (IsValid(self.NPC) and (self.NPC.VNPC_WaterDrank or 0) or 0)
+    local totalVal = self:GetCollectivePreyValue() + waterVal
+    local scale = totalVal * 0.013 --no meaning number
 
     if scale > 1 then
         scale = math.pow(scale, 0.5) 

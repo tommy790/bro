@@ -207,6 +207,47 @@ function VNPC_ConstructPredatorCampFire(camp)
     return true
 end
 
+function VNPC_ConstructPredatorCampWater(camp)
+    if not camps_enabled:GetBool() or not camp or not camp.pos then return false end
+    if IsValid(camp.watersource) then return false end
+
+    local angle = math.rad(math.random(0, 360))
+    local candidatePos = camp.pos + Vector(math.cos(angle) * 75, math.sin(angle) * 75, 40)
+    local tr = util.TraceLine({
+        start = candidatePos,
+        endpos = candidatePos - Vector(0, 0, 150),
+        mask = MASK_SOLID_BRUSHONLY
+    })
+    if not tr.Hit or tr.HitNormal.z < 0.65 then return false end
+
+    local water = ents.Create("prop_physics")
+    if not IsValid(water) then return false end
+
+    water:SetModel("models/props_c17/FurnitureBoiler001a.mdl")
+    water:SetPos(tr.HitPos)
+    water:SetAngles(Angle(0, math.random(0, 360), 0))
+    water:Spawn()
+    water:Activate()
+
+    local minZ = water:OBBMins().z
+    local zOffset = (minZ < 0) and math.abs(minZ) or 0
+    water:SetPos(tr.HitPos + Vector(0, 0, zOffset + 2))
+
+    water.VNPC_IsPredatorCampWater = true
+    water.VNPC_PredatorCampID = camp.id
+    water:SetHealth(400)
+
+    local phys = water:GetPhysicsObject()
+    if IsValid(phys) then
+        phys:SetVelocity(Vector(0,0,0))
+        phys:EnableMotion(false)
+        phys:Sleep()
+    end
+
+    camp.watersource = water
+    return true
+end
+
 function VNPC_ConstructPredatorCampBarricades(camp)
     if not camps_enabled:GetBool() or not camp or not camp.pos then return false end
     camp.barricades = camp.barricades or {}
@@ -404,10 +445,13 @@ hook.Add("Think", "VNPC_PredatorCamps_AI_Loop", function()
             end
         end
 
-        -- Construct Campfire and Barricades when resting at camp
+        -- Construct Campfire, Water Source, and Barricades when resting at camp
         if camp.state == "idle" then
             if not IsValid(camp.campfire) and (now - (camp.createTime or now)) > 5.0 then
                 VNPC_ConstructPredatorCampFire(camp)
+            end
+            if not IsValid(camp.watersource) and (now - (camp.createTime or now)) > 6.0 then
+                VNPC_ConstructPredatorCampWater(camp)
             end
             camp.barricades = camp.barricades or {}
             if #camp.barricades < 6 and (now - (camp.createTime or now)) > 8.0 and (camp.lastBarricadeBuildTime or 0) <= now then

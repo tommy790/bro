@@ -1475,6 +1475,21 @@ VNPC_BoneMovesets["ballerpuppy"] = VNPC_BallerPuppyAnimatedBoneList
 VNPC_BoneMovesets["breamsatel"] = VNPC_BreamSatelAnimatedBoneList
 VNPC_BoneMovesets["chiku"] = VNPC_ChikuAnimatedBoneList
 
+VNPC_WaterDrinkingBonePose = {
+    ["ValveBiped.Bip01_Head1"] = { pos = Vector(0, 0, 0), ang = Angle(25, 0, 0) },
+    ["ValveBiped.Bip01_Spine"] = { pos = Vector(0, 0, 0), ang = Angle(25, 0, 0) },
+    ["ValveBiped.Bip01_Spine1"] = { pos = Vector(0, 0, 0), ang = Angle(15, 0, 0) },
+    ["ValveBiped.Bip01_Pelvis"] = { pos = Vector(0, 0, -12), ang = Angle(-15, 0, 0) },
+    ["ValveBiped.Bip01_R_Thigh"] = { pos = Vector(0, 0, 0), ang = Angle(-35, -15, 0) },
+    ["ValveBiped.Bip01_L_Thigh"] = { pos = Vector(0, 0, 0), ang = Angle(-35, 15, 0) },
+    ["ValveBiped.Bip01_R_Calf"] = { pos = Vector(0, 0, 0), ang = Angle(45, 0, 0) },
+    ["ValveBiped.Bip01_L_Calf"] = { pos = Vector(0, 0, 0), ang = Angle(45, 0, 0) },
+    ["ValveBiped.Bip01_R_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(45, -25, 20) },
+    ["ValveBiped.Bip01_L_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(45, 25, -20) },
+    ["ValveBiped.Bip01_R_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(-80, 20, -10) },
+    ["ValveBiped.Bip01_L_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(-80, -20, 10) }
+}
+
 VNPC_CarmelitaAnimatedBoneList = {
     [0] = { -- rest
         ["ValveBiped.Bip01_Head1"] = { pos = Vector(0, 0, 0), ang = Angle(0, 0, 0) },
@@ -2047,7 +2062,9 @@ function VNPC_AnimatedBoneOffsets(ent)
     local phase = ent:GetNWInt("FacialPhase", -1)
     local animList = VNPC_GetAnimatedBoneList(ent)
     local data = animList[phase] or animList[0]
-    if ent.VNPC_IsSleepCrawled and VNPC_SleepingCrawlReceiveKeyframes then
+    if (ent.VNPC_IsDrinkingWater or (ent.GetNWBool and ent:GetNWBool("VNPC_IsDrinkingWater"))) and VNPC_WaterDrinkingBonePose then
+        data = VNPC_WaterDrinkingBonePose
+    elseif ent.VNPC_IsSleepCrawled and VNPC_SleepingCrawlReceiveKeyframes then
         data = VNPC_SleepingCrawlReceiveKeyframes
     elseif ent.VNPC_IsSleeping and VNPC_SleepingFullBellyKeyframes then
         data = VNPC_SleepingFullBellyKeyframes

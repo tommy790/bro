@@ -220,3 +220,112 @@ concommand.Add("vnpcs_willing_crawl_status", function(ply)
     end
     print("===============================================================")
 end)
+
+function VNPC_IsWillingPrey(ent)
+    if not IsValid(ent) or ent:Health() <= 0 or ent.Vored or ent.VNPC_Vored then return false end
+    if ent.VNPC_IsPermanentFortPredator then return false end
+    if ent.VNPC_IsWillingMate or ent.VNPC_PreyPersonality == "willing" or ent.PreyPersonality == "willing" then
+        return true
+    end
+    if VNPC_GetPreyPersonality and VNPC_GetPreyPersonality(ent) == "willing" then
+        return true
+    end
+    return false
+end
+
+function VNPC_WillingPreyCampfire_AI(now)
+    for _, camp in ipairs(VNPC_ActivePredatorCamps or {}) do
+        if not IsValid(camp.campfire) and not camp.pos then continue end
+        local targetPos = IsValid(camp.campfire) and camp.campfire:GetPos() or camp.pos
+
+        for _, ent in ipairs(ents.FindByClass("npc_*")) do
+            if not VNPC_IsWillingPrey(ent) then continue end
+            if ent.Vored or ent.VNPC_Vored or ent.VNPC_IsWillingCrawl or ent.VNPC_IsBeingSwallowed then continue end
+            if (ent.VNPC_NextCampInvestigateTime or 0) > now then continue end
+
+            local dSqr = ent:GetPos():DistToSqr(targetPos)
+            if dSqr <= (2200 * 2200) then
+                if not ent.VNPC_InvestigatingCamp then
+                    ent.VNPC_InvestigatingCamp = camp
+                    if ent.SetLastPosition then pcall(ent.SetLastPosition, ent, targetPos) end
+                    if ent.SetSchedule then pcall(ent.SetSchedule, ent, SCHED_FORCED_GO) end
+                else
+                    if dSqr <= (350 * 350) then
+                        -- Arrived at the Predator Camp! Look for an awake predator present at camp.
+                        local awakePred = nil
+                        for _, pred in ipairs(camp.members or {}) do
+                            if IsValid(pred) and pred:Health() > 0 and not pred.Vored and not pred.VNPC_Vored then
+                                local pDist = pred:GetPos():DistToSqr(targetPos)
+                                if pDist <= (600 * 600) and not pred.VNPC_IsSleeping and not pred.VNPC_IsReturningToCampToSleep then
+                                    awakePred = pred
+                                    break
+                                end
+                            end
+                        end
+
+                        if IsValid(awakePred) then
+                            -- Awake predator found at camp! Willing prey crawls into stomach through the mouth!
+                            local belly = awakePred.VNPC_Belly or awakePred.Belly
+                            if not IsValid(belly) and VNPC_AttachFemaleModelVore then
+                                VNPC_AttachFemaleModelVore(awakePred)
+                                belly = awakePred.VNPC_Belly or awakePred.Belly
+                            end
+                            if IsValid(belly) then
+                                VNPC_StartWillingCrawlAnimation(awakePred, ent, belly)
+                                ent.VNPC_InvestigatingCamp = nil
+                                print("[V-NPCs] Willing prey " .. tostring(ent) .. " investigated Predator Camp #" .. camp.id .. " and crawled into awake predator " .. tostring(awakePred) .. "'s stomach through the mouth!")
+                            end
+                        else
+                            -- Predators are sleeping/resting OR out hunting; prey just leaves!
+                            ent.VNPC_InvestigatingCamp = nil
+                            ent.VNPC_NextCampInvestigateTime = now + 45.0
+                            local leavePos = ent:GetPos() + Vector(math.random(-800, 800), math.random(-800, 800), 0)
+                            if ent.SetLastPosition then pcall(ent.SetLastPosition, ent, leavePos) end
+                            if ent.SetSchedule then pcall(ent.SetSchedule, ent, SCHED_FORCED_GO) end
+                            print("[V-NPCs] Willing prey " .. tostring(ent) .. " visited Predator Camp #" .. camp.id .. " but predators were sleeping/resting or out hunting; prey left the camp.")
+                        end
+                    elseif (ent.VNPC_NextInvestigateMoveTime or 0) <= now then
+                        ent.VNPC_NextInvestigateMoveTime = now + 2.0
+                        if ent.SetLastPosition then pcall(ent.SetLastPosition, ent, targetPos) end
+                        if ent.SetSchedule then pcall(ent.SetSchedule, ent, SCHED_FORCED_GO_RUN) end
+                    end
+                end
+            end
+        end
+    end
+end
+
+hook.Add("Think", "VNPCS_WillingPreyCampfire_Loop", function()
+    local now = CurTime()
+    if (VNPC_NextWillingCampfireThink or 0) > now then return end
+    VNPC_NextWillingCampfireThink = now + 1.0
+    VNPC_WillingPreyCampfire_AI(now)
+end)
+
+concommand.Add("vnpcs_test_willing_campfire", function(ply)
+    if not IsValid(ply) then return end
+    local tr = ply:GetEyeTrace()
+    local target = tr.Entity
+    if not IsValid(target) or not (target:IsNPC() or target:IsNextBot()) then
+        ply:ChatPrint("[V-NPCs] Please aim at a willing prey NPC to test campfire investigation!")
+        return
+    end
+
+    local bestCamp = nil
+    for _, camp in ipairs(VNPC_ActivePredatorCamps or {}) do
+        bestCamp = camp
+        break
+    end
+    if not bestCamp then
+        ply:ChatPrint("[V-NPCs] No active Predator Camp found to investigate!")
+        return
+    end
+
+    target.VNPC_PreyPersonality = "willing"
+    target.VNPC_InvestigatingCamp = bestCamp
+    local targetPos = IsValid(bestCamp.campfire) and bestCamp.campfire:GetPos() or bestCamp.pos
+    if target.SetLastPosition then pcall(target.SetLastPosition, target, targetPos) end
+    if target.SetSchedule then pcall(target.SetSchedule, target, SCHED_FORCED_GO_RUN) end
+
+    ply:ChatPrint("[V-NPCs] Set willing prey " .. tostring(target) .. " to investigate Predator Camp #" .. bestCamp.id .. "'s campfire!")
+end)
