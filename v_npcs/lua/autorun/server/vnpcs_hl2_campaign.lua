@@ -17,11 +17,78 @@ function VNPC_IsHL2ScriptedScene(ent)
     return false
 end
 
+function VNPC_HL2Campaign_InitCouplesAndFamily()
+    local enabled = GetConVar("vnpcs_hl2_campaign_mode")
+    if enabled and not enabled:GetBool() then return end
+
+    local allNPCs = ents.FindByClass("npc_*")
+    local elis = {}
+    local alyxes = {}
+    local citizenFemales = {}
+    local citizenMales = {}
+
+    for _, npc in ipairs(allNPCs) do
+        if not IsValid(npc) or npc:Health() <= 0 or npc.Vored or npc.VNPC_Vored then continue end
+
+        local cls = string.lower(npc:GetClass() or "")
+        local mdl = string.lower(npc:GetModel() or "")
+
+        if cls == "npc_eli" or mdl:find("eli") then
+            table.insert(elis, npc)
+        elseif cls == "npc_alyx" or mdl:find("alyx") then
+            table.insert(alyxes, npc)
+        end
+
+        if cls:find("citizen") or cls:find("rebel") or cls:find("refugee") or cls:find("mossman") or cls:find("alyx") then
+            local isFemale = mdl:find("female") or mdl:find("alyx") or mdl:find("mossman") or mdl:find("f_")
+            if isFemale then
+                table.insert(citizenFemales, npc)
+            else
+                table.insert(citizenMales, npc)
+            end
+        end
+    end
+
+    -- 1. Link Eli Vance as Alyx Vance's father
+    for _, eli in ipairs(elis) do
+        for _, alyx in ipairs(alyxes) do
+            eli.VNPC_WildChild = alyx
+            alyx.VNPC_FatherRef = eli
+            eli.VNPC_IsFatherOfAlyx = true
+            alyx.VNPC_IsDaughterOfEli = true
+        end
+    end
+
+    -- 2. Link co-located citizens at the start of the game as Mates (e.g. female and male sitting at couch)
+    for _, f in ipairs(citizenFemales) do
+        if IsValid(f.VNPC_WildMate) or IsValid(f.VNPC_LovedPartner) then continue end
+        local fPos = f:GetPos()
+
+        for _, m in ipairs(citizenMales) do
+            if not IsValid(m) or m == f or IsValid(m.VNPC_WildMate) or IsValid(m.VNPC_LovedPartner) then continue end
+            if m:GetPos():DistToSqr(fPos) <= (260 * 260) then
+                f.VNPC_WildMate = m
+                m.VNPC_WildMate = f
+                f.VNPC_LovedPartner = m
+                m.VNPC_LovedPartner = f
+                f.VNPC_CampaignMate = true
+                m.VNPC_CampaignMate = true
+                break
+            end
+        end
+    end
+end
+
 hook.Add("Think", "VNPCS_HL2Campaign_DirectorLoop", function()
     local enabled = GetConVar("vnpcs_hl2_campaign_mode")
     if enabled and not enabled:GetBool() then return end
 
     local now = CurTime()
+
+    if (now - (VNPC_LastCampaignFamilyInit or 0)) >= 3.0 then
+        VNPC_LastCampaignFamilyInit = now
+        VNPC_HL2Campaign_InitCouplesAndFamily()
+    end
 
     for _, npc in ipairs(ents.FindByClass("npc_*")) do
         if not IsValid(npc) or npc.Vored or npc.VNPC_Vored or npc.VNPC_Surrendered then continue end
@@ -114,5 +181,26 @@ concommand.Add("vnpcs_hl2_campaign_status", function(ply)
     if count == 0 then
         print(" - Active Campaign Predators: NONE currently spawned")
     end
+    local cMates = 0
+    for _, npc in ipairs(ents.FindByClass("npc_*")) do
+        if IsValid(npc) and (npc.VNPC_CampaignMate or IsValid(npc.VNPC_WildMate) or IsValid(npc.VNPC_LovedPartner)) then
+            cMates = cMates + 1
+        end
+    end
+    print(" - Active Campaign Mates / Couples: " .. math.floor(cMates / 2) .. " couples linked")
     print("===============================================================")
+end)
+
+concommand.Add("vnpcs_test_hl2_family", function(ply)
+    VNPC_HL2Campaign_InitCouplesAndFamily()
+    local cMates = 0
+    for _, npc in ipairs(ents.FindByClass("npc_*")) do
+        if IsValid(npc) and (npc.VNPC_CampaignMate or IsValid(npc.VNPC_WildMate) or IsValid(npc.VNPC_LovedPartner)) then
+            cMates = cMates + 1
+        end
+    end
+    print("[V-NPCs] Initialized HL2 Campaign family relationships and couples (Eli as Alyx's father, couch/map citizens as mates). Total mates linked: " .. math.floor(cMates / 2))
+    if IsValid(ply) then
+        ply:ChatPrint("[V-NPCs] HL2 Campaign couples and family relationships initialized! Mates linked: " .. math.floor(cMates / 2))
+    end
 end)

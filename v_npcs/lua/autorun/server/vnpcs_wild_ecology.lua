@@ -72,28 +72,64 @@ function VNPC_MakeWildWanderer(ent)
 end
 
 function VNPC_FindWildernessSpawnPos()
-    local players = player.GetAll()
-    local origin = Vector(0, 0, 0)
-    if #players > 0 and IsValid(players[1]) then
-        origin = players[1]:GetPos()
+    local candidates = {}
+
+    -- 1. Collect from Navigation Mesh areas across the entire map
+    if navmesh and navmesh.GetAllNavAreas then
+        for _, area in ipairs(navmesh.GetAllNavAreas() or {}) do
+            if IsValid(area) and area.GetCenter then
+                table.insert(candidates, area:GetCenter() + Vector(0, 0, 15))
+            end
+        end
     end
 
-    for attempt = 1, 10 do
-        local angle = math.rad(math.random(0, 360))
-        local dist = math.random(1300, 2600)
-        local candidatePos = origin + Vector(math.cos(angle) * dist, math.sin(angle) * dist, 100)
+    -- 2. Collect from AI nodes and spawn points across the entire map
+    local nodeClasses = {
+        "info_node", "info_node_hint", "info_player_start", "info_player_deathmatch",
+        "info_player_combine", "info_player_rebel", "info_target", "path_track"
+    }
+    for _, cls in ipairs(nodeClasses) do
+        for _, node in ipairs(ents.FindByClass(cls)) do
+            if IsValid(node) then
+                table.insert(candidates, node:GetPos() + Vector(0, 0, 15))
+            end
+        end
+    end
 
-        -- Ensure minimum distance from all camps and players
+    -- 3. If candidates exist, try to pick a valid map-wide position from them
+    local players = player.GetAll()
+    for attempt = 1, 20 do
+        local candidatePos = nil
+        if #candidates > 0 and math.random(1, 100) <= 85 then
+            candidatePos = candidates[math.random(1, #candidates)] + Vector(math.random(-150, 150), math.random(-150, 150), 20)
+        else
+            -- Map-wide fallback: sample across the entire world bounding box
+            local world = game.GetWorld()
+            if IsValid(world) and world.GetModelBounds then
+                local minB, maxB = world:GetModelBounds()
+                candidatePos = Vector(
+                    math.random(math.floor(minB.x * 0.75), math.floor(maxB.x * 0.75)),
+                    math.random(math.floor(minB.y * 0.75), math.floor(maxB.y * 0.75)),
+                    math.random(math.floor(minB.z * 0.5), math.floor(maxB.z * 0.5))
+                )
+            else
+                local angle = math.rad(math.random(0, 360))
+                local dist = math.random(2000, 10000)
+                candidatePos = Vector(math.cos(angle) * dist, math.sin(angle) * dist, 100)
+            end
+        end
+
+        -- Ensure minimum distance from all camps and players (not spawning right on top of someone)
         local tooClose = false
         for _, camp in ipairs(VNPC_ActivePredatorCamps or {}) do
-            if camp.pos and candidatePos:DistToSqr(camp.pos) < (1100 * 1100) then
+            if camp.pos and candidatePos:DistToSqr(camp.pos) < (1000 * 1000) then
                 tooClose = true
                 break
             end
         end
         if not tooClose then
             for _, camp in ipairs(VNPC_ActivePreyCamps or {}) do
-                if camp.pos and candidatePos:DistToSqr(camp.pos) < (1100 * 1100) then
+                if camp.pos and candidatePos:DistToSqr(camp.pos) < (1000 * 1000) then
                     tooClose = true
                     break
                 end
@@ -101,7 +137,9 @@ function VNPC_FindWildernessSpawnPos()
         end
         if not tooClose then
             for _, p in ipairs(players) do
-                if IsValid(p) and candidatePos:DistToSqr(p:GetPos()) < (1000 * 1000) then
+                -- Must not spawn directly on top of a player (at least 500 units away),
+                -- but can be anywhere on the map!
+                if IsValid(p) and candidatePos:DistToSqr(p:GetPos()) < (500 * 500) then
                     tooClose = true
                     break
                 end
@@ -110,11 +148,11 @@ function VNPC_FindWildernessSpawnPos()
 
         if not tooClose then
             local tr = util.TraceLine({
-                start = candidatePos,
-                endpos = candidatePos - Vector(0, 0, 400),
+                start = candidatePos + Vector(0, 0, 300),
+                endpos = candidatePos - Vector(0, 0, 1000),
                 mask = MASK_SOLID_BRUSHONLY
             })
-            if tr.Hit and tr.HitNormal.z > 0.6 then
+            if tr.Hit and tr.HitNormal.z > 0.6 and not tr.StartSolid then
                 return tr.HitPos + Vector(0, 0, 10)
             end
         end
@@ -395,6 +433,20 @@ function VNPC_IsFamilyOrMate(entA, entB)
     if entA.VNPC_MotherRef == entB or entB.VNPC_MotherRef == entA then return true end
     if entA.VNPC_FatherRef == entB or entB.VNPC_FatherRef == entA then return true end
     if entA.VNPC_LovedPartner == entB or entB.VNPC_LovedPartner == entA then return true end
+
+    local clsA = string.lower(entA:GetClass() or "")
+    local mdlA = string.lower(entA:GetModel() or "")
+    local clsB = string.lower(entB:GetClass() or "")
+    local mdlB = string.lower(entB:GetModel() or "")
+
+    local isEliA = (clsA == "npc_eli" or mdlA:find("eli"))
+    local isAlyxB = (clsB == "npc_alyx" or mdlB:find("alyx"))
+    if isEliA and isAlyxB then return true end
+
+    local isEliB = (clsB == "npc_eli" or mdlB:find("eli"))
+    local isAlyxA = (clsA == "npc_alyx" or mdlA:find("alyx"))
+    if isEliB and isAlyxA then return true end
+
     return false
 end
 
