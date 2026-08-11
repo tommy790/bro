@@ -116,7 +116,7 @@ function VNPC_AssignPreyToCamp(npc)
     local targetSize = camp_target_size:GetInt() or 10
     local npcPos = npc:GetPos()
     local bestCamp = nil
-    local bestDistSqr = 2500 * 2500
+    local bestDistSqr = 1e12
 
     for _, camp in ipairs(VNPC_ActivePreyCamps) do
         if #camp.members < targetSize then
