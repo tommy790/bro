@@ -275,26 +275,19 @@ hook.Add("Think", "VNPCS_IngestionAnimation_Loop", function()
             belly:SetBellySize()
         end
 
-        local isUnbirth = (pred.VNPC_AssignedMoveset == "unbirth")
-        if isUnbirth and VNPC_ApplyUnbirthIngestionPositioning then
-            VNPC_ApplyUnbirthIngestionPositioning(pred, prey, tNorm)
-        else
-            -- Keep prey positioned at predator's mouth as she swallows
-            local headBone = pred:LookupBone("ValveBiped.Bip01_Head1") or pred:LookupBone("Head") or pred:LookupBone("head")
-            if headBone then
-                local headPos, headAng = pred:GetBonePosition(headBone)
-                if headPos then
-                    -- Move prey inward toward throat as tNorm increases
-                    local inOffset = LerpVector(math.Clamp(tNorm, 0, 1), pred:GetForward() * 18, -pred:GetForward() * 5 - pred:GetUp() * 12)
-                    prey:SetPos(headPos + inOffset)
-                end
+        -- Keep prey positioned at predator's mouth as she swallows
+        local headBone = pred:LookupBone("ValveBiped.Bip01_Head1") or pred:LookupBone("Head") or pred:LookupBone("head")
+        if headBone then
+            local headPos, headAng = pred:GetBonePosition(headBone)
+            if headPos then
+                -- Move prey inward toward throat as tNorm increases
+                local inOffset = LerpVector(math.Clamp(tNorm, 0, 1), pred:GetForward() * 18, -pred:GetForward() * 5 - pred:GetUp() * 12)
+                prey:SetPos(headPos + inOffset)
             end
         end
 
         VNPC_AnimatePreyStruggling(prey, anim.stage, tNorm, pred.VNPC_AssignedMoveset)
-        if not isUnbirth then
-            VNPC_ApplyEsophagusBulge(pred, tNorm)
-        end
+        VNPC_ApplyEsophagusBulge(pred, tNorm)
 
         -- STAGE 1 (tNorm >= 0.05): Head enters mouth -> Deflate head & neck bones so there is zero clipping!
         if tNorm >= 0.05 and anim.stage < 1 then
