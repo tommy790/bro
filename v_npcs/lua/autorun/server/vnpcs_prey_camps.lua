@@ -6,7 +6,7 @@ local camp_target_size = CreateConVar("vnpcs_prey_camp_target_size", "10", {FCVA
 local camp_resource_rate = CreateConVar("vnpcs_prey_camp_resource_rate", "1.5", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Base resource accumulation rate per second for prey camps")
 local camp_wall_cost = CreateConVar("vnpcs_prey_camp_wall_cost", "25.0", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Resource cost to construct one defensive wall prop")
 local camp_max_walls = CreateConVar("vnpcs_prey_camp_max_walls", "24", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Maximum number of defensive wall props around a prey camp perimeter")
-local camp_hut_cost = CreateConVar("vnpcs_prey_camp_hut_cost", "45.0", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Resource cost to construct a little hut inside a fortified prey camp")
+local camp_hut_cost = CreateConVar("vnpcs_prey_camp_hut_cost", "8.0", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Resource cost to construct one piece of a breakable dupe hut inside a fortified prey camp")
 local camp_max_huts = CreateConVar("vnpcs_prey_camp_max_huts", "4", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Maximum number of little huts inside a fortified prey camp courtyard")
 local love_enabled = CreateConVar("vnpcs_prey_camp_love_enabled", "1", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Enable love and pregnancy population growth in fortified prey camps")
 local pregnancy_time = CreateConVar("vnpcs_prey_camp_pregnancy_time", "45.0", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Duration in seconds for a pregnant female citizen to bear a new citizen")
@@ -19,10 +19,14 @@ local PREY_WALL_MODELS = {
     "models/props_fortifications/barricade01a.mdl"    -- Sturdy military fortification barricade
 }
 
-local PREY_HUT_MODELS = {
-    "models/props_wasteland/wood_room001a.mdl",       -- Wooden cabin / shack structure
-    "models/props_c17/FurnitureShack001a.mdl",        -- Compact tin/wood shack
-    "models/props_buildings/collapsedbuilding01a.mdl" -- Compact shelter
+local PREY_HUT_PIECE_MODELS = {
+    floor = "models/props_junk/wood_pallet001a.mdl",       -- Base floor pallet
+    wall_back = "models/props_wasteland/wood_fence01a.mdl",-- Back wall panel
+    wall_left = "models/props_wasteland/wood_fence01a.mdl",-- Left wall panel
+    wall_right = "models/props_wasteland/wood_fence01a.mdl",-- Right wall panel
+    wall_front_l = "models/props_debris/wood_board04a.mdl", -- Front left doorframe panel
+    wall_front_r = "models/props_debris/wood_board04a.mdl", -- Front right doorframe panel
+    roof = "models/props_junk/wood_pallet001a.mdl"         -- Roof pallet
 }
 
 function VNPC_IsEligiblePreyNPC(ent)
@@ -324,75 +328,140 @@ function VNPC_CalculateCampHutPosition(camp)
     return nil, nil
 end
 
+function VNPC_CreateHutSite(camp)
+    if not camp then return nil end
+    local pos, ang = VNPC_CalculateCampHutPosition(camp)
+    if not pos or not ang then return nil end
+    return {
+        pos = pos,
+        ang = ang,
+        stage = 0,
+        props = {}
+    }
+end
+
 function VNPC_ConstructPreyCampHut(camp)
     if not camps_enabled:GetBool() or not camp then return false end
+    if not camp.activeHutSite then
+        camp.activeHutSite = VNPC_CreateHutSite(camp)
+    end
+    local site = camp.activeHutSite
+    if not site then return false end
 
-    local pos, ang = VNPC_CalculateCampHutPosition(camp)
-    if not pos or not ang then return false end
+    site.stage = (site.stage or 0) + 1
+    local fwd = site.ang:Forward()
+    local right = site.ang:Right()
 
-    local hut = ents.Create("prop_physics")
-    if not IsValid(hut) then return false end
+    local pModel = "models/props_junk/wood_pallet001a.mdl"
+    local pPos = site.pos
+    local pAng = site.ang
 
-    local mdl = PREY_HUT_MODELS[math.random(1, #PREY_HUT_MODELS)]
-    if not util.IsValidModel(mdl) then
-        mdl = "models/props_c17/FurnitureShack001a.mdl"
+    if site.stage == 1 then
+        pModel = "models/props_junk/wood_pallet001a.mdl"
+        pPos = site.pos + Vector(0, 0, 2)
+        pAng = site.ang
+    elseif site.stage == 2 then
+        pModel = "models/props_wasteland/wood_fence01a.mdl"
+        pPos = site.pos + fwd * 40 + Vector(0, 0, 32)
+        pAng = site.ang
+    elseif site.stage == 3 then
+        pModel = "models/props_wasteland/wood_fence01a.mdl"
+        pPos = site.pos + right * 40 + Vector(0, 0, 32)
+        pAng = Angle(0, site.ang.y + 90, 0)
+    elseif site.stage == 4 then
+        pModel = "models/props_wasteland/wood_fence01a.mdl"
+        pPos = site.pos - right * 40 + Vector(0, 0, 32)
+        pAng = Angle(0, site.ang.y - 90, 0)
+    elseif site.stage == 5 then
+        pModel = "models/props_debris/wood_board04a.mdl"
+        pPos = site.pos - fwd * 40 + right * 20 + Vector(0, 0, 32)
+        pAng = Angle(0, site.ang.y + 180, 0)
+    elseif site.stage == 6 then
+        pModel = "models/props_debris/wood_board04a.mdl"
+        pPos = site.pos - fwd * 40 - right * 20 + Vector(0, 0, 32)
+        pAng = Angle(0, site.ang.y + 180, 0)
+    else
+        pModel = "models/props_junk/wood_pallet001a.mdl"
+        pPos = site.pos + Vector(0, 0, 62)
+        pAng = site.ang
     end
 
-    hut:SetModel(mdl)
-    hut:SetPos(pos)
-    hut:SetAngles(ang)
-    hut:Spawn()
-    hut:Activate()
+    if not util.IsValidModel(pModel) then
+        pModel = "models/props_c17/fence01a.mdl"
+    end
 
-    hut.VNPC_IsPreyCampHut = true
-    hut.VNPC_PreyCampID = camp.id
-    hut.VNPC_CampRef = camp
-    hut:SetHealth(300)
+    local prop = ents.Create("prop_physics")
+    if not IsValid(prop) then return false end
 
-    camp.huts = camp.huts or {}
-    table.insert(camp.huts, hut)
+    prop:SetModel(pModel)
+    prop:SetPos(pPos)
+    prop:SetAngles(pAng)
+    prop:Spawn()
+    prop:Activate()
 
-    local phys = hut:GetPhysicsObject()
+    prop.VNPC_IsPreyCampHutPiece = true
+    prop.VNPC_PreyCampID = camp.id
+    prop:SetHealth(100)
+
+    local phys = prop:GetPhysicsObject()
     if IsValid(phys) then
         phys:SetVelocity(Vector(0,0,0))
         phys:EnableMotion(false)
         phys:Sleep()
     end
 
-    if hut.EmitSound then
-        hut:EmitSound("physics/wood/wood_box_impact_hard1.wav", 80, math.random(90, 105))
+    if prop.EmitSound then
+        prop:EmitSound("physics/wood/wood_box_impact_hard1.wav", 80, math.random(95, 105))
+    end
+
+    table.insert(site.props, prop)
+
+    if site.stage >= 7 then
+        local hut = {
+            id = #(camp.huts or {}) + 1,
+            pos = site.pos,
+            ang = site.ang,
+            props = site.props,
+            VNPC_IsPreyCampHut = true,
+            VNPC_PreyCampID = camp.id
+        }
+        camp.huts = camp.huts or {}
+        table.insert(camp.huts, hut)
+        camp.activeHutSite = nil
     end
 
     return true
 end
 
-function VNPC_PredatorBreachPreyCampHut(pred, hut, camp)
-    if not IsValid(pred) or not IsValid(hut) or not camp then return end
-    if not hut.VNPC_IsPreyCampHut then return end
+function VNPC_PredatorBreachPreyCampHut(pred, hutOrPiece, camp)
+    if not IsValid(pred) or not camp then return end
+    local targetProp = hutOrPiece
 
-    if camp.huts then
-        for idx, h in ipairs(camp.huts) do
-            if h == hut then
-                table.remove(camp.huts, idx)
+    if istable(hutOrPiece) and hutOrPiece.props then
+        for _, p in ipairs(hutOrPiece.props) do
+            if IsValid(p) then
+                targetProp = p
                 break
             end
         end
     end
 
+    if not IsValid(targetProp) then return end
+
     local belly = pred.VNPC_Belly or pred.Belly
     if IsValid(belly) and belly.AddPrey then
-        pcall(belly.AddPrey, belly, hut)
+        pcall(belly.AddPrey, belly, targetProp)
     elseif pred.EatEntity then
-        pcall(pred.EatEntity, pred, hut)
+        pcall(pred.EatEntity, pred, targetProp)
     else
-        hut:SetNoDraw(true)
-        hut:SetSolid(0)
-        hut:SetParent(pred)
+        targetProp:SetNoDraw(true)
+        targetProp:SetSolid(0)
+        targetProp:SetParent(pred)
         if pred.EmitSound then
-            pred:EmitSound("physics/wood/wood_box_break1.wav", 85, math.random(90, 105))
+            pred:EmitSound("physics/wood/wood_plank_break1.wav", 85, math.random(90, 105))
         end
         timer.Simple(0.1, function()
-            if IsValid(hut) then hut:Remove() end
+            if IsValid(targetProp) then targetProp:Remove() end
         end)
     end
 end
