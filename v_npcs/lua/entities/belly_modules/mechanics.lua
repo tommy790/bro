@@ -604,6 +604,10 @@ function ENT:AbsorbSpecificPrey(index)
     info.Entity = nil
     self:OnPreyKilled()
 
+    if IsValid(self.NPC) and VNPC_AddPredatorXP then
+        VNPC_AddPredatorXP(self.NPC, 100, "Absorbed prey in stomach")
+    end
+
     if VNPC_ScheduleDigestedBoneSpit then
         VNPC_ScheduleDigestedBoneSpit(self.NPC or self:GetOwner() or self:GetParent(), self)
     end

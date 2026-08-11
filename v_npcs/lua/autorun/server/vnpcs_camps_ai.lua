@@ -322,6 +322,9 @@ function VNPC_ForagerFeedCamp(forager, camp, belly)
         end
 
         if transferred > 0 then
+            if VNPC_AddPredatorXP then
+                VNPC_AddPredatorXP(forager, 75, "Fed campmate sister")
+            end
             forager.VNPC_IsCarryingPreyForCamp = false
             forager.VNPC_CampWaitStartTime = nil
             belly.VNPC_NoDigestion = false

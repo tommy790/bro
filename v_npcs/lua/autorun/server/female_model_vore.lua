@@ -169,6 +169,13 @@ function VNPC_GiveFemaleModelVore(ent)
             if VNPC_PlayNativeVoreGesture then
                 VNPC_PlayNativeVoreGesture(self, "swallow")
             end
+            if VNPC_AddPredatorXP then
+                local bonus = math.floor((target:GetMaxHealth() or 100) * 0.5)
+                if VNPC_IsDangerousPrey and VNPC_IsDangerousPrey(target) then
+                    bonus = bonus + 100
+                end
+                VNPC_AddPredatorXP(self, 50 + bonus, "Swallowed prey alive")
+            end
             if not self._InClumpVore and VNPC_GetClumpedPreyGroup then
                 self._InClumpVore = true
                 local group = VNPC_GetClumpedPreyGroup(self, target)
@@ -666,7 +673,8 @@ hook.Add("Think", "VNPC_FemaleModelVore_AI", function()
                     if VNPC_IsPreyEmissary and VNPC_IsPreyEmissary(ent) then continue end
                     if npc.GetRelationship and npc:GetRelationship(ent) == D_HT then
                         local targetRad = (ent.OBBMaxs and ent:OBBMaxs():Length2D() or 30)
-                        local grab_reach = math.max(110, eff_grab) + targetRad
+                        local levelBonus = (VNPC_GetPredatorLevel and (VNPC_GetPredatorLevel(npc) - 1) * 3) or 0
+                        local grab_reach = math.max(110, eff_grab) + targetRad + levelBonus
                         if npc:GetPos():Distance(ent:GetPos()) <= grab_reach then
                             npc:EatEntity(ent)
                             break

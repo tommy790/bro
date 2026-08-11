@@ -968,6 +968,9 @@ function VNPC_PreyCampInfiltration_AI(now)
                     pcall(pred.SetLastPosition, pred, escapePos)
                 end
                 if pred.SetSchedule then pcall(pred.SetSchedule, pred, SCHED_FORCED_GO_RUN) end
+                if VNPC_AddPredatorXP then
+                    VNPC_AddPredatorXP(pred, 250, "Stealth Fort Infiltration Complete")
+                end
                 print("[V-NPCs] Fort Infiltration Complete: Predator " .. tostring(pred) .. " swallowed sleeping prey " .. tostring(victim) .. " and REPAIRED all wall damage! Zero suspicion raised.")
                 hook.Run("VNPC_OnFortInfiltrationComplete", pred, victim, camp)
             elseif IsValid(victim) then

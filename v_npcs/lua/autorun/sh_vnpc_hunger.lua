@@ -235,15 +235,160 @@ concommand.Add("vnpcs_thirst_status", function(ply)
     print("===============================================================")
 end)
 
-concommand.Add("vnpcs_test_thirst_pred", function(ply)
+CreateConVar("vnpcs_pred_xp_enabled", "1", {FCVAR_REPLICATED, FCVAR_ARCHIVE}, "Enable predator experience (XP) and leveling system")
+CreateConVar("vnpcs_pred_xp_mult", "1.0", {FCVAR_REPLICATED, FCVAR_ARCHIVE}, "Experience points multiplier for predator actions")
+
+function VNPC_GetXPForLevel(level)
+    local lvl = math.max(1, tonumber(level) or 1)
+    return math.floor(100 * (lvl ^ 1.5))
+end
+
+function VNPC_GetPredatorLevel(pred)
+    if not IsValid(pred) then return 1 end
+    if not pred.VNPC_Level then pred.VNPC_Level = 1 end
+    return pred.VNPC_Level
+end
+
+function VNPC_GetPredatorXP(pred)
+    if not IsValid(pred) then return 0 end
+    if not pred.VNPC_XP then pred.VNPC_XP = 0 end
+    return pred.VNPC_XP
+end
+
+function VNPC_PredatorLevelUp(pred)
+    if not IsValid(pred) then return end
+    pred.VNPC_Level = (pred.VNPC_Level or 1) + 1
+    pred.VNPC_NextLevelXP = VNPC_GetXPForLevel(pred.VNPC_Level)
+
+    if SERVER then
+        -- 1. Increase Max Health and heal
+        local baseMaxHP = pred.VNPC_BaseMaxHealth or pred:GetMaxHealth() or 100
+        pred.VNPC_BaseMaxHealth = baseMaxHP
+        local newMaxHP = baseMaxHP + (pred.VNPC_Level - 1) * 15
+        pred:SetMaxHealth(newMaxHP)
+        pred:SetHealth(newMaxHP)
+
+        -- 2. Increase Digestion Strength
+        if pred.VoreSettings then
+            local baseDig = pred.VoreSettings.BaseDigestionStrength or pred.VoreSettings.DigestionStrength or 2.0
+            pred.VoreSettings.BaseDigestionStrength = baseDig
+            pred.VoreSettings.DigestionStrength = baseDig + (pred.VNPC_Level - 1) * 0.25
+        end
+
+        -- 3. Increase Belly Capacity
+        local belly = pred.VNPC_Belly or pred.Belly or pred.belly
+        if IsValid(belly) then
+            belly.VNPC_LevelCapacityBonus = math.floor((pred.VNPC_Level - 1) * 0.5)
+        end
+
+        if pred.EmitSound then
+            pred:EmitSound("belly/snd_digeststart.wav", 85, math.Clamp(100 + pred.VNPC_Level * 2, 100, 130))
+        end
+
+        print("[V-NPCs] Predator Level Up: Predator " .. tostring(pred) .. " reached LEVEL " .. pred.VNPC_Level .. "! (MaxHP: " .. newMaxHP .. ", XP for Next: " .. pred.VNPC_NextLevelXP .. ")")
+        hook.Run("VNPC_OnPredatorLevelUp", pred, pred.VNPC_Level)
+    end
+
+    if pred.SetNWInt then
+        pred:SetNWInt("VNPC_Level", pred.VNPC_Level)
+        pred:SetNWInt("VNPC_XP", pred.VNPC_XP)
+    end
+end
+
+function VNPC_AddPredatorXP(pred, amount, reason)
+    if not IsValid(pred) then return end
+    local enabled = GetConVar("vnpcs_pred_xp_enabled")
+    if enabled and not enabled:GetBool() then return end
+
+    local mult = GetConVar("vnpcs_pred_xp_mult") and GetConVar("vnpcs_pred_xp_mult"):GetFloat() or 1.0
+    local gained = math.floor((tonumber(amount) or 0) * mult)
+    if gained <= 0 then return end
+
+    pred.VNPC_XP = (pred.VNPC_XP or 0) + gained
+    pred.VNPC_NextLevelXP = pred.VNPC_NextLevelXP or VNPC_GetXPForLevel(pred.VNPC_Level or 1)
+
+    while pred.VNPC_XP >= pred.VNPC_NextLevelXP and (pred.VNPC_Level or 1) < 100 do
+        pred.VNPC_XP = pred.VNPC_XP - pred.VNPC_NextLevelXP
+        VNPC_PredatorLevelUp(pred)
+    end
+
+    if pred.SetNWInt then
+        pred:SetNWInt("VNPC_XP", pred.VNPC_XP)
+        pred:SetNWInt("VNPC_Level", pred.VNPC_Level or 1)
+    end
+end
+
+concommand.Add("vnpcs_pred_xp_status", function(ply)
+    print("===============================================================")
+    print("         V-NPCs PREDATOR EXPERIENCE & LEVELING STATUS          ")
+    print("===============================================================")
+    print(" - XP System Enabled: " .. tostring(GetConVar("vnpcs_pred_xp_enabled"):GetBool()))
+    print(" - XP Multiplier: " .. tostring(GetConVar("vnpcs_pred_xp_mult"):GetFloat()) .. "x")
     local count = 0
-    for _, pred in ipairs(ents.GetAll()) do
-        if IsValid(pred) and (pred.IsDrGNextbot or pred.VNPC_FemaleModelVore or pred.Predator) and not pred:IsPlayer() then
-            pred.VNPC_Thirst = 95.0
+    for _, ent in ipairs(ents.GetAll()) do
+        if IsValid(ent) and (ent.IsDrGNextbot or ent.VNPC_FemaleModelVore or ent.Predator) and not ent:IsPlayer() then
             count = count + 1
+            local lvl = VNPC_GetPredatorLevel(ent)
+            local xp = VNPC_GetPredatorXP(ent)
+            local nextXP = ent.VNPC_NextLevelXP or VNPC_GetXPForLevel(lvl)
+            print(string.format(" - Predator #%d [%s]: Level %d | XP = %d / %d | MaxHP = %d", ent:EntIndex(), ent.PrintName or ent:GetClass(), lvl, xp, nextXP, ent:GetMaxHealth()))
         end
     end
-    local msg = "[V-NPCs] Forced thirst bar to 95% on " .. count .. " predators! They are now seeking water."
-    print(msg)
-    if IsValid(ply) then ply:ChatPrint(msg) end
+    if count == 0 then
+        print(" - Active Predators: NONE currently spawned")
+    end
+    print("===============================================================")
+end)
+
+concommand.Add("vnpcs_test_add_xp", function(ply)
+    if not IsValid(ply) then return end
+    local tr = ply:GetEyeTrace()
+    local target = tr.Entity
+    if not IsValid(target) or not (target.IsDrGNextbot or target.VNPC_FemaleModelVore or target.Predator) then
+        local count = 0
+        for _, pred in ipairs(ents.GetAll()) do
+            if IsValid(pred) and (pred.IsDrGNextbot or pred.VNPC_FemaleModelVore or pred.Predator) and not pred:IsPlayer() then
+                VNPC_AddPredatorXP(pred, 250, "vnpcs_test_add_xp command")
+                count = count + 1
+            end
+        end
+        ply:ChatPrint("[V-NPCs] Added +250 XP to all " .. count .. " active predators!")
+        return
+    end
+    VNPC_AddPredatorXP(target, 250, "vnpcs_test_add_xp command")
+    ply:ChatPrint("[V-NPCs] Added +250 XP to predator " .. tostring(target) .. "! Level: " .. VNPC_GetPredatorLevel(target))
+end)
+
+concommand.Add("vnpcs_test_level_up", function(ply)
+    if not IsValid(ply) then return end
+    local tr = ply:GetEyeTrace()
+    local target = tr.Entity
+    if not IsValid(target) or not (target.IsDrGNextbot or target.VNPC_FemaleModelVore or target.Predator) then
+        local count = 0
+        for _, pred in ipairs(ents.GetAll()) do
+            if IsValid(pred) and (pred.IsDrGNextbot or pred.VNPC_FemaleModelVore or pred.Predator) and not pred:IsPlayer() then
+                VNPC_PredatorLevelUp(pred)
+                count = count + 1
+            end
+        end
+        ply:ChatPrint("[V-NPCs] Leveled up all " .. count .. " active predators!")
+        return
+    end
+    VNPC_PredatorLevelUp(target)
+    ply:ChatPrint("[V-NPCs] Leveled up predator " .. tostring(target) .. " to Level " .. VNPC_GetPredatorLevel(target) .. "!")
+end)
+
+concommand.Add("vnpcs_test_set_level", function(ply, cmd, args)
+    if not IsValid(ply) then return end
+    local tr = ply:GetEyeTrace()
+    local target = tr.Entity
+    if not IsValid(target) or not (target.IsDrGNextbot or target.VNPC_FemaleModelVore or target.Predator) then
+        ply:ChatPrint("[V-NPCs] Please aim at a predator NPC to set their level!")
+        return
+    end
+    local targetLevel = math.Clamp(tonumber(args[1]) or 20, 1, 100)
+    target.VNPC_Level = targetLevel - 1
+    target.VNPC_XP = 0
+    VNPC_PredatorLevelUp(target)
+    ply:ChatPrint("[V-NPCs] Set predator " .. tostring(target) .. " to Level " .. targetLevel .. "!")
 end)
