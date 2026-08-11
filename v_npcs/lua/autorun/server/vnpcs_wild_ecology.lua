@@ -489,6 +489,43 @@ function VNPC_WildGiveBirth(mother)
     return child
 end
 
+function VNPC_CalculateMapScale()
+    if VNPC_CachedMapScale and (CurTime() - (VNPC_LastMapScaleCalcTime or 0)) < 60 then
+        return VNPC_CachedMapScale
+    end
+
+    local world = game.GetWorld()
+    local areaScore = 36.0 -- Default baseline (~6000x6000)
+    if IsValid(world) and world.GetModelBounds then
+        local minB, maxB = world:GetModelBounds()
+        local sizeX = math.max(1000, math.abs(maxB.x - minB.x))
+        local sizeY = math.max(1000, math.abs(maxB.y - minB.y))
+        areaScore = (sizeX * sizeY) / 1000000.0 -- Area in millions of sq units
+    end
+
+    -- Factor in node/nav area count as an indicator of playable map size
+    local navCount = (navmesh and navmesh.GetAllNavAreas and #navmesh.GetAllNavAreas()) or 0
+    local nodeCount = #ents.FindByClass("info_node*")
+    local nodeBonus = math.Clamp((navCount + nodeCount) / 100.0, 0.5, 3.0)
+
+    local scale = math.Clamp(math.sqrt(areaScore / 36.0) * nodeBonus, 0.35, 4.0)
+
+    VNPC_CachedMapScale = scale
+    VNPC_LastMapScaleCalcTime = CurTime()
+    return scale
+end
+
+function VNPC_GetDynamicWildCap(isPredator)
+    local mapScale = VNPC_CalculateMapScale()
+    if isPredator then
+        local basePreds = max_wild_preds:GetInt()
+        return math.Clamp(math.floor(basePreds * mapScale), 1, 24)
+    else
+        local basePrey = max_wild_prey:GetInt()
+        return math.Clamp(math.floor(basePrey * mapScale), 2, 60)
+    end
+end
+
 function VNPC_WildMating_AI(now)
     if not wild_mating_enabled:GetBool() then return end
 
@@ -651,10 +688,12 @@ hook.Add("Think", "VNPC_WildEcology_AI_Loop", function()
                 if w.VNPC_WildType == "predator" then wPreds = wPreds + 1 else wPrey = wPrey + 1 end
             end
         end
-        if wPrey < max_wild_prey:GetInt() then
+        local maxDynPrey = VNPC_GetDynamicWildCap(false)
+        local maxDynPreds = VNPC_GetDynamicWildCap(true)
+        if wPrey < maxDynPrey then
             VNPC_SpawnWildNPC(false, nil)
         end
-        if wPreds < max_wild_preds:GetInt() then
+        if wPreds < maxDynPreds then
             VNPC_SpawnWildNPC(true, nil)
         end
     end
@@ -668,6 +707,10 @@ concommand.Add("vnpcs_wild_ecology_status", function(ply)
     print("Wild Predator Danger Scale: " .. tostring(pred_danger:GetFloat()) .. "x HP/Resistance")
     print("Agent Recon Range: " .. tostring(recon_range:GetFloat()) .. " units")
     print("Wild Mating Enabled: " .. tostring(wild_mating_enabled:GetBool()))
+    local scale = VNPC_CalculateMapScale()
+    print("Map Size Dynamic Scale: " .. string.format("%.2fx", scale))
+    print("Dynamic Wild Max Prey Cap: " .. VNPC_GetDynamicWildCap(false) .. " (Base: " .. max_wild_prey:GetInt() .. ")")
+    print("Dynamic Wild Max Predator Cap: " .. VNPC_GetDynamicWildCap(true) .. " (Base: " .. max_wild_preds:GetInt() .. ")")
     print("-----------------------------------------")
     local wPreds, wPrey = 0, 0
     for _, w in ipairs(VNPC_ActiveWildWanderers) do
@@ -833,5 +876,17 @@ concommand.Add("vnpcs_test_wild_defense", function(ply)
         if protector.SetEnemy then pcall(protector.SetEnemy, protector, threat) end
         if protector.SetSchedule then pcall(protector.SetSchedule, protector, SCHED_FORCED_GO_RUN) end
         ply:ChatPrint("[V-NPCs] Spawned hostile wild predator " .. tostring(threat) .. "! Protector " .. tostring(protector) .. " is rushing to defend " .. tostring(target) .. "!")
+    end
+end)
+
+concommand.Add("vnpcs_test_wild_caps", function(ply)
+    local scale = VNPC_CalculateMapScale()
+    local dynPrey = VNPC_GetDynamicWildCap(false)
+    local dynPreds = VNPC_GetDynamicWildCap(true)
+    local msg = string.format("[V-NPCs] Dynamic Map Size Scale: %.2fx | Dynamic Wild Max Prey: %d (Base: %d) | Dynamic Wild Max Preds: %d (Base: %d)",
+        scale, dynPrey, max_wild_prey:GetInt(), dynPreds, max_wild_preds:GetInt())
+    print(msg)
+    if IsValid(ply) then
+        ply:ChatPrint(msg)
     end
 end)
