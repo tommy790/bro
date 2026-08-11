@@ -8,6 +8,7 @@ local recon_range = CreateConVar("vnpcs_prey_agent_recon_range", "900.0", {FCVAR
 local spawner_interval = CreateConVar("vnpcs_wild_spawner_interval", "20.0", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Interval in seconds between spawning wild wandering NPCs in the map")
 local max_wild_prey = CreateConVar("vnpcs_wild_max_prey", "12", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Maximum number of active wild wandering prey NPCs in the map")
 local max_wild_preds = CreateConVar("vnpcs_wild_max_preds", "4", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Maximum number of active wild wandering solitary predators in the map")
+local wild_mating_enabled = CreateConVar("vnpcs_wild_mating_enabled", "1", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Enable wild predator and prey mating in wilderness")
 
 VNPC_WildPredatorHotspots = VNPC_WildPredatorHotspots or {}
 VNPC_ActiveWildWanderers = VNPC_ActiveWildWanderers or {}
@@ -328,10 +329,142 @@ function VNPC_PreyCampIntelligence_AI(camp, now)
     end
 end
 
+function VNPC_IsMaleWildWanderer(ent)
+    if not IsValid(ent) or ent:Health() <= 0 or ent.Vored or ent.VNPC_Vored then return false end
+    if not ent.VNPC_IsWildWanderer then return false end
+    if ent.VNPC_IsPregnant or ent.VNPC_WildMate then return false end
+    if ent.VNPC_ChildGender == "male" then return true end
+    local mdl = string.lower(ent:GetModel() or "")
+    local cls = string.lower(ent:GetClass() or "")
+    if cls:find("citizen") or cls:find("rebel") or cls:find("refugee") then
+        if mdl:find("male") or mdl:find("m_") or mdl:find("group01/male") or not (mdl:find("female") or mdl:find("alyx") or mdl:find("mossman")) then
+            return true
+        end
+    end
+    return false
+end
+
+function VNPC_IsFemaleWildWanderer(ent)
+    if not IsValid(ent) or ent:Health() <= 0 or ent.Vored or ent.VNPC_Vored then return false end
+    if not ent.VNPC_IsWildWanderer then return false end
+    if ent.VNPC_IsPregnant or ent.VNPC_WildMate then return false end
+    if ent.VNPC_WildType == "predator" then return true end
+    local mdl = string.lower(ent:GetModel() or "")
+    local cls = string.lower(ent:GetClass() or "")
+    if cls:find("citizen") or cls:find("rebel") or cls:find("refugee") or cls:find("alyx") or cls:find("mossman") then
+        if mdl:find("female") or mdl:find("alyx") or mdl:find("mossman") or mdl:find("f_") then
+            return true
+        end
+    end
+    return false
+end
+
+function VNPC_WildPredPreyMate(female, male)
+    if not IsValid(female) or not IsValid(male) then return false end
+    if female.VNPC_IsPregnant or male.VNPC_IsPregnant then return false end
+
+    female.VNPC_IsPregnant = true
+    female.VNPC_BabyGrowthValue = 40.0
+    female.VNPC_LastGrowthTime = CurTime()
+    female.VNPC_WildMate = male
+    male.VNPC_WildMate = female
+
+    if female.SetLastPosition then pcall(female.SetLastPosition, female, male:GetPos()) end
+    if female.SetSchedule then pcall(female.SetSchedule, female, SCHED_FORCED_GO) end
+    if male.SetLastPosition then pcall(male.SetLastPosition, male, female:GetPos()) end
+    if male.SetSchedule then pcall(male.SetSchedule, male, SCHED_FORCED_GO) end
+
+    if female.EmitSound then
+        local snd = (female.VNPC_WildType == "predator") and "belly/snd_digeststart.wav" or "npc/alyx/vo/flatter.wav"
+        female:EmitSound(snd, 80, math.random(100, 110))
+    end
+    if male.EmitSound then
+        male:EmitSound("npc/citizen/vo/nice.wav", 75, math.random(100, 110))
+    end
+
+    print("[V-NPCs] Wild Mating: " .. tostring(female) .. " (" .. tostring(female.VNPC_WildType) .. ") mated with " .. tostring(male) .. " (" .. tostring(male.VNPC_WildType) .. ") in the wilderness! Pregnancy started.")
+    hook.Run("VNPC_OnWildMating", female, male)
+    return true
+end
+
+function VNPC_WildGiveBirth(mother)
+    if not IsValid(mother) then return nil end
+
+    mother.VNPC_IsPregnant = nil
+    mother.VNPC_BabyGrowthValue = nil
+    mother.VNPC_WildMate = nil
+
+    if VNPC_StartChildbirthAnimation then
+        VNPC_StartChildbirthAnimation(mother, nil, nil)
+    end
+
+    local child = nil
+    for _, ent in ipairs(ents.GetAll()) do
+        if IsValid(ent) and ent.VNPC_IsGrowingBaby and (CurTime() - (ent.VNPC_BabyBirthTime or 0)) < 1.5 then
+            child = ent
+            break
+        end
+    end
+
+    if IsValid(child) then
+        VNPC_MakeWildWanderer(child)
+        if mother.VNPC_WildType == "predator" and (child.VNPC_ChildGender == "female" or string.find(string.lower(child:GetModel() or ""), "female")) then
+            child.VNPC_WildType = "predator"
+            VNPC_ForceGiveWildPredatorVore(child)
+        else
+            child.VNPC_WildType = "prey"
+        end
+        print("[V-NPCs] Wild Birth: " .. tostring(mother) .. " gave birth to wild wanderer child " .. tostring(child) .. " in the wilderness!")
+        hook.Run("VNPC_OnWildBirth", mother, child)
+    end
+    return child
+end
+
+function VNPC_WildMating_AI(now)
+    if not wild_mating_enabled:GetBool() then return end
+
+    for _, w in ipairs(VNPC_ActiveWildWanderers) do
+        if not IsValid(w) or w:Health() <= 0 or w.Vored or w.VNPC_Vored then continue end
+
+        if w.VNPC_IsPregnant then
+            if (now - (w.VNPC_LastGrowthTime or now)) >= 1.0 then
+                w.VNPC_LastGrowthTime = now
+                w.VNPC_BabyGrowthValue = (w.VNPC_BabyGrowthValue or 40.0) + 1.25
+                if w.VNPC_BabyGrowthValue >= 50.0 then
+                    VNPC_WildGiveBirth(w)
+                end
+            end
+        elseif (w.VNPC_NextWildMateCheck or 0) <= now and VNPC_IsFemaleWildWanderer(w) then
+            w.VNPC_NextWildMateCheck = now + 10.0
+            local bestMale = nil
+            local bestDistSqr = 800 * 800
+            local wPos = w:GetPos()
+
+            for _, m in ipairs(VNPC_ActiveWildWanderers) do
+                if VNPC_IsMaleWildWanderer(m) then
+                    local dSqr = m:GetPos():DistToSqr(wPos)
+                    if dSqr <= bestDistSqr then
+                        bestMale = m
+                        bestDistSqr = dSqr
+                    end
+                end
+            end
+
+            if IsValid(bestMale) then
+                VNPC_WildPredPreyMate(w, bestMale)
+            end
+        end
+    end
+end
+
 -- Main Wild Wanderers Ecology Loop
 hook.Add("Think", "VNPC_WildEcology_AI_Loop", function()
     if not ecology_enabled:GetBool() then return end
     local now = CurTime()
+
+    if VNPC_WildMating_AI then
+        VNPC_WildMating_AI(now)
+    end
 
     -- Prune dead / invalid wild wanderers
     for i = #VNPC_ActiveWildWanderers, 1, -1 do
@@ -384,6 +517,7 @@ concommand.Add("vnpcs_wild_ecology_status", function(ply)
     print("Wild Spawn Chance: " .. tostring(wild_chance:GetInt()) .. "%")
     print("Wild Predator Danger Scale: " .. tostring(pred_danger:GetFloat()) .. "x HP/Resistance")
     print("Agent Recon Range: " .. tostring(recon_range:GetFloat()) .. " units")
+    print("Wild Mating Enabled: " .. tostring(wild_mating_enabled:GetBool()))
     print("-----------------------------------------")
     local wPreds, wPrey = 0, 0
     for _, w in ipairs(VNPC_ActiveWildWanderers) do
@@ -391,13 +525,17 @@ concommand.Add("vnpcs_wild_ecology_status", function(ply)
             if w.VNPC_WildType == "predator" then
                 wPreds = wPreds + 1
                 local pers = w.VNPC_PredatorPersonality or (w.VoreSettings and w.VoreSettings.PredatorPersonality) or "opportunistic"
-                print(string.format(" -> Wild Predator [#%d] %s | Pers: %s | HP: %d",
-                    w:EntIndex(), w:GetClass(), string.upper(pers), w:Health()))
+                local mateStr = IsValid(w.VNPC_WildMate) and (" | Mate: [" .. w.VNPC_WildMate:EntIndex() .. "]") or ""
+                local pregStr = w.VNPC_IsPregnant and string.format(" | Pregnant: %.1f/50", w.VNPC_BabyGrowthValue or 40) or ""
+                print(string.format(" -> Wild Predator [#%d] %s | Pers: %s | HP: %d%s%s",
+                    w:EntIndex(), w:GetClass(), string.upper(pers), w:Health(), mateStr, pregStr))
             else
                 wPrey = wPrey + 1
                 local pers = w.VNPC_PreyPersonality or w.PreyPersonality or "fighter"
-                print(string.format(" -> Wild Prey [#%d] %s | Pers: %s | HP: %d",
-                    w:EntIndex(), w:GetClass(), string.upper(pers), w:Health()))
+                local mateStr = IsValid(w.VNPC_WildMate) and (" | Mate: [" .. w.VNPC_WildMate:EntIndex() .. "]") or ""
+                local pregStr = w.VNPC_IsPregnant and string.format(" | Pregnant: %.1f/50", w.VNPC_BabyGrowthValue or 40) or ""
+                print(string.format(" -> Wild Prey [#%d] %s | Pers: %s | HP: %d%s%s",
+                    w:EntIndex(), w:GetClass(), string.upper(pers), w:Health(), mateStr, pregStr))
             end
         end
     end
@@ -453,4 +591,73 @@ concommand.Add("vnpcs_test_spawn_wild_pred", function(ply)
     local tr = ply:GetEyeTrace()
     local ent = VNPC_SpawnWildNPC(true, tr.HitPos)
     ply:ChatPrint("[V-NPCs] Spawned dangerous wild solitary predator (1.35x HP/Resistance): " .. tostring(ent) .. "!")
+end)
+
+concommand.Add("vnpcs_test_wild_mate", function(ply)
+    if not IsValid(ply) then return end
+    local tr = ply:GetEyeTrace()
+    local target = tr.Entity
+    if not IsValid(target) or not (target:IsNPC() or target:IsNextBot()) then
+        ply:ChatPrint("[V-NPCs] Please aim at a wild NPC to trigger wild mating!")
+        return
+    end
+
+    if not target.VNPC_IsWildWanderer then
+        VNPC_MakeWildWanderer(target)
+    end
+
+    local mate = nil
+    for _, w in ipairs(VNPC_ActiveWildWanderers) do
+        if IsValid(w) and w ~= target and w:Health() > 0 then
+            mate = w
+            break
+        end
+    end
+
+    if not IsValid(mate) then
+        mate = VNPC_SpawnWildNPC(false, target:GetPos() + Vector(48, 0, 0))
+    end
+
+    if IsValid(mate) then
+        VNPC_WildPredPreyMate(target, mate)
+        ply:ChatPrint("[V-NPCs] Forced wild mating encounter between " .. tostring(target) .. " and " .. tostring(mate) .. "!")
+    else
+        ply:ChatPrint("[V-NPCs] Could not find or spawn a wild mate!")
+    end
+end)
+
+concommand.Add("vnpcs_test_wild_pregnancy", function(ply)
+    if not IsValid(ply) then return end
+    local tr = ply:GetEyeTrace()
+    local target = tr.Entity
+    if not IsValid(target) or not (target:IsNPC() or target:IsNextBot()) then
+        ply:ChatPrint("[V-NPCs] Please aim at a wild NPC to trigger wild pregnancy!")
+        return
+    end
+
+    if not target.VNPC_IsWildWanderer then
+        VNPC_MakeWildWanderer(target)
+    end
+
+    target.VNPC_IsPregnant = true
+    target.VNPC_BabyGrowthValue = 47.0
+    target.VNPC_LastGrowthTime = CurTime()
+    ply:ChatPrint("[V-NPCs] Triggered wild pregnancy on " .. tostring(target) .. "! Birth at 50 in ~3 seconds.")
+end)
+
+concommand.Add("vnpcs_test_wild_birth", function(ply)
+    if not IsValid(ply) then return end
+    local tr = ply:GetEyeTrace()
+    local target = tr.Entity
+    if not IsValid(target) or not (target:IsNPC() or target:IsNextBot()) then
+        ply:ChatPrint("[V-NPCs] Please aim at a wild NPC to trigger instant wild birth!")
+        return
+    end
+
+    local child = VNPC_WildGiveBirth(target)
+    if IsValid(child) then
+        ply:ChatPrint("[V-NPCs] Instant wild birth triggered! Child: " .. tostring(child))
+    else
+        ply:ChatPrint("[V-NPCs] Triggered wild birth on " .. tostring(target) .. "!")
+    end
 end)
