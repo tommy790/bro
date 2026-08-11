@@ -72,7 +72,7 @@ function VNPC_TransformToPredator(child, motherPred)
         child.VNPC_CampID = predCamp.id
         child.VNPC_CampRole = adopted_role:GetString() or "forager"
     elseif VNPC_AssignPredatorToCamp then
-        VNPC_AssignPredatorToCamp(child)
+        VNPC_AssignPredatorToCamp(child, true)
     end
 
     if child.EmitSound then

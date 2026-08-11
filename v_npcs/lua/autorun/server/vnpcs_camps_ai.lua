@@ -17,6 +17,29 @@ local PRED_TENT_MODELS = {
     "models/props_wasteland/cargo_container01.mdl"    -- Container shelter
 }
 
+function VNPC_IsPlayerSpawned(ent)
+    if not IsValid(ent) then return false end
+    if ent.VNPC_SpawnedByPlayer then return true end
+    if ent.GetCreator and IsValid(ent:GetCreator()) and ent:GetCreator():IsPlayer() then return true end
+    if ent.PlayerSpawned then return true end
+    if ent.VNPC_IsGrowingBaby or ent.VNPC_ProtectedChild or ent.VNPC_IsCampBornChild then return true end
+    if ent.VNPC_BornSister or ent.VNPC_AdoptedByPredator then return true end
+    if ent.VNPC_IsPreyEmissary or ent.VNPC_IsPermanentFortPredator then return true end
+    return false
+end
+
+hook.Add("PlayerSpawnedNPC", "VNPC_MarkQMenuSpawnedNPC", function(ply, ent)
+    if IsValid(ent) then
+        ent.VNPC_SpawnedByPlayer = true
+    end
+end)
+
+hook.Add("PlayerSpawnedSENT", "VNPC_MarkQMenuSpawnedSENT", function(ply, ent)
+    if IsValid(ent) then
+        ent.VNPC_SpawnedByPlayer = true
+    end
+end)
+
 function VNPC_GetPredatorCamp(pred)
     if not IsValid(pred) or not pred.VNPC_CampID then return nil end
     for _, camp in ipairs(VNPC_ActivePredatorCamps) do
@@ -63,11 +86,20 @@ function VNPC_CreatePredatorCamp(pos, founder)
     return camp
 end
 
-function VNPC_AssignPredatorToCamp(pred)
+function VNPC_AssignPredatorToCamp(pred, force)
     if not camps_enabled:GetBool() then return nil end
     if not IsValid(pred) or pred:Health() <= 0 then return nil end
     if pred.VNPC_IsWildWanderer then return nil end
     if pred.VNPC_IsPermanentFortPredator then return nil end
+
+    -- Only Q-menu spawned NPCs (or explicitly forced / camp-born children) can create/join camps;
+    -- NPCs spawned automatically in the wild do not make camps and become wild wanderers instead.
+    if not force and not VNPC_IsPlayerSpawned(pred) then
+        if VNPC_MakeWildWanderer then
+            VNPC_MakeWildWanderer(pred)
+        end
+        return nil
+    end
 
     local cls = string.lower(pred:GetClass() or "")
     local isCorePredClass = (cls == "npc_metropolice" or cls == "npc_combine_s" or cls == "npc_vortigaunt" or cls == "npc_citizen")
@@ -422,6 +454,7 @@ concommand.Add("vnpcs_test_create_camp", function(ply)
         ply:ChatPrint("[V-NPCs] Please aim at a female V-NPC predator to establish a new camp!")
         return
     end
+    target.VNPC_SpawnedByPlayer = true
     local camp = VNPC_CreatePredatorCamp(tr.HitPos, target)
     ply:ChatPrint("[V-NPCs] Established Camp #" .. tostring(camp and camp.id or "N/A") .. " for " .. tostring(target) .. "!")
 end)
@@ -436,7 +469,7 @@ concommand.Add("vnpcs_test_camp_forage", function(ply)
     end
     local camp = VNPC_GetPredatorCamp(target)
     if not camp then
-        camp = VNPC_AssignPredatorToCamp(target)
+        camp = VNPC_AssignPredatorToCamp(target, true)
     end
     if camp then
         camp.state = "foraging"
@@ -492,7 +525,7 @@ concommand.Add("vnpcs_test_force_pred_camps", function(ply)
                     VNPC_GiveFemaleModelVore(pred)
                 end
                 if not pred.VNPC_CampID then
-                    local camp = VNPC_AssignPredatorToCamp(pred)
+                    local camp = VNPC_AssignPredatorToCamp(pred, true)
                     if camp then
                         assigned = assigned + 1
                     end

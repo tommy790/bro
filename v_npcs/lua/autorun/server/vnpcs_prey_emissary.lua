@@ -363,7 +363,7 @@ concommand.Add("vnpcs_test_prey_emissary", function(ply)
     end
     local camp = VNPC_GetPreyCamp and VNPC_GetPreyCamp(target)
     if not camp then
-        camp = VNPC_AssignPreyToCamp and VNPC_AssignPreyToCamp(target)
+        camp = VNPC_AssignPreyToCamp and VNPC_AssignPreyToCamp(target, true)
     end
     if camp then
         target.VNPC_PreyRole = "emissary"

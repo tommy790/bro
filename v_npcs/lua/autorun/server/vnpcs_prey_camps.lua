@@ -99,10 +99,19 @@ function VNPC_CreatePreyCamp(pos, founder)
     return camp
 end
 
-function VNPC_AssignPreyToCamp(npc)
+function VNPC_AssignPreyToCamp(npc, force)
     if not camps_enabled:GetBool() or not VNPC_IsEligiblePreyNPC(npc) then return nil end
     if npc.VNPC_IsWildWanderer then return nil end
     if npc.VNPC_IsPermanentFortPredator then return nil end
+
+    -- Only Q-menu spawned NPCs (or explicitly forced / camp-born children) can create/join camps;
+    -- NPCs spawned automatically in the wild do not make camps and become wild wanderers instead.
+    if not force and (VNPC_IsPlayerSpawned and not VNPC_IsPlayerSpawned(npc)) then
+        if VNPC_MakeWildWanderer then
+            VNPC_MakeWildWanderer(npc)
+        end
+        return nil
+    end
 
     if not npc.VNPC_PreyPersonality and not npc.PreyPersonality then
         local preyPersList = { "fighter", "passive", "panicked", "stubborn", "willing" }
@@ -987,7 +996,7 @@ concommand.Add("vnpcs_test_prey_love", function(ply)
     end
     local camp = VNPC_GetPreyCamp(target)
     if not camp then
-        camp = VNPC_AssignPreyToCamp(target)
+        camp = VNPC_AssignPreyToCamp(target, true)
     end
     target.VNPC_IsPregnant = true
     target.VNPC_BabyGrowthValue = 46.0
@@ -1020,6 +1029,7 @@ concommand.Add("vnpcs_test_create_prey_camp", function(ply)
         ply:ChatPrint("[V-NPCs] Please aim at a valid prey NPC to establish a Prey Camp!")
         return
     end
+    target.VNPC_SpawnedByPlayer = true
     local camp = VNPC_CreatePreyCamp(tr.HitPos, target)
     ply:ChatPrint("[V-NPCs] Established Prey Camp #" .. tostring(camp and camp.id or "N/A") .. " for " .. tostring(target) .. "!")
 end)
@@ -1071,7 +1081,7 @@ concommand.Add("vnpcs_test_prey_expand_territory", function(ply)
     end
     local camp = VNPC_GetPreyCamp(target)
     if not camp then
-        camp = VNPC_AssignPreyToCamp(target)
+        camp = VNPC_AssignPreyToCamp(target, true)
     end
     if camp then
         camp.territoryRadius = math.min(3000.0, (camp.territoryRadius or 450.0) + 300.0)
