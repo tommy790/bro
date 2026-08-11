@@ -196,7 +196,14 @@ hook.Add("Think", "VNPC_BabyCitizenGrowth_Loop", function()
                     print("[V-NPCs] Female Baby Growth Complete: Baby " .. tostring(ent) .. " reached 100% growth by eating small prey & drinking water!")
                     hook.Run("VNPC_OnBabyGrowthComplete", ent)
                 else
-                    -- Hunt small prey (Headcrabs, grubs, small NPCs <= 60 HP) to grow
+                    -- Add a growth tick every 30 seconds
+                    if (now - (ent.VNPC_LastGrowthTickTime or ent.VNPC_BabyBirthTime or now)) >= 30.0 then
+                        ent.VNPC_LastGrowthTickTime = now
+                        ent.VNPC_GrowthProgress = math.Clamp((ent.VNPC_GrowthProgress or 0.0) + 15.0, 0, 100)
+                        print("[V-NPCs] 30-Second Growth Tick: Baby female " .. tostring(ent) .. " gained +15 Growth Progress (" .. ent.VNPC_GrowthProgress .. "/100)!")
+                    end
+
+                    -- Hunt small prey (Headcrabs, grubs, small NPCs <= 60 HP) to swallow & digest for growth
                     if (ent.VNPC_NextBabyHuntTime or 0) <= now then
                         ent.VNPC_NextBabyHuntTime = now + 3.0
                         local bestSmall = nil
@@ -215,13 +222,18 @@ hook.Add("Think", "VNPC_BabyCitizenGrowth_Loop", function()
                         end
                         if IsValid(bestSmall) then
                             if bestDistSqr <= (90 * 90) then
-                                ent.VNPC_GrowthProgress = math.Clamp((ent.VNPC_GrowthProgress or 0.0) + 35.0, 0, 100)
                                 if ent.EmitSound then ent:EmitSound("gulps/g" .. math.random(1, 10) .. ".wav", 80, 105) end
-                                print("[V-NPCs] Baby Female Growth: Baby " .. tostring(ent) .. " ate small prey " .. tostring(bestSmall) .. " (+35 Growth -> " .. ent.VNPC_GrowthProgress .. "/100)!")
+                                print("[V-NPCs] Baby Female Swallowed Small Prey: Baby " .. tostring(ent) .. " swallowed small prey " .. tostring(bestSmall) .. "! (Will grow once digestion is finished)")
+                                if not ent.EatEntity and VNPC_AttachFemaleModelVore then
+                                    VNPC_AttachFemaleModelVore(ent)
+                                end
                                 if ent.EatEntity then
                                     ent:EatEntity(bestSmall)
+                                elseif ent.VNPC_Belly and ent.VNPC_Belly.AddPrey then
+                                    ent.VNPC_Belly:AddPrey(bestSmall)
                                 else
                                     bestSmall:Remove()
+                                    ent.VNPC_GrowthProgress = math.Clamp((ent.VNPC_GrowthProgress or 0.0) + 35.0, 0, 100)
                                 end
                             else
                                 if ent.SetLastPosition then pcall(ent.SetLastPosition, ent, bestSmall:GetPos()) end

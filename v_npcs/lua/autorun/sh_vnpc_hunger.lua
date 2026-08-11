@@ -281,6 +281,12 @@ if SERVER then
                         end
                     end
                 end
+
+                -- 30-Second Monster Growth Tick: update and maintain monster scale
+                if (now - (ent.VNPC_LastMonsterTickTime or now)) >= 30.0 and (ent.VNPC_MonsterGrowth or 0) > 0 then
+                    ent.VNPC_LastMonsterTickTime = now
+                    VNPC_PredatorMonsterGrowth(ent, 0)
+                end
             elseif GetConVar("vnpcs_prey_stamina_enabled"):GetBool() and not ent:IsPlayer() and (ent:GetClass():find("citizen") or ent:GetClass():find("rebel") or ent:GetClass():find("refugee") or ent.VNPC_PreyCampID) then
                 local curStam = VNPC_GetPreyStamina(ent)
                 local isRunning = ent.IsMoving and ent:IsMoving() and (ent:GetSchedule() == SCHED_FORCED_GO_RUN or ent:GetSchedule() == SCHED_CHASE_ENEMY or IsValid(ent:GetEnemy()))

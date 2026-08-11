@@ -604,12 +604,18 @@ function ENT:AbsorbSpecificPrey(index)
     info.Entity = nil
     self:OnPreyKilled()
 
-    if IsValid(self.NPC) and VNPC_AddPredatorXP then
-        VNPC_AddPredatorXP(self.NPC, 100, "Absorbed prey in stomach")
-    end
-
-    if IsValid(self.NPC) and VNPC_PredatorMonsterGrowth then
-        VNPC_PredatorMonsterGrowth(self.NPC, 1)
+    if IsValid(self.NPC) then
+        if self.NPC.VNPC_IsGrowingBaby then
+            self.NPC.VNPC_GrowthProgress = math.Clamp((self.NPC.VNPC_GrowthProgress or 0.0) + 35.0, 0, 100)
+            print("[V-NPCs] Baby Female Growth (Digestion Finished): Baby " .. tostring(self.NPC) .. " digested small prey in her stomach (+35 Growth -> " .. self.NPC.VNPC_GrowthProgress .. "/100)!")
+        else
+            if VNPC_PredatorMonsterGrowth then
+                VNPC_PredatorMonsterGrowth(self.NPC, 1)
+            end
+        end
+        if VNPC_AddPredatorXP then
+            VNPC_AddPredatorXP(self.NPC, 100, "Absorbed prey in stomach")
+        end
     end
 
     if VNPC_ScheduleDigestedBoneSpit then
