@@ -252,10 +252,6 @@ function VNPC_PredatorBreachPreyCampWall(pred, wall, camp)
             if IsValid(wall) then wall:Remove() end
         end)
     end
-
-    for _, p in ipairs(player.GetAll()) do
-        p:ChatPrint("[V-NPCs] WARNING! Predator " .. pred:GetClass() .. " swallowed a defensive wall prop and breached Prey Camp #" .. camp.id .. "!")
-    end
 end
 
 function VNPC_CalculateCampHutPosition(camp)
@@ -333,10 +329,6 @@ function VNPC_ConstructPreyCampHut(camp)
         hut:EmitSound("physics/wood/wood_box_impact_hard1.wav", 80, math.random(90, 105))
     end
 
-    for _, p in ipairs(player.GetAll()) do
-        p:ChatPrint("[V-NPCs] Prey Camp #" .. camp.id .. " finished perimeter defenses and constructed a Little Hut in the fort! (Active huts: " .. #camp.huts .. ")")
-    end
-
     return true
 end
 
@@ -368,10 +360,6 @@ function VNPC_PredatorBreachPreyCampHut(pred, hut, camp)
         timer.Simple(0.1, function()
             if IsValid(hut) then hut:Remove() end
         end)
-    end
-
-    for _, p in ipairs(player.GetAll()) do
-        p:ChatPrint("[V-NPCs] WARNING! Predator " .. pred:GetClass() .. " swallowed a Little Hut in Prey Camp #" .. camp.id .. " and exposed the prey inside!")
     end
 end
 
@@ -442,9 +430,6 @@ function VNPC_PreyCampLove_AI(camp, now)
 
                 if f.EmitSound then
                     f:EmitSound("npc/citizen/vo/nice.wav", 75, math.random(105, 115))
-                end
-                for _, p in ipairs(player.GetAll()) do
-                    p:ChatPrint("[V-NPCs] Love blooms in Prey Camp #" .. camp.id .. "! A female citizen is pregnant with an unborn citizen (value 10 -> 50).")
                 end
                 break
             end

@@ -521,7 +521,14 @@ hook.Add("Think", "VNPC_FemaleModelVore_Think", function()
     
     local now = CurTime()
     for _, npc in ipairs(ents.FindByClass("npc_*")) do
-        if not IsValid(npc) or not npc.VNPC_FemaleModelVore then continue end
+        if not IsValid(npc) then continue end
+        if not npc.VNPC_FemaleModelVore and (npc.VNPC_NextVoreCheckTime or 0) <= now then
+            npc.VNPC_NextVoreCheckTime = now + 5.0
+            if VNPC_IsFemaleModelNPC(npc) then
+                VNPC_GiveFemaleModelVore(npc)
+            end
+        end
+        if not npc.VNPC_FemaleModelVore then continue end
         
         -- Maintain belly attachment, positioning, and think
         local belly = npc.VNPC_Belly or npc.Belly
@@ -754,6 +761,30 @@ hook.Add("EntityRemoved", "VNPC_FemaleModelVore_Cleanup", function(ent)
         end
         if IsValid(ent.VNPC_Belly) then
             ent.VNPC_Belly:Remove()
+        end
+    end
+end)
+
+concommand.Add("vnpcs_test_citizen_swallow", function(ply)
+    if not IsValid(ply) then return end
+    local tr = ply:GetEyeTrace()
+    local target = tr.Entity
+    if not IsValid(target) or not target:IsNPC() then
+        return
+    end
+    if VNPC_IsFemaleModelNPC and VNPC_IsFemaleModelNPC(target) then
+        if not target.VNPC_FemaleModelVore then
+            VNPC_GiveFemaleModelVore(target)
+        end
+        local bestEnemy = nil
+        for _, ent in ipairs(ents.FindInSphere(target:GetPos(), 300)) do
+            if IsValid(ent) and ent ~= target and not ent.Vored and (ent:IsNPC() or ent:IsPlayer()) then
+                bestEnemy = ent
+                break
+            end
+        end
+        if IsValid(bestEnemy) and target.EatEntity then
+            target:EatEntity(bestEnemy)
         end
     end
 end)

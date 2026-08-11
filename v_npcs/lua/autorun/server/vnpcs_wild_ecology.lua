@@ -256,10 +256,6 @@ function VNPC_AgentReportIntelligence(agent, camp)
     if agent.EmitSound then
         agent:EmitSound("npc/citizen/vo/wehaveaunitdown.wav", 80, 108)
     end
-
-    for _, p in ipairs(player.GetAll()) do
-        p:ChatPrint("[V-NPCs] INTEL REPORT! Intelligence Agent " .. agent:GetClass() .. " returned to Prey Camp #" .. camp.id .. " and reported a " .. string.upper(report.type) .. " danger zone at (" .. math.floor(report.pos.x) .. ", " .. math.floor(report.pos.y) .. ")!")
-    end
 end
 
 function VNPC_PreyCampIntelligence_AI(camp, now)

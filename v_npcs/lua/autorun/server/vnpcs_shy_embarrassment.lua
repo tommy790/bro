@@ -84,7 +84,6 @@ function VNPC_TriggerShyEmbarrassment(pred, watcher, belly)
 
     if watcher:IsPlayer() and (watcher.VNPC_NextShyNoticeTime or 0) <= now then
         watcher.VNPC_NextShyNoticeTime = now + 14.0
-        watcher:ChatPrint("[V-NPCs] " .. (pred.PrintName or pred:GetClass()) .. " blushes and covers her big belly, embarrassed that you caught her full of prey!")
     end
 end
 

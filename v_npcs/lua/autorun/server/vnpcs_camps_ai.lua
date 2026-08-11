@@ -169,10 +169,6 @@ function VNPC_ConstructPredatorCampTent(camp)
         tent:EmitSound("physics/wood/wood_box_impact_hard1.wav", 80, math.random(90, 105))
     end
 
-    for _, p in ipairs(player.GetAll()) do
-        p:ChatPrint("[V-NPCs] Predator Camp #" .. camp.id .. " constructed a Camp Tent/Shelter! (Active tents: " .. #camp.tents .. ")")
-    end
-
     return true
 end
 
@@ -233,16 +229,7 @@ function VNPC_ForagerFeedCamp(forager, camp, belly)
             end
 
             local now = CurTime()
-            if (camp.lastFeedMsgTime or 0) <= now then
-                camp.lastFeedMsgTime = now + 6.0
-                for _, p in ipairs(player.GetAll()) do
-                    if wasDangerous then
-                        p:ChatPrint("[V-NPCs] HIGH-VALUE FORAGE! Forager " .. forager:GetClass() .. " captured DANGEROUS PREY and fed her camp! (All campmates -30% Hunger)")
-                    else
-                        p:ChatPrint("[V-NPCs] Forager " .. forager:GetClass() .. " returns to camp and feeds captured prey to her hungry sister " .. hungrySister:GetClass() .. "!")
-                    end
-                end
-            end
+            camp.lastFeedMsgTime = now + 6.0
 
             hook.Run("VNPC_OnForagerFedCamp", forager, hungrySister, camp)
             return true

@@ -37,10 +37,6 @@ function VNPC_AdoptFemaleChild(pred, child, camp)
         child:EmitSound("npc/citizen/vo/nice.wav", 80, 115)
     end
 
-    for _, p in ipairs(player.GetAll()) do
-        p:ChatPrint("[V-NPCs] CAMP CONQUERED! Predator " .. (pred.PrintName or pred:GetClass()) .. " adopted a surviving female child from Prey Camp #" .. tostring(camp and camp.id or "N/A") .. " to raise as a sister!")
-    end
-
     return true
 end
 
@@ -81,10 +77,6 @@ function VNPC_TransformToPredator(child, motherPred)
 
     if child.EmitSound then
         child:EmitSound("belly/snd_digeststart.wav", 80, 105)
-    end
-
-    for _, p in ipairs(player.GetAll()) do
-        p:ChatPrint("[V-NPCs] SISTER-IN-TRAINING GROWN! An adopted female child has reached adulthood and joined " .. (IsValid(motherPred) and (motherPred.PrintName or motherPred:GetClass()) or "the pack") .. "'s camp as a full V-NPC Predator!")
     end
 
     return true

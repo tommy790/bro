@@ -41,9 +41,6 @@ function VNPC_CheckRecognizedMateWelcome(predCamp, emissary, preyCamp)
                 mem:EmitSound("npc/citizen/vo/nice.wav", 80, math.random(106, 114))
             end
         end
-        for _, p in ipairs(player.GetAll()) do
-            p:ChatPrint("[V-NPCs] WARM WELCOME! Predator Camp #" .. predCamp.id .. " recognizes returning Emissary " .. (emissary.PrintName or emissary:GetClass()) .. " and greets him as an honored mate!")
-        end
     end
 
     -- 2. Her loved mate says YES immediately without requiring boredom
@@ -59,9 +56,6 @@ function VNPC_CheckRecognizedMateWelcome(predCamp, emissary, preyCamp)
             VNPC_PredatorAgreeToEmissary(lovedPred, emissary, preyCamp, predCamp)
             if lovedPred.EmitSound then
                 lovedPred:EmitSound("npc/citizen/vo/nice.wav", 85, 115)
-            end
-            for _, p in ipairs(player.GetAll()) do
-                p:ChatPrint("[V-NPCs] LOVED MATE RECOGNIZED! Predator " .. lovedPred:GetClass() .. " recognized her returning mate " .. (emissary.PrintName or emissary:GetClass()) .. " and agreed immediately without needing to be bored!")
             end
         end
         return true
@@ -106,14 +100,6 @@ function VNPC_PredatorCampMatesGreeting_AI(camp, now)
                     }
                     local snd = helloSounds[math.random(1, #helloSounds)]
                     pred:EmitSound(snd, 75, math.random(106, 114))
-                end
-
-                for _, p in ipairs(player.GetAll()) do
-                    if isLoving then
-                        p:ChatPrint("[V-NPCs] LOVING PREDATOR! " .. pred:GetClass() .. " smiles affectionately and says hello to " .. (male.PrintName or male:GetClass()) .. " at Predator Camp #" .. camp.id .. "!")
-                    else
-                        p:ChatPrint("[V-NPCs] " .. pred:GetClass() .. " says hello to " .. (male.PrintName or male:GetClass()) .. " at Predator Camp #" .. camp.id .. "!")
-                    end
                 end
                 break
             end

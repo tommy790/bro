@@ -139,10 +139,6 @@ function VNPC_StartChildbirthAnimation(mother, child, camp)
         if child.EmitSound then
             child:EmitSound("npc/citizen/vo/nice.wav", 80, 135)
         end
-
-        for _, p in ipairs(player.GetAll()) do
-            p:ChatPrint("[V-NPCs] CHILDBIRTH! A female citizen in Prey Camp #" .. tostring(camp and camp.id or "N/A") .. " gave birth to a baby citizen! (Grows to full size in 1 min)")
-        end
     end
 
     -- 3. Restore mother after 4.5 seconds of resting in childbirth pose
@@ -187,9 +183,6 @@ hook.Add("Think", "VNPC_BabyCitizenGrowth_Loop", function()
 
                 if ent.EmitSound then
                     ent:EmitSound("npc/citizen/vo/readytohelp.wav", 80, 105)
-                end
-                for _, p in ipairs(player.GetAll()) do
-                    p:ChatPrint("[V-NPCs] A baby citizen in Prey Camp #" .. tostring(ent.VNPC_PreyCampID or "N/A") .. " has grown to full adult size (1.0) in one minute!")
                 end
             end
         end

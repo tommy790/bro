@@ -60,10 +60,6 @@ function VNPC_PredatorShyEmissaryHesitation(pred, emissary, camp, predCamp)
         pcall(pred.SetFacialExpression, pred, 4) -- Blushing / flustered face
     end
 
-    for _, p in ipairs(player.GetAll()) do
-        p:ChatPrint("[V-NPCs] SHY HESITATION! Emissary " .. (emissary.PrintName or emissary:GetClass()) .. " asked shy predator " .. (pred.PrintName or pred:GetClass()) .. " to visit his fort to mate; she blushes deeply and struggles to answer!")
-    end
-
     timer.Simple(4.0, function()
         if IsValid(pred) and IsValid(emissary) and IsValid(camp) then
             pred.VNPC_IsHesitatingToMate = nil
@@ -71,9 +67,6 @@ function VNPC_PredatorShyEmissaryHesitation(pred, emissary, camp, predCamp)
                 pcall(pred.SetFacialExpression, pred, 2)
             end
             VNPC_PredatorAgreeToEmissary(pred, emissary, camp, predCamp)
-            for _, p in ipairs(player.GetAll()) do
-                p:ChatPrint("[V-NPCs] SHY AGREEMENT! After blushing and struggling to answer, shy predator " .. pred:GetClass() .. " softly agreed to follow Emissary " .. emissary:GetClass() .. " to his Prey Camp to mate!")
-            end
         end
     end)
     return true
@@ -99,9 +92,6 @@ function VNPC_PredatorAgreeToEmissary(pred, emissary, camp, predCamp)
     if emissary.SetSchedule then pcall(emissary.SetSchedule, emissary, SCHED_FORCED_GO_RUN) end
 
     if pred.EmitSound then pred:EmitSound("npc/citizen/vo/nice.wav", 80, 108) end
-    for _, p in ipairs(player.GetAll()) do
-        p:ChatPrint("[V-NPCs] PREY EMISSARY SUCCESS! Prey Camp #" .. camp.id .. " sent an Emissary; bored predator " .. pred:GetClass() .. " agreed to visit their fort to mate!")
-    end
     return true
 end
 
@@ -224,9 +214,6 @@ hook.Add("Think", "VNPC_PreyEmissary_AI_Loop", function()
                         pcall(pred.SetLastPosition, pred, pred.VNPC_OriginalCampPos)
                     end
                     if pred.SetSchedule then pcall(pred.SetSchedule, pred, SCHED_FORCED_GO_RUN) end
-                    for _, p in ipairs(player.GetAll()) do
-                        p:ChatPrint("[V-NPCs] CHILDBIRTH COMPLETE! Visiting predator " .. pred:GetClass() .. " gave birth to a new citizen for Prey Camp #" .. tostring(camp and camp.id or "N/A") .. " and has returned home to Predator Camp #" .. tostring(pred.VNPC_OriginalCampID or "N/A") .. "!")
-                    end
                 end
             end)
         elseif not pred.VNPC_IsPregnantWithCitizen then
@@ -245,9 +232,6 @@ hook.Add("Think", "VNPC_PreyEmissary_AI_Loop", function()
                 end
 
                 if pred.EmitSound then pred:EmitSound("npc/citizen/vo/nice.wav", 80, 108) end
-                for _, p in ipairs(player.GetAll()) do
-                    p:ChatPrint("[V-NPCs] CROSS-CAMP MATING! Predator " .. pred:GetClass() .. " arrives at Prey Camp #" .. camp.id .. " and is now pregnant with a new citizen baby for their fort!")
-                end
             else
                 if pred.SetLastPosition then pcall(pred.SetLastPosition, pred, camp.pos) end
                 if pred.SetSchedule then pcall(pred.SetSchedule, pred, SCHED_FORCED_GO_RUN) end

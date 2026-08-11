@@ -47,13 +47,6 @@ function VNPC_AddCampTension(campA, campB, amount, reason)
     local newTension = math.Clamp(current + amount, 0, 100.0)
     VNPC_CampTensions[key] = newTension
 
-    if amount >= 10.0 then
-        for _, p in ipairs(player.GetAll()) do
-            p:ChatPrint(string.format("[V-NPCs] TENSION SPIKE (+%d)! %s -> Faction %s Camp #%d vs Faction %s Camp #%d (Tension: %.1f%%)",
-                math.floor(amount), tostring(reason or "Rival Incident"), string.upper(campA.faction), campA.id, string.upper(campB.faction), campB.id, newTension))
-        end
-    end
-
     if newTension >= war_thresh:GetFloat() and campA.state ~= "war" and campB.state ~= "war" then
         VNPC_TriggerCampWar(campA, campB)
     end
@@ -72,7 +65,6 @@ function VNPC_TriggerCampWar(campA, campB)
 
     for _, p in ipairs(player.GetAll()) do
         p:EmitSound("ambient/alarms/siren.wav", 80, 100)
-        p:ChatPrint("[V-NPCs] CAMP WAR! High tension between Faction " .. string.upper(campA.faction or "METROCOP") .. " Camp #" .. campA.id .. " and Faction " .. string.upper(campB.faction or "ZOMBIE") .. " Camp #" .. campB.id .. " has erupted into an open Vore Battle!")
     end
 end
 
@@ -103,9 +95,6 @@ hook.Add("Think", "VNPC_PredatorCampFactions_Loop", function()
             if not enemyCamp or #enemyCamp.members == 0 then
                 campA.state = "idle"
                 campA.enemyCampID = nil
-                for _, p in ipairs(player.GetAll()) do
-                    p:ChatPrint("[V-NPCs] CAMP WAR VICTORY! Faction " .. string.upper(campA.faction) .. " Camp #" .. campA.id .. " defeated their rival camp!")
-                end
                 continue
             end
 

@@ -39,10 +39,6 @@ function VNPC_DeliverWillingMateToCamp(pred, camp, belly)
         if pred.EmitSound then
             pred:EmitSound("npc/citizen/vo/nice.wav", 80, 115)
         end
-
-        for _, p in ipairs(player.GetAll()) do
-            p:ChatPrint("[V-NPCs] PREDATOR CAMP REGENERATION! Forager " .. pred:GetClass() .. " brought a Willing Male Citizen back to Camp #" .. camp.id .. "! Love blooms and she is now pregnant with a new sister!")
-        end
         return true
     end
     return false

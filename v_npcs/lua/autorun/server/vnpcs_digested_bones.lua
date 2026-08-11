@@ -184,12 +184,7 @@ hook.Add("Think", "VNPC_DigestedBones_AI_Loop", function()
                 if npc.Vored or npc.VNPC_Vored then continue end
                 if npc.IsDrGNextbot or npc.VNPC_FemaleModelVore or npc.Predator then continue end
 
-                -- Player alert chat notification
                 if npc:IsPlayer() then
-                    if (npc.VNPC_NextPlayerBoneNoticeTime or 0) <= now then
-                        npc.VNPC_NextPlayerBoneNoticeTime = now + 15.0
-                        npc:ChatPrint("[V-NPCs] You notice digested bones on the floor... A predator is nearby!")
-                    end
                     continue
                 end
 
