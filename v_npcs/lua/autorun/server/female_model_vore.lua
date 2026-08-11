@@ -571,12 +571,21 @@ hook.Add("Think", "VNPC_FemaleModelVore_Think", function()
 
             if not GetConVar("vnpcs_patrol_full"):GetBool() and (belly.DigestionPhase ~= 0 or (belly.Prey and #belly.Prey > 0)) then
                 if not IsValid(npc:GetEnemy()) then
+                    local isMovingOrWandering = false
+                    if npc.IsMoving and npc:IsMoving() then isMovingOrWandering = true end
+                    if npc.GetVelocity and npc:GetVelocity():Length2DSqr() > 4 then isMovingOrWandering = true end
                     if npc.GetCurrentSchedule then
                         local sched = npc:GetCurrentSchedule()
-                        if sched == SCHED_PATROL_WALK or sched == SCHED_IDLE_WANDER or sched == SCHED_IDLE_WALK then
-                            if npc.ClearSchedule then pcall(npc.ClearSchedule, npc) end
-                            if npc.SetSchedule then pcall(npc.SetSchedule, npc, SCHED_IDLE_STAND) end
+                        if sched ~= SCHED_IDLE_STAND and sched ~= SCHED_NPC_FREEZE and sched ~= SCHED_WAIT_FOR_SCRIPT then
+                            isMovingOrWandering = true
                         end
+                    end
+                    if isMovingOrWandering then
+                        if npc.ClearSchedule then pcall(npc.ClearSchedule, npc) end
+                        if npc.ClearPatrols then pcall(npc.ClearPatrols, npc) end
+                        if npc.SetSchedule then pcall(npc.SetSchedule, npc, SCHED_IDLE_STAND) end
+                        if npc.StopMoving then pcall(npc.StopMoving, npc) end
+                        if npc.SetVelocity then pcall(npc.SetVelocity, npc, Vector(0, 0, 0)) end
                     end
                 end
             end
