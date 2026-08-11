@@ -762,10 +762,14 @@ function VNPC_PreyCampLove_AI(camp, now)
                 end
 
                 if IsValid(chosenMale) then
-                    f.VNPC_IsPregnant = true
-                    f.VNPC_BabyGrowthValue = 10.0
-                    f.VNPC_LastGrowthTime = now
                     camp.lastLoveTriggerTime = now + 25.0
+                    if VNPC_InitiatePrivateMating then
+                        VNPC_InitiatePrivateMating(f, chosenMale, camp)
+                    else
+                        f.VNPC_IsPregnant = true
+                        f.VNPC_BabyGrowthValue = 10.0
+                        f.VNPC_LastGrowthTime = now
+                    end
 
                     -- Immediately spawn small citizen baby inside the female belly
                     local child = ents.Create("npc_citizen")

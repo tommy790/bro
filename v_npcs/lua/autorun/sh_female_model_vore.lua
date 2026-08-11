@@ -1490,6 +1490,19 @@ VNPC_WaterDrinkingBonePose = {
     ["ValveBiped.Bip01_L_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(-80, -20, 10) }
 }
 
+VNPC_MatingBonePose = {
+    ["ValveBiped.Bip01_Head1"] = { pos = Vector(0, 0, 0), ang = Angle(-10, 0, 0) },
+    ["ValveBiped.Bip01_Spine"] = { pos = Vector(0, 0, 0), ang = Angle(-5, 0, 0) },
+    ["ValveBiped.Bip01_Spine1"] = { pos = Vector(0, 0, 0), ang = Angle(-8, 0, 0) },
+    ["ValveBiped.Bip01_Pelvis"] = { pos = Vector(0, 0, -6), ang = Angle(-10, 0, 0) },
+    ["ValveBiped.Bip01_R_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(35, -30, 20) },
+    ["ValveBiped.Bip01_L_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(35, 30, -20) },
+    ["ValveBiped.Bip01_R_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(-90, 45, -20) },
+    ["ValveBiped.Bip01_L_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(-90, -45, 20) },
+    ["ValveBiped.Bip01_R_Hand"] = { pos = Vector(0, 0, 0), ang = Angle(15, 0, 30) },
+    ["ValveBiped.Bip01_L_Hand"] = { pos = Vector(0, 0, 0), ang = Angle(15, 0, -30) }
+}
+
 VNPC_UnbirthWillingReceiveBonePose = {
     ["ValveBiped.Bip01_Head1"] = { pos = Vector(0, 0, 0), ang = Angle(0, 35, -10) },
     ["ValveBiped.Bip01_Spine"] = { pos = Vector(0, 0, 0), ang = Angle(8, 0, 0) },
@@ -2142,7 +2155,9 @@ function VNPC_AnimatedBoneOffsets(ent)
     local phase = ent:GetNWInt("FacialPhase", -1)
     local animList = VNPC_GetAnimatedBoneList(ent)
     local data = animList[phase] or animList[0]
-    if (ent.VNPC_IsWillingUnbirthCrawl or (ent.GetNWBool and ent:GetNWBool("VNPC_IsWillingUnbirthCrawl"))) and VNPC_UnbirthWillingReceiveBonePose then
+    if (ent.VNPC_IsMatingBonePose or (ent.GetNWBool and ent:GetNWBool("VNPC_IsMatingBonePose"))) and VNPC_MatingBonePose then
+        data = VNPC_MatingBonePose
+    elseif (ent.VNPC_IsWillingUnbirthCrawl or (ent.GetNWBool and ent:GetNWBool("VNPC_IsWillingUnbirthCrawl"))) and VNPC_UnbirthWillingReceiveBonePose then
         data = VNPC_UnbirthWillingReceiveBonePose
     elseif (ent.VNPC_IsMountingHeavyPrey or (ent.GetNWBool and ent:GetNWBool("VNPC_IsMountingHeavyPrey"))) and VNPC_HeavyGroundMountBonePose then
         data = VNPC_HeavyGroundMountBonePose

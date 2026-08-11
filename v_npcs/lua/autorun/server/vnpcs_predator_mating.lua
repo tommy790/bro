@@ -34,8 +34,11 @@ function VNPC_DeliverWillingMateToCamp(pred, camp, belly)
         if male.SetSchedule then pcall(male.SetSchedule, male, SCHED_TARGET_FACE) end
         if male.SetEnemy then pcall(male.SetEnemy, male, nil) end
 
-        -- Predator becomes pregnant with a new baby sister
-        pred.VNPC_IsPregnantWithSister = CurTime() + pred_pregnancy_time:GetFloat()
+        if VNPC_InitiatePrivateMating then
+            VNPC_InitiatePrivateMating(pred, male, camp)
+        else
+            pred.VNPC_IsPregnantWithSister = CurTime() + pred_pregnancy_time:GetFloat()
+        end
         if pred.EmitSound then
             pred:EmitSound("npc/citizen/vo/nice.wav", 80, 115)
         end

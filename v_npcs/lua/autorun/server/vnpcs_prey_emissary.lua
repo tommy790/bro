@@ -298,16 +298,23 @@ hook.Add("Think", "VNPC_PreyEmissary_AI_Loop", function()
         elseif not pred.VNPC_IsPregnantWithCitizen then
             local distSqr = pred:GetPos():DistToSqr(camp.pos)
             if distSqr <= (300 * 300) then
-                pred.VNPC_IsPregnantWithCitizen = now + emissary_preg_time:GetFloat()
                 pred.VNPC_PreyCampBabyMother = true
 
+                local mate = nil
                 for _, mem in ipairs(camp.members) do
                     if IsValid(mem) and (mem.VNPC_PreyRole == "emissary" or mem.VNPC_IsPreyEmissary) then
                         mem.VNPC_PreyRole = "citizen"
                         mem.VNPC_IsPreyEmissary = nil
                         mem.VNPC_EscortingPredator = nil
+                        mate = mem
                         break
                     end
+                end
+
+                if IsValid(mate) and VNPC_InitiatePrivateMating then
+                    VNPC_InitiatePrivateMating(pred, mate, camp)
+                else
+                    pred.VNPC_IsPregnantWithCitizen = now + emissary_preg_time:GetFloat()
                 end
 
                 if pred.EmitSound then pred:EmitSound("npc/citizen/vo/nice.wav", 80, 108) end
