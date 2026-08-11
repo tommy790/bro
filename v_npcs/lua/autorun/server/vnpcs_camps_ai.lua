@@ -12,7 +12,6 @@ VNPC_ActivePredatorCamps = VNPC_ActivePredatorCamps or {}
 local PRED_TENT_MODELS = {
     "models/props_wasteland/wood_room001a.mdl",       -- Wooden cabin / tent shelter
     "models/props_c17/FurnitureShack001a.mdl",        -- Tin/wood shack shelter
-    "models/props_buildings/collapsedbuilding01a.mdl",-- Canopy / collapsed shelter
     "models/props_c17/canister01a.mdl",               -- Compact shelter
     "models/props_wasteland/cargo_container01.mdl"    -- Container shelter
 }
@@ -165,6 +164,100 @@ function VNPC_ConstructPredatorCampTent(camp)
     return true
 end
 
+function VNPC_ConstructPredatorCampFire(camp)
+    if not camps_enabled:GetBool() or not camp or not camp.pos then return false end
+    if IsValid(camp.campfire) then return false end
+
+    local tr = util.TraceLine({
+        start = camp.pos + Vector(0, 0, 40),
+        endpos = camp.pos - Vector(0, 0, 150),
+        mask = MASK_SOLID_BRUSHONLY
+    })
+    if not tr.Hit or tr.HitNormal.z < 0.65 then return false end
+
+    local fire = ents.Create("prop_physics")
+    if not IsValid(fire) then return false end
+
+    fire:SetModel("models/props_c17/FurnitureFireplace001a.mdl")
+    fire:SetPos(tr.HitPos)
+    fire:SetAngles(Angle(0, math.random(0, 360), 0))
+    fire:Spawn()
+    fire:Activate()
+
+    local minZ = fire:OBBMins().z
+    local zOffset = (minZ < 0) and math.abs(minZ) or 0
+    fire:SetPos(tr.HitPos + Vector(0, 0, zOffset + 2))
+
+    fire.VNPC_IsPredatorCampFire = true
+    fire.VNPC_PredatorCampID = camp.id
+    fire:SetHealth(500)
+
+    if fire.Ignite then
+        fire:Ignite(99999, 0)
+    end
+
+    local phys = fire:GetPhysicsObject()
+    if IsValid(phys) then
+        phys:SetVelocity(Vector(0,0,0))
+        phys:EnableMotion(false)
+        phys:Sleep()
+    end
+
+    camp.campfire = fire
+    return true
+end
+
+function VNPC_ConstructPredatorCampBarricades(camp)
+    if not camps_enabled:GetBool() or not camp or not camp.pos then return false end
+    camp.barricades = camp.barricades or {}
+    for b = #camp.barricades, 1, -1 do
+        if not IsValid(camp.barricades[b]) then
+            table.remove(camp.barricades, b)
+        end
+    end
+    if #camp.barricades >= 6 then return false end
+
+    local idx = #camp.barricades
+    local angle = math.rad(idx * 60 + math.random(-10, 10))
+    local radius = 190
+    local candidatePos = camp.pos + Vector(math.cos(angle) * radius, math.sin(angle) * radius, 40)
+
+    local tr = util.TraceLine({
+        start = candidatePos,
+        endpos = candidatePos - Vector(0, 0, 200),
+        mask = MASK_SOLID_BRUSHONLY
+    })
+    if not tr.Hit or tr.HitNormal.z < 0.65 then return false end
+
+    local barricade = ents.Create("prop_physics")
+    if not IsValid(barricade) then return false end
+
+    barricade:SetModel("models/props_fortifications/barricade01a.mdl")
+    barricade:SetPos(tr.HitPos)
+    local outwardDir = (tr.HitPos - camp.pos):GetNormalized()
+    barricade:SetAngles(Angle(0, outwardDir:Angle().y + 90, 0))
+    barricade:Spawn()
+    barricade:Activate()
+
+    local minZ = barricade:OBBMins().z
+    local zOffset = (minZ < 0) and math.abs(minZ) or 0
+    barricade:SetPos(tr.HitPos + Vector(0, 0, zOffset + 2))
+
+    barricade.VNPC_IsPredatorCampBarricade = true
+    barricade.VNPC_PredatorCampID = camp.id
+    barricade:SetHealth(400)
+
+    local phys = barricade:GetPhysicsObject()
+    if IsValid(phys) then
+        phys:SetVelocity(Vector(0,0,0))
+        phys:EnableMotion(false)
+        phys:Sleep()
+    end
+
+    table.insert(camp.barricades, barricade)
+    return true
+end
+
 function VNPC_ForagerFeedCamp(forager, camp, belly)
     if not IsValid(forager) or not IsValid(belly) or not camp then return false end
     if not belly.Prey or #belly.Prey == 0 then return false end
@@ -311,6 +404,19 @@ hook.Add("Think", "VNPC_PredatorCamps_AI_Loop", function()
             end
         end
 
+        -- Construct Campfire and Barricades when resting at camp
+        if camp.state == "idle" then
+            if not IsValid(camp.campfire) and (now - (camp.createTime or now)) > 5.0 then
+                VNPC_ConstructPredatorCampFire(camp)
+            end
+            camp.barricades = camp.barricades or {}
+            if #camp.barricades < 6 and (now - (camp.createTime or now)) > 8.0 and (camp.lastBarricadeBuildTime or 0) <= now then
+                if VNPC_ConstructPredatorCampBarricades(camp) then
+                    camp.lastBarricadeBuildTime = now + 12.0
+                end
+            end
+        end
+
         -- Count how many members are hungry
         local hungryCount = 0
         local hThresh = camp_hunger_thresh:GetFloat()
@@ -389,8 +495,9 @@ concommand.Add("vnpcs_camps_status", function(ply)
     print("Hunger Threshold: " .. tostring(camp_hunger_thresh:GetFloat()) .. "%")
     print("-----------------------------------------")
     for idx, camp in ipairs(VNPC_ActivePredatorCamps) do
-        print(string.format(" -> Camp [#%d] | Faction: %s | State: %s | Members: %d | Pos: (%d, %d, %d)",
-            camp.id, string.upper(camp.faction or "METROCOP"), string.upper(camp.state), #camp.members, camp.pos.x, camp.pos.y, camp.pos.z))
+        local cfStr = IsValid(camp.campfire) and "YES" or "NO"
+        print(string.format(" -> Camp [#%d] | Faction: %s | State: %s | Members: %d | Campfire: %s | Barricades: %d | Pos: (%d, %d, %d)",
+            camp.id, string.upper(camp.faction or "METROCOP"), string.upper(camp.state), #camp.members, cfStr, #(camp.barricades or {}), camp.pos.x, camp.pos.y, camp.pos.z))
         for mIdx, mem in ipairs(camp.members) do
             if IsValid(mem) then
                 print(string.format("      -> Member [%d] %s | Role: %s | Carrying Prey: %s",

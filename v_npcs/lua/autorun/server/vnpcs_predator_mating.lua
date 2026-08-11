@@ -3,7 +3,7 @@
 
 local pred_mating_enabled = CreateConVar("vnpcs_pred_mating_enabled", "1", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Enable underpopulated predator camps seeking willing male mates for pregnancy")
 local pred_mating_thresh = CreateConVar("vnpcs_pred_mating_thresh", "2", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Member count threshold below which a predator camp seeks a willing male mate")
-local pred_pregnancy_time = CreateConVar("vnpcs_pred_pregnancy_time", "50.0", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Duration in seconds for a pregnant predator to bear a baby sister")
+local pred_pregnancy_time = CreateConVar("vnpcs_pred_pregnancy_time", "120.0", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Duration in seconds for a pregnant predator to bear a baby sister")
 
 function VNPC_DeliverWillingMateToCamp(pred, camp, belly)
     if not IsValid(pred) or not IsValid(belly) or not camp then return false end

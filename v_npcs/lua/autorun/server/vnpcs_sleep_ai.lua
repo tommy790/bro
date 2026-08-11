@@ -1,45 +1,71 @@
--- V-NPCs Full Belly Sleeping & Nap System (vnpcs_sleep_ai.lua)
--- Predators who remain in a full state outside of combat for long enough get tired and fall asleep using a modified full Bream Satel dif bone pose.
+-- V-NPCs Universal Sleepiness & Camp Rest System (vnpcs_sleep_ai.lua)
+-- Every female V-NPC predator and female citizen in Prey Camps tracks a Sleepiness bar (0-100%).
+-- When sleepy (>= 80%), they retire to their camp tents/barricades or fort huts/buildings to rest and sleep safely.
 
-CreateConVar("vnpcs_sleep_enabled", "1", {FCVAR_REPLICATED, FCVAR_ARCHIVE}, "Enable full predators falling asleep after being full for a while")
-CreateConVar("vnpcs_sleep_delay", "30", {FCVAR_REPLICATED, FCVAR_ARCHIVE}, "Seconds a predator must be full outside of battle before falling asleep")
+CreateConVar("vnpcs_sleep_enabled", "1", {FCVAR_REPLICATED, FCVAR_ARCHIVE}, "Enable sleepiness bar and camp rest cycle for predators and prey camp females")
+CreateConVar("vnpcs_sleep_thresh", "80.0", {FCVAR_REPLICATED, FCVAR_ARCHIVE}, "Sleepiness percentage required to fall asleep at camp")
+
+function VNPC_IsSleepEligible(ent)
+    if not IsValid(ent) or ent:Health() <= 0 or ent.Vored or ent.VNPC_Vored then return false end
+    local isPred = (ent.IsDrGNextbot or ent.VNPC_FemaleModelVore or ent.Predator or (VNPC_IsFemaleModelNPC and VNPC_IsFemaleModelNPC(ent)))
+    if isPred then return true, "predator" end
+    if VNPC_IsFemalePreyCitizen and VNPC_IsFemalePreyCitizen(ent) and ent.VNPC_PreyCampID then
+        return true, "prey_female"
+    end
+    return false, nil
+end
 
 hook.Add("Think", "VNPCS_SleepSystem_Loop", function()
     local enabled = GetConVar("vnpcs_sleep_enabled")
     if enabled and not enabled:GetBool() then return end
 
     local now = CurTime()
-    local delay = GetConVar("vnpcs_sleep_delay"):GetFloat() or 30
+    local thresh = GetConVar("vnpcs_sleep_thresh"):GetFloat() or 80.0
 
-    for _, pred in ipairs(ents.FindByClass("npc_*")) do
-        if not IsValid(pred) or pred.Vored or pred.VNPC_Vored then continue end
-        if not (pred.IsDrGNextbot or pred.VNPC_FemaleModelVore or pred.Predator) then continue end
-        if (pred.VNPC_NextSleepThink or 0) > now then continue end
-        pred.VNPC_NextSleepThink = now + 1.0
+    for _, ent in ipairs(ents.FindByClass("npc_*")) do
+        local ok, role = VNPC_IsSleepEligible(ent)
+        if not ok then continue end
+        if (ent.VNPC_NextSleepThink or 0) > now then continue end
+        ent.VNPC_NextSleepThink = now + 1.0
 
-        local belly = pred.VNPC_Belly or pred.Belly
-        local hasPrey = IsValid(belly) and ((belly.Prey and #belly.Prey > 0) or belly.DigestionPhase == 2 or (belly.BaseScale and belly.BaseScale >= 0.2) or hook.Run("VNPC_ShouldPredatorSleep", pred, belly))
-        local inCombat = IsValid(pred:GetEnemy()) or (pred.IsMoving and pred:IsMoving())
+        local inCombat = IsValid(ent:GetEnemy()) or (ent.IsMoving and ent:IsMoving() and not ent.VNPC_IsReturningToCampToSleep)
 
-        if not hasPrey or inCombat then
-            -- Wake up immediately if enemy attacks or belly becomes empty
-            if pred.VNPC_IsSleeping then
-                pred.VNPC_IsSleeping = false
-                if pred.SetSchedule then pcall(pred.SetSchedule, pred, SCHED_IDLE_STAND) end
+        if ent.VNPC_IsSleeping then
+            -- Drain sleepiness bar while sleeping
+            ent.VNPC_Sleepiness = math.max(0, (ent.VNPC_Sleepiness or 80.0) - 3.5)
+
+            if inCombat or ent.VNPC_Sleepiness <= 0.0 then
+                -- Wake up refreshed or to defend!
+                ent.VNPC_IsSleeping = false
+                ent.VNPC_IsReturningToCampToSleep = nil
+                if ent.SetSchedule then pcall(ent.SetSchedule, ent, SCHED_IDLE_STAND) end
             end
-            pred.VNPC_FullStartTime = nil
-            continue
-        end
+        else
+            -- Increase sleepiness bar over time when awake
+            ent.VNPC_Sleepiness = math.Clamp((ent.VNPC_Sleepiness or 0.0) + 0.35, 0, 100)
 
-        if not pred.VNPC_FullStartTime then
-            pred.VNPC_FullStartTime = now
-        end
+            if ent.VNPC_Sleepiness >= thresh and not inCombat then
+                -- Seek safe shelter at camp before falling asleep
+                local campPos = nil
+                if role == "predator" and ent.VNPC_CampID and VNPC_GetPredatorCamp then
+                    local pCamp = VNPC_GetPredatorCamp(ent)
+                    if pCamp and pCamp.pos then campPos = pCamp.pos end
+                elseif role == "prey_female" and ent.VNPC_PreyCampID and VNPC_GetPreyCamp then
+                    local rCamp = VNPC_GetPreyCamp(ent)
+                    if rCamp and rCamp.pos then campPos = rCamp.pos end
+                end
 
-        local elapsed = now - pred.VNPC_FullStartTime
-        if elapsed >= delay and not pred.VNPC_IsSleeping then
-            pred.VNPC_IsSleeping = true
-            if pred.SetEnemy then pcall(pred.SetEnemy, pred, nil) end
-            if pred.SetSchedule then pcall(pred.SetSchedule, pred, SCHED_IDLE_STAND) end
+                if campPos and ent:GetPos():DistToSqr(campPos) > (260 * 260) then
+                    ent.VNPC_IsReturningToCampToSleep = true
+                    if ent.SetLastPosition then pcall(ent.SetLastPosition, ent, campPos) end
+                    if ent.SetSchedule then pcall(ent.SetSchedule, ent, SCHED_FORCED_GO_RUN) end
+                else
+                    ent.VNPC_IsSleeping = true
+                    ent.VNPC_IsReturningToCampToSleep = nil
+                    if ent.SetEnemy then pcall(ent.SetEnemy, ent, nil) end
+                    if ent.SetSchedule then pcall(ent.SetSchedule, ent, SCHED_IDLE_STAND) end
+                end
+            end
         end
     end
 end)
@@ -47,7 +73,8 @@ end)
 hook.Add("EntityTakeDamage", "VNPCS_SleepSystem_WakeOnDamage", function(ent, dmginfo)
     if IsValid(ent) and ent.VNPC_IsSleeping then
         ent.VNPC_IsSleeping = false
-        ent.VNPC_FullStartTime = nil
+        ent.VNPC_Sleepiness = 0.0
+        ent.VNPC_IsReturningToCampToSleep = nil
         local attacker = dmginfo:GetAttacker()
         if IsValid(attacker) and ent.SetEnemy then
             pcall(ent.SetEnemy, ent, attacker)
@@ -57,21 +84,64 @@ end)
 
 concommand.Add("vnpcs_sleep_status", function(ply)
     print("===============================================================")
-    print("           V-NPCs FULL BELLY SLEEP SYSTEM STATUS               ")
+    print("      V-NPCs UNIVERSAL SLEEPINESS BAR & CAMP REST STATUS       ")
     print("===============================================================")
     print(" - Sleep System Enabled: " .. tostring(GetConVar("vnpcs_sleep_enabled"):GetBool()))
-    print(" - Sleep Delay Threshold: " .. tostring(GetConVar("vnpcs_sleep_delay"):GetFloat()) .. " sec")
+    print(" - Sleepiness Threshold: " .. tostring(GetConVar("vnpcs_sleep_thresh"):GetFloat()) .. "%")
     local count = 0
-    for _, pred in ipairs(ents.FindByClass("npc_*")) do
-        if IsValid(pred) and (pred.IsDrGNextbot or pred.VNPC_FemaleModelVore or pred.Predator) then
+    for _, ent in ipairs(ents.FindByClass("npc_*")) do
+        local ok, role = VNPC_IsSleepEligible(ent)
+        if ok then
             count = count + 1
-            local sleeping = pred.VNPC_IsSleeping and "SLEEPING (Bream Satel Sitting Pose)" or "AWAKE"
-            local fullTime = pred.VNPC_FullStartTime and math.floor(CurTime() - pred.VNPC_FullStartTime) or 0
-            print(string.format(" - Predator #%d [%s]: State = %s | Full Time = %d sec", pred:EntIndex(), pred.PrintName or pred:GetClass(), sleeping, fullTime))
+            local stateStr = ent.VNPC_IsSleeping and "SLEEPING (At Camp)" or (ent.VNPC_IsReturningToCampToSleep and "RETURNING TO CAMP TO SLEEP" or "AWAKE")
+            print(string.format(" - [%s] #%d [%s]: State = %s | Sleepiness Bar = %.1f%%", string.upper(role), ent:EntIndex(), ent.PrintName or ent:GetClass(), stateStr, ent.VNPC_Sleepiness or 0))
         end
     end
     if count == 0 then
-        print(" - Active Predators: NONE currently spawned")
+        print(" - Active Eligible Predators / Prey Females: NONE currently spawned")
     end
     print("===============================================================")
+end)
+
+concommand.Add("vnpcs_test_sleep_pred", function(ply)
+    local count = 0
+    for _, pred in ipairs(ents.FindByClass("npc_*")) do
+        if IsValid(pred) and (pred.IsDrGNextbot or pred.VNPC_FemaleModelVore or pred.Predator) then
+            pred.VNPC_Sleepiness = 95.0
+            pred.VNPC_IsSleeping = true
+            count = count + 1
+        end
+    end
+    local msg = "[V-NPCs] Forced sleepiness bar to 95% on " .. count .. " predators! They are now resting."
+    print(msg)
+    if IsValid(ply) then ply:ChatPrint(msg) end
+end)
+
+concommand.Add("vnpcs_test_sleep_prey", function(ply)
+    local count = 0
+    for _, ent in ipairs(ents.FindByClass("npc_*")) do
+        if VNPC_IsFemalePreyCitizen and VNPC_IsFemalePreyCitizen(ent) and ent.VNPC_PreyCampID then
+            ent.VNPC_Sleepiness = 95.0
+            ent.VNPC_IsSleeping = true
+            count = count + 1
+        end
+    end
+    local msg = "[V-NPCs] Forced sleepiness bar to 95% on " .. count .. " prey camp females! They are now resting."
+    print(msg)
+    if IsValid(ply) then ply:ChatPrint(msg) end
+end)
+
+concommand.Add("vnpcs_test_wake_all", function(ply)
+    local count = 0
+    for _, ent in ipairs(ents.FindByClass("npc_*")) do
+        if ent.VNPC_IsSleeping then
+            ent.VNPC_IsSleeping = false
+            ent.VNPC_Sleepiness = 0.0
+            ent.VNPC_IsReturningToCampToSleep = nil
+            count = count + 1
+        end
+    end
+    local msg = "[V-NPCs] Woke up " .. count .. " sleeping predators and prey camp females!"
+    print(msg)
+    if IsValid(ply) then ply:ChatPrint(msg) end
 end)

@@ -147,6 +147,10 @@ function VNPC_GiveFemaleModelVore(ent)
             if self.VNPC_PreyCampID and target.VNPC_PreyCampID == self.VNPC_PreyCampID then return false end
         end
         if VNPC_IsFamilyOrMate and VNPC_IsFamilyOrMate(self, target) then return false end
+        if target.VNPC_IsSleeping and target.VNPC_CampID and VNPC_GetPredatorCamp then
+            local c = VNPC_GetPredatorCamp(target)
+            if c and #(c.barricades or {}) > 0 and self.VNPC_CampID ~= target.VNPC_CampID then return false end
+        end
         if not (self.VNPC_IsWildWanderer and self.VNPC_WildType == "predator") and VNPC_IsProtectedChildPrey and VNPC_IsProtectedChildPrey(target) then return false end
         if VNPC_IsPreyEmissary and VNPC_IsPreyEmissary(target) then return false end
         if target.VNPC_PreyCampID and self.VNPC_PreyCampID and target.VNPC_PreyCampID == self.VNPC_PreyCampID then return false end

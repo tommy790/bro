@@ -9,7 +9,7 @@ local camp_max_walls = CreateConVar("vnpcs_prey_camp_max_walls", "24", {FCVAR_AR
 local camp_hut_cost = CreateConVar("vnpcs_prey_camp_hut_cost", "8.0", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Resource cost to construct one piece of a breakable dupe hut inside a fortified prey camp")
 local camp_max_huts = CreateConVar("vnpcs_prey_camp_max_huts", "4", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Maximum number of little huts inside a fortified prey camp courtyard")
 local love_enabled = CreateConVar("vnpcs_prey_camp_love_enabled", "1", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Enable love and pregnancy population growth in fortified prey camps")
-local pregnancy_time = CreateConVar("vnpcs_prey_camp_pregnancy_time", "45.0", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Duration in seconds for a pregnant female citizen to bear a new citizen")
+local pregnancy_time = CreateConVar("vnpcs_prey_camp_pregnancy_time", "120.0", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Duration in seconds for a pregnant female citizen to bear a new citizen")
 local camp_max_members = CreateConVar("vnpcs_prey_camp_max_members", "25", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Maximum total member capacity per prey camp")
 
 VNPC_ActivePreyCamps = VNPC_ActivePreyCamps or {}

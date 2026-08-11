@@ -460,6 +460,7 @@ function VNPC_WildPredPreyMate(female, male)
 
     female.VNPC_IsPregnant = true
     female.VNPC_BabyGrowthValue = 10.0
+    female.VNPC_PregnancyStartTime = CurTime()
     female.VNPC_LastGrowthTime = CurTime()
     female.VNPC_WildMate = male
     male.VNPC_WildMate = female
@@ -592,8 +593,10 @@ function VNPC_WildMating_AI(now)
         if w.VNPC_IsPregnant then
             if (now - (w.VNPC_LastGrowthTime or now)) >= 1.0 then
                 w.VNPC_LastGrowthTime = now
-                w.VNPC_BabyGrowthValue = (w.VNPC_BabyGrowthValue or 10.0) + 1.0
-                if w.VNPC_BabyGrowthValue >= 50.0 then
+                w.VNPC_PregnancyStartTime = w.VNPC_PregnancyStartTime or (now - 1.0)
+                local elapsed = now - w.VNPC_PregnancyStartTime
+                w.VNPC_BabyGrowthValue = math.Clamp(10.0 + (elapsed / 120.0) * 40.0, 10.0, 50.0)
+                if elapsed >= 120.0 or w.VNPC_BabyGrowthValue >= 50.0 then
                     VNPC_WildGiveBirth(w)
                 end
             end
@@ -916,6 +919,7 @@ concommand.Add("vnpcs_test_wild_pregnancy", function(ply)
 
     target.VNPC_IsPregnant = true
     target.VNPC_BabyGrowthValue = 47.0
+    target.VNPC_PregnancyStartTime = CurTime() - 117.0
     target.VNPC_LastGrowthTime = CurTime()
     ply:ChatPrint("[V-NPCs] Triggered wild pregnancy on " .. tostring(target) .. "! Birth at 50 in ~3 seconds.")
 end)

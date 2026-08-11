@@ -3,7 +3,7 @@
 
 local emissary_enabled = CreateConVar("vnpcs_prey_emissary_enabled", "1", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Enable prey camps sending male emissaries to ask bored predators to mate")
 local boredom_time = CreateConVar("vnpcs_emissary_boredom_time", "25.0", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Seconds without combat/hunting required for a predator to be bored enough to agree")
-local emissary_preg_time = CreateConVar("vnpcs_emissary_pregnancy_time", "45.0", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Duration in seconds for a visiting predator to bear a citizen baby at a prey camp")
+local emissary_preg_time = CreateConVar("vnpcs_emissary_pregnancy_time", "120.0", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Duration in seconds for a visiting predator to bear a citizen baby at a prey camp")
 
 function VNPC_IsPreyEmissary(ent)
     if not IsValid(ent) then return false end
