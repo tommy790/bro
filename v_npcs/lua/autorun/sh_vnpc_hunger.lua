@@ -456,30 +456,97 @@ function VNPC_SetPreyStamina(ent, val)
     end
 end
 
+VNPC_LifeCycleGrowthStages = {
+    { id = "hatchling",  minProgress = 0,   maxProgress = 24,  scale = 0.25, name = "Hatchling" },
+    { id = "juvenile",   minProgress = 25,  maxProgress = 49,  scale = 0.45, name = "Juvenile" },
+    { id = "adolescent", minProgress = 50,  maxProgress = 74,  scale = 0.65, name = "Adolescent" },
+    { id = "subadult",   minProgress = 75,  maxProgress = 99,  scale = 0.85, name = "Subadult" },
+    { id = "adult",      minProgress = 100, maxProgress = 149, scale = 1.00, name = "Adult" },
+    { id = "elder",      minProgress = 150, maxProgress = 199, scale = 1.10, name = "Elder (10% Bigger)" },
+    { id = "monster",    minProgress = 200, maxProgress = 999, scale = 1.20, name = "Monster (20% Bigger)" }
+}
+
+function VNPC_GetGrowthStageInfo(progress)
+    local val = tonumber(progress) or 100
+    for _, stage in ipairs(VNPC_LifeCycleGrowthStages) do
+        if val >= stage.minProgress and val <= stage.maxProgress then
+            return stage
+        end
+    end
+    return VNPC_LifeCycleGrowthStages[5] -- Default Adult
+end
+
+function VNPC_GetGrowthStage(ent)
+    if not IsValid(ent) then return "adult", VNPC_LifeCycleGrowthStages[5] end
+    local progress = ent.VNPC_GrowthProgress or (ent.VNPC_IsGrowingBaby and 0 or 100)
+    local info = VNPC_GetGrowthStageInfo(progress)
+    return info.id, info
+end
+
+function VNPC_UpdateGrowthStageScale(ent)
+    if not IsValid(ent) or ent:IsPlayer() then return end
+    local progress = ent.VNPC_GrowthProgress or (ent.VNPC_IsGrowingBaby and 0 or 100)
+    local stageID, stageInfo = VNPC_GetGrowthStage(ent)
+    local oldStage = ent.VNPC_CurrentGrowthStage or stageID
+
+    -- Smooth scale calculation within stage or exact stage scale
+    local targetScale = stageInfo.scale
+    if progress < 100 and stageID ~= "adult" then
+        -- Interpolate smoothly from 0.25 to 1.00 for children (progress 0 to 100)
+        targetScale = math.Clamp(0.25 + (progress / 100.0) * 0.75, 0.25, 1.00)
+    elseif progress >= 100 then
+        -- Exact stage scale: Adult = 1.00x, Elder = 1.10x, Monster = 1.20x
+        targetScale = stageInfo.scale
+    end
+
+    ent:SetModelScale(targetScale, 1)
+    ent.VNPC_CurrentGrowthStage = stageID
+    ent.VNPC_MonsterScale = targetScale
+
+    if progress >= 100 and ent.VNPC_IsGrowingBaby then
+        ent.VNPC_IsGrowingBaby = nil
+        ent.VNPC_ProtectedChild = nil
+        if (ent.VNPC_AdoptedByPredator or ent.VNPC_BornSister) and VNPC_TransformToPredator then
+            VNPC_TransformToPredator(ent, ent.VNPC_AdoptedByPredator or ent.VNPC_MotherRef)
+            return
+        end
+    end
+
+    if SERVER then
+        if stageID == "elder" or stageID == "monster" then
+            local baseHP = ent.VNPC_BaseMaxHealth or ent:GetMaxHealth() or 100
+            ent.VNPC_BaseMaxHealth = baseHP
+            local bonusHP = (stageID == "monster") and 150 or 75
+            local newMax = baseHP + bonusHP
+            ent:SetMaxHealth(newMax)
+            if ent:Health() < newMax then
+                ent:SetHealth(math.min(newMax, ent:Health() + 25))
+            end
+        end
+
+        if oldStage ~= stageID then
+            print("[V-NPCs] Growth Stage Advance: " .. tostring(ent) .. " reached the " .. string.upper(stageInfo.name) .. " stage (Scale: " .. string.format("%.2fx", targetScale) .. ")!")
+            hook.Run("VNPC_OnGrowthStageAdvance", ent, stageID, targetScale)
+        end
+    end
+end
+
+function VNPC_AddGrowthProgress(ent, amount, reason)
+    if not IsValid(ent) or ent:IsPlayer() then return end
+    local current = ent.VNPC_GrowthProgress or (ent.VNPC_IsGrowingBaby and 0 or 100)
+    ent.VNPC_GrowthProgress = math.Clamp(current + (tonumber(amount) or 0), 0, 250)
+    VNPC_UpdateGrowthStageScale(ent)
+    if reason and SERVER then
+        local stageID, info = VNPC_GetGrowthStage(ent)
+        print("[V-NPCs] Growth Progress: " .. tostring(ent) .. " gained +" .. tostring(amount) .. " growth (" .. reason .. ") -> Progress: " .. math.floor(ent.VNPC_GrowthProgress) .. " [" .. info.name .. "]")
+    end
+end
+
+-- Backward compatibility wrapper for adult monster growth calls
 function VNPC_PredatorMonsterGrowth(pred, count)
     if not IsValid(pred) or pred.VNPC_IsGrowingBaby or (pred:GetModelScale() or 1.0) < 0.95 then return end
-    if pred:IsPlayer() then return end
-
-    pred.VNPC_MonsterGrowth = (pred.VNPC_MonsterGrowth or 0) + (tonumber(count) or 1)
-    -- Grow +2% scale per prey absorbed, up to a maximum of +20% bigger than normal (1.20x scale) at 10 prey!
-    local scaleBonus = math.Clamp(pred.VNPC_MonsterGrowth * 0.02, 0.0, 0.20)
-    local targetScale = 1.00 + scaleBonus
-
-    pred.VNPC_MonsterScale = targetScale
-    pred:SetModelScale(targetScale, 1)
-
-    -- Scale MaxHealth as she grows into a Monster Predator! (+25 MaxHP per 2% scale, up to +250 MaxHP at 1.20x)
-    if SERVER then
-        local baseHP = pred.VNPC_BaseMaxHealth or pred:GetMaxHealth() or 100
-        pred.VNPC_BaseMaxHealth = baseHP
-        local monsterHP = baseHP + math.floor(scaleBonus * 1250)
-        pred:SetMaxHealth(monsterHP)
-        if pred:Health() < monsterHP then
-            pred:SetHealth(math.min(monsterHP, pred:Health() + 25))
-        end
-        print("[V-NPCs] Monster Growth: Predator " .. tostring(pred) .. " absorbed prey and grew larger! (Prey Absorbed: " .. pred.VNPC_MonsterGrowth .. ", Monster Scale: " .. string.format("%.2fx", targetScale) .. ", MaxHP: " .. monsterHP .. ")")
-        hook.Run("VNPC_OnPredatorMonsterGrowth", pred, targetScale)
-    end
+    -- Adult absorbing prey gains +25 Growth Progress (from Adult 100 -> Elder 150 -> Monster 200)
+    VNPC_AddGrowthProgress(pred, (tonumber(count) or 1) * 25.0, "Absorbed prey in stomach")
 end
 
 concommand.Add("vnpcs_pred_xp_status", function(ply)
@@ -639,19 +706,20 @@ end)
 
 concommand.Add("vnpcs_monster_growth_status", function(ply)
     print("===============================================================")
-    print("         V-NPCs PREDATOR MONSTER GROWTH STAGE STATUS           ")
+    print("         V-NPCs 7-STAGE LIFE-CYCLE GROWTH STAGE STATUS         ")
     print("===============================================================")
     local count = 0
     for _, ent in ipairs(ents.GetAll()) do
-        if IsValid(ent) and (ent.IsDrGNextbot or ent.VNPC_FemaleModelVore or ent.Predator) and not ent:IsPlayer() then
+        if IsValid(ent) and not ent:IsPlayer() and (ent.IsDrGNextbot or ent.VNPC_FemaleModelVore or ent.Predator or ent.VNPC_IsGrowingBaby or ent.VNPC_PreyCampID) then
             count = count + 1
-            local absorbed = ent.VNPC_MonsterGrowth or 0
-            local scale = ent.VNPC_MonsterScale or ent:GetModelScale() or 1.0
-            print(string.format(" - Predator #%d [%s]: Prey Absorbed = %d | Monster Scale = %.2fx (Max: 1.20x) | MaxHP = %d", ent:EntIndex(), ent.PrintName or ent:GetClass(), absorbed, scale, ent:GetMaxHealth()))
+            local stageID, info = VNPC_GetGrowthStage(ent)
+            local progress = ent.VNPC_GrowthProgress or (ent.VNPC_IsGrowingBaby and 0 or 100)
+            local scale = ent:GetModelScale() or info.scale
+            print(string.format(" - NPC #%d [%s]: Stage = %s (Scale: %.2fx) | Growth Progress = %.1f / 250", ent:EntIndex(), ent.PrintName or ent:GetClass(), string.upper(info.name), scale, progress))
         end
     end
     if count == 0 then
-        print(" - Active Predators: NONE currently spawned")
+        print(" - Active Eligible Females / Predators: NONE currently spawned")
     end
     print("===============================================================")
 end)
@@ -664,13 +732,40 @@ concommand.Add("vnpcs_test_monster_grow", function(ply)
         local count = 0
         for _, pred in ipairs(ents.GetAll()) do
             if IsValid(pred) and (pred.IsDrGNextbot or pred.VNPC_FemaleModelVore or pred.Predator) and not pred:IsPlayer() then
-                VNPC_PredatorMonsterGrowth(pred, 1)
+                VNPC_AddGrowthProgress(pred, 50.0, "vnpcs_test_monster_grow command")
                 count = count + 1
             end
         end
-        ply:ChatPrint("[V-NPCs] Added +1 Monster Growth to all " .. count .. " active predators!")
+        ply:ChatPrint("[V-NPCs] Added +50 Growth Progress to all " .. count .. " active predators!")
         return
     end
-    VNPC_PredatorMonsterGrowth(target, 1)
-    ply:ChatPrint("[V-NPCs] Added +1 Monster Growth to predator " .. tostring(target) .. "! New Scale: " .. string.format("%.2fx", target.VNPC_MonsterScale or 1.0))
+    VNPC_AddGrowthProgress(target, 50.0, "vnpcs_test_monster_grow command")
+    local id, info = VNPC_GetGrowthStage(target)
+    ply:ChatPrint("[V-NPCs] Added +50 Growth Progress to predator " .. tostring(target) .. "! Stage: " .. string.upper(info.name) .. " (" .. string.format("%.2fx", target:GetModelScale()) .. ")")
+end)
+
+concommand.Add("vnpcs_test_set_growth_stage", function(ply, cmd, args)
+    if not IsValid(ply) then return end
+    local tr = ply:GetEyeTrace()
+    local target = tr.Entity
+    if not IsValid(target) or not (target:IsNPC() or target:IsNextBot()) then
+        ply:ChatPrint("[V-NPCs] Please aim at an NPC to set their growth stage!")
+        return
+    end
+
+    local stageName = string.lower(args[1] or "elder")
+    local mapProg = {
+        ["hatchling"] = 10,
+        ["juvenile"] = 30,
+        ["adolescent"] = 60,
+        ["subadult"] = 80,
+        ["adult"] = 110,
+        ["elder"] = 160,
+        ["monster"] = 210
+    }
+    local prog = mapProg[stageName] or 160
+    target.VNPC_GrowthProgress = prog
+    VNPC_UpdateGrowthStageScale(target)
+    local id, info = VNPC_GetGrowthStage(target)
+    ply:ChatPrint("[V-NPCs] Set " .. tostring(target) .. " to growth stage: " .. string.upper(info.name) .. " (Scale: " .. string.format("%.2fx", target:GetModelScale()) .. ")!")
 end)
