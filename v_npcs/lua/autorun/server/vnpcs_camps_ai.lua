@@ -136,10 +136,14 @@ function VNPC_ConstructPredatorCampTent(camp)
     end
 
     tent:SetModel(mdl)
-    tent:SetPos(tr.HitPos + Vector(0, 0, 8))
+    tent:SetPos(tr.HitPos)
     tent:SetAngles(Angle(0, math.random(0, 360), 0))
     tent:Spawn()
     tent:Activate()
+
+    local minZ = tent:OBBMins().z
+    local zOffset = (minZ < 0) and math.abs(minZ) or 0
+    tent:SetPos(tr.HitPos + Vector(0, 0, zOffset + 2))
 
     tent.VNPC_IsPredatorTent = true
     tent.VNPC_PredatorCampID = camp.id

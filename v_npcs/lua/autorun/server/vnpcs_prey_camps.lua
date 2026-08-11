@@ -277,13 +277,21 @@ function VNPC_ConstructPreyCampWall(camp)
         mdl = "models/props_c17/fence01a.mdl"
     end
 
+    local isMetalFence = string.find(string.lower(mdl), "barricade") or (string.find(string.lower(mdl), "fence") and not string.find(string.lower(mdl), "wood_fence01a"))
+    local wallAng = Angle(targetPlan.ang.p, targetPlan.ang.y, targetPlan.ang.r)
+    if isMetalFence then
+        wallAng = Angle(targetPlan.ang.p, targetPlan.ang.y + 90, targetPlan.ang.r)
+    end
+
     wall:SetModel(mdl)
-    local minZ = wall:OBBMins().z
-    local zOffset = (minZ < 0) and math.abs(minZ) or 0
-    wall:SetPos(targetPlan.pos + Vector(0, 0, zOffset))
-    wall:SetAngles(targetPlan.ang)
+    wall:SetPos(targetPlan.pos)
+    wall:SetAngles(wallAng)
     wall:Spawn()
     wall:Activate()
+
+    local minZ = wall:OBBMins().z
+    local zOffset = (minZ < 0) and math.abs(minZ) or 0
+    wall:SetPos(targetPlan.pos + Vector(0, 0, zOffset + 2))
 
     wall.VNPC_IsPreyCampWall = true
     wall.VNPC_PreyCampID = camp.id
@@ -292,8 +300,8 @@ function VNPC_ConstructPreyCampWall(camp)
 
     if targetPlan.isGate then
         wall.VNPC_IsPreyCampGate = true
-        wall.VNPC_GateClosedAng = targetPlan.ang
-        wall.VNPC_GateOpenAng = Angle(0, targetPlan.ang.y + 90, 0)
+        wall.VNPC_GateClosedAng = wallAng
+        wall.VNPC_GateOpenAng = Angle(0, wallAng.y + 90, 0)
     end
 
     table.insert(camp.walls, wall)
@@ -611,10 +619,14 @@ function VNPC_ConstructPreyCampCourtyardDefense(camp)
     end
 
     prop:SetModel(mdl)
-    prop:SetPos(tr.HitPos + Vector(0, 0, 4))
+    prop:SetPos(tr.HitPos)
     prop:SetAngles(Angle(0, math.random(0, 360), 0))
     prop:Spawn()
     prop:Activate()
+
+    local minZ = prop:OBBMins().z
+    local zOffset = (minZ < 0) and math.abs(minZ) or 0
+    prop:SetPos(tr.HitPos + Vector(0, 0, zOffset + 2))
 
     prop.VNPC_IsPreyCampWall = true
     prop.VNPC_IsCourtyardDefense = true
