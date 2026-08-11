@@ -31,8 +31,11 @@ hook.Add("Think", "VNPCS_SleepSystem_Loop", function()
         local inCombat = IsValid(ent:GetEnemy()) or (ent.IsMoving and ent:IsMoving() and not ent.VNPC_IsReturningToCampToSleep)
 
         if ent.VNPC_IsSleeping then
-            -- Drain sleepiness bar while sleeping
+            -- Drain sleepiness bar while sleeping and regenerate health from peaceful rest
             ent.VNPC_Sleepiness = math.max(0, (ent.VNPC_Sleepiness or 80.0) - 3.5)
+            if ent.Health and ent.GetMaxHealth and ent:Health() < ent:GetMaxHealth() then
+                ent:SetHealth(math.min(ent:GetMaxHealth(), ent:Health() + 2))
+            end
 
             if inCombat or ent.VNPC_Sleepiness <= 0.0 then
                 -- Wake up refreshed or to defend!
@@ -43,6 +46,13 @@ hook.Add("Think", "VNPCS_SleepSystem_Loop", function()
         else
             -- Increase sleepiness bar over time when awake
             ent.VNPC_Sleepiness = math.Clamp((ent.VNPC_Sleepiness or 0.0) + 0.35, 0, 100)
+
+            if ent.VNPC_Sleepiness >= 75.0 and (ent.VNPC_NextSleepYawnTime or 0) <= now then
+                ent.VNPC_NextSleepYawnTime = now + 15.0
+                if ent.EmitSound then
+                    ent:EmitSound("npc/alyx/sigh01.wav", 75, math.random(88, 94))
+                end
+            end
 
             if ent.VNPC_Sleepiness >= thresh and not inCombat then
                 -- Seek safe shelter at camp before falling asleep

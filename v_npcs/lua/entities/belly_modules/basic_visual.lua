@@ -23,7 +23,9 @@ function ENT:GetBellySize() --this gets the scale of all the stuff in the stomac
 end
 
 function ENT:SetBellySize()
-    self:SetNWFloat("BellySize", self:GetBellySize())
+    local target = self:GetBellySize()
+    self.VNPC_LastSetBellySize = target
+    self:SetNWFloat("BellySize", target)
 end
 
 function ENT:SetBaseScale(num)

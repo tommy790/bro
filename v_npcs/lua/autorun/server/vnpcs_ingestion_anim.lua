@@ -409,7 +409,8 @@ hook.Add("Think", "VNPCS_IngestionAnimation_Loop", function()
         end
 
         local tNorm = math.Clamp((now - anim.startTime) / anim.duration, 0, 1)
-        prey.VNPC_IngestionDepth = math.sin(tNorm * math.pi * 0.5)
+        local tEase = tNorm * tNorm * (3 - 2 * tNorm)
+        prey.VNPC_IngestionDepth = math.sin(tEase * math.pi * 0.5)
 
         if IsValid(belly) and belly.SetBellySize then
             belly:SetBellySize()
@@ -426,38 +427,38 @@ hook.Add("Think", "VNPCS_IngestionAnimation_Loop", function()
                 pred:SetAngles(fwd:Angle())
             end
 
-            if tNorm < 0.35 then
+            if tEase < 0.35 then
                 -- Leap/jump onto the heavy ground prey with mouth wide open!
-                local pNorm = tNorm / 0.35
+                local pNorm = tEase / 0.35
                 local arcZ = math.sin(pNorm * math.pi) * 35
                 local curP = LerpVector(pNorm, startP, targetP - fwd * 25) + Vector(0, 0, arcZ)
                 pred:SetPos(curP)
                 if pred.SetFacialExpression then pcall(pred.SetFacialExpression, pred, 1) end
             else
                 -- Slow grounded swallowing: envelope prey from head to tail while prey stays on ground!
-                local sNorm = (tNorm - 0.35) / 0.65
+                local sNorm = (tEase - 0.35) / 0.65
                 local curP = LerpVector(sNorm, targetP - fwd * 25, targetP + fwd * 10)
                 pred:SetPos(curP)
                 if pred.SetFacialExpression then pcall(pred.SetFacialExpression, pred, 1) end
             end
             prey:SetPos(prey.VNPC_GroundIngestStartPos or prey:GetPos())
         elseif isUnbirth and VNPC_ApplyUnbirthIngestionPositioning then
-            VNPC_ApplyUnbirthIngestionPositioning(pred, prey, tNorm)
+            VNPC_ApplyUnbirthIngestionPositioning(pred, prey, tEase)
         elseif prey.VNPC_IsAntlionPrey then
             -- ANTLION LIFT & SLOW SWALLOW: Predator lifts Antlion off the ground, holds it in front of her face, and forces it into her mouth slowly!
             local headBone = pred:LookupBone("ValveBiped.Bip01_Head1") or pred:LookupBone("Head") or pred:LookupBone("head")
             local mouthPos = headBone and pred:GetBonePosition(headBone) or (pred:GetPos() + Vector(0, 0, 64))
             local startPos = pred:GetPos() + pred:GetForward() * 32 + Vector(0, 0, 10)
 
-            if tNorm < 0.40 then
+            if tEase < 0.40 then
                 -- Lifting Phase: lift Antlion up in front of open mouth
-                local lNorm = tNorm / 0.40
+                local lNorm = tEase / 0.40
                 local curP = LerpVector(lNorm, startPos, mouthPos + pred:GetForward() * 22 - pred:GetUp() * 4)
                 prey:SetPos(curP)
                 if pred.SetFacialExpression then pcall(pred.SetFacialExpression, pred, 1) end
             else
                 -- Forcing into mouth & slow swallow phase
-                local sNorm = (tNorm - 0.40) / 0.60
+                local sNorm = (tEase - 0.40) / 0.60
                 local curP = LerpVector(sNorm, mouthPos + pred:GetForward() * 22 - pred:GetUp() * 4, mouthPos - pred:GetForward() * 6 - pred:GetUp() * 16)
                 prey:SetPos(curP)
                 if pred.SetFacialExpression then pcall(pred.SetFacialExpression, pred, 1) end
@@ -468,34 +469,37 @@ hook.Add("Think", "VNPCS_IngestionAnimation_Loop", function()
             if headBone then
                 local headPos, headAng = pred:GetBonePosition(headBone)
                 if headPos then
-                    -- Move prey inward toward throat as tNorm increases
-                    local inOffset = LerpVector(math.Clamp(tNorm, 0, 1), pred:GetForward() * 18, -pred:GetForward() * 5 - pred:GetUp() * 12)
+                    -- Move prey inward toward throat as tEase increases
+                    local inOffset = LerpVector(math.Clamp(tEase, 0, 1), pred:GetForward() * 18, -pred:GetForward() * 5 - pred:GetUp() * 12)
                     prey:SetPos(headPos + inOffset)
                 end
             end
         end
 
-        VNPC_AnimatePreyStruggling(prey, anim.stage, tNorm, pred.VNPC_AssignedMoveset)
+        VNPC_AnimatePreyStruggling(prey, anim.stage, tEase, pred.VNPC_AssignedMoveset)
         if not isUnbirth then
-            VNPC_ApplyEsophagusBulge(pred, tNorm)
+            VNPC_ApplyEsophagusBulge(pred, tEase)
         end
 
-        -- STAGE 1 (tNorm >= 0.05): Head enters mouth -> Deflate head & neck bones so there is zero clipping!
-        if tNorm >= 0.05 and anim.stage < 1 then
+        -- STAGE 1 (tEase >= 0.05): Head enters mouth -> Deflate head & neck bones so there is zero clipping!
+        if tEase >= 0.05 and anim.stage < 1 then
             anim.stage = 1
             deflateBoneCategory(prey, "head", Vector(0.01, 0.01, 0.01))
+            if prey.EmitSound then prey:EmitSound("physics/flesh/flesh_squishy_impact_hard" .. math.random(1, 4) .. ".wav", 75, math.random(95, 105)) end
         end
 
-        -- STAGE 2 (tNorm >= 0.35): Upper body enters throat -> Deflate torso, arms, and collarbones!
-        if tNorm >= 0.35 and anim.stage < 2 then
+        -- STAGE 2 (tEase >= 0.35): Upper body enters throat -> Deflate torso, arms, and collarbones!
+        if tEase >= 0.35 and anim.stage < 2 then
             anim.stage = 2
             deflateBoneCategory(prey, "torso", Vector(0.01, 0.01, 0.01))
+            if prey.EmitSound then prey:EmitSound("physics/flesh/flesh_squishy_impact_hard" .. math.random(1, 4) .. ".wav", 75, math.random(95, 105)) end
         end
 
-        -- STAGE 3 (tNorm >= 0.70): Legs and feet slide in -> Deflate lower body!
-        if tNorm >= 0.70 and anim.stage < 3 then
+        -- STAGE 3 (tEase >= 0.70): Legs and feet slide in -> Deflate lower body!
+        if tEase >= 0.70 and anim.stage < 3 then
             anim.stage = 3
             deflateBoneCategory(prey, "legs", Vector(0.01, 0.01, 0.01))
+            if prey.EmitSound then prey:EmitSound("physics/flesh/flesh_squishy_impact_hard" .. math.random(1, 4) .. ".wav", 75, math.random(95, 105)) end
             if pred.SetFacialExpression then
                 pcall(pred.SetFacialExpression, pred, 4) -- Final Gulp face!
             end

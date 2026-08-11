@@ -596,6 +596,13 @@ function VNPC_PrivateMating_AI(now)
                 if pred.SetNWBool then pred:SetNWBool("VNPC_IsMatingBonePose", true) end
                 if mate.SetNWBool then mate:SetNWBool("VNPC_IsMatingBonePose", true) end
 
+                -- Clear floor debris around private spot so their mating bone pose is unobstructed
+                for _, obs in ipairs(ents.FindInSphere(spot, 60)) do
+                    if IsValid(obs) and obs ~= pred and obs ~= mate and (obs:GetClass() == "prop_ragdoll" or obs:GetClass() == "prop_physics") then
+                        obs:SetPos(obs:GetPos() + Vector(0, 0, 4) + (obs:GetPos() - spot):GetNormalized() * 80)
+                    end
+                end
+
                 -- Position couple facing each other affectionately
                 local dir = (mate:GetPos() - pred:GetPos()):GetNormalized()
                 dir.z = 0
@@ -827,6 +834,7 @@ function VNPC_WildFamilyDefense_AI(now)
             for _, p in ipairs(protectees) do
                 if threat:GetPos():DistToSqr(p:GetPos()) <= (750 * 750) or threat:GetEnemy() == p then
                     -- Mother / Mate fiercely rushes to defend their family!
+                    w.VNPC_ProtectorResilience = now + 10.0
                     if w.SetEnemy then pcall(w.SetEnemy, w, threat) end
                     if w.SetLastPosition then pcall(w.SetLastPosition, w, threat:GetPos()) end
                     if w.SetSchedule then pcall(w.SetSchedule, w, SCHED_FORCED_GO_RUN) end
@@ -846,6 +854,9 @@ end
 
 hook.Add("EntityTakeDamage", "VNPC_WildFamilyProtection_DamageHook", function(target, dmginfo)
     if not IsValid(target) then return end
+    if (target.VNPC_ProtectorResilience or 0) > CurTime() then
+        dmginfo:ScaleDamage(0.5)
+    end
     local attacker = dmginfo:GetAttacker()
     if not IsValid(attacker) or attacker == target or attacker.Vored or attacker.VNPC_Vored then return end
 

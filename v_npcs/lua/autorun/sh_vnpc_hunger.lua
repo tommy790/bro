@@ -27,11 +27,16 @@ function VNPC_FindRecognizedWaterSource(pred)
     if not IsValid(pred) then return nil end
     local myPos = pred:GetPos()
 
+    if pred.VNPC_RememberedWaterSource and myPos:DistToSqr(pred.VNPC_RememberedWaterSource) < (4000 * 4000) then
+        return pred.VNPC_RememberedWaterSource
+    end
+
     -- 1. Check Predator Camp water source barrel / boiler
     if pred.VNPC_CampID and VNPC_GetPredatorCamp then
         local camp = VNPC_GetPredatorCamp(pred)
         if camp and IsValid(camp.watersource) then
-            return camp.watersource:GetPos()
+            pred.VNPC_RememberedWaterSource = camp.watersource:GetPos()
+            return pred.VNPC_RememberedWaterSource
         end
     end
 
@@ -49,7 +54,10 @@ function VNPC_FindRecognizedWaterSource(pred)
             end
         end
     end
-    if bestPos then return bestPos end
+    if bestPos then
+        pred.VNPC_RememberedWaterSource = bestPos
+        return bestPos
+    end
 
     -- 3. Check natural map water (rivers, lakes, ponds)
     for r = 200, 2400, 400 do
@@ -57,6 +65,7 @@ function VNPC_FindRecognizedWaterSource(pred)
             local angle = math.rad((s - 1) * 30)
             local testPos = myPos + Vector(math.cos(angle) * r, math.sin(angle) * r, 10)
             if bit.band(util.PointContents(testPos), CONTENTS_WATER) ~= 0 then
+                pred.VNPC_RememberedWaterSource = testPos
                 return testPos
             end
         end

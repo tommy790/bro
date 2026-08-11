@@ -511,6 +511,17 @@ hook.Add("Think", "VNPC_PredatorCamps_AI_Loop", function()
                     if member.SetLastPosition then pcall(member.SetLastPosition, member, camp.pos) end
                     if member.SetSchedule then pcall(member.SetSchedule, member, SCHED_FORCED_GO_RUN) end
 
+                    -- Check anti-stuck recovery while carrying prey home
+                    if member.GetVelocity and member:GetVelocity():Length2DSqr() < 4 then
+                        member.VNPC_StuckTime = (member.VNPC_StuckTime or now) + 1.0
+                        if (now - member.VNPC_StuckTime) > 3.0 then
+                            member.VNPC_StuckTime = now
+                            member:SetPos(member:GetPos() + Vector(0, 0, 12))
+                        end
+                    else
+                        member.VNPC_StuckTime = nil
+                    end
+
                     local distSqr = member:GetPos():DistToSqr(camp.pos)
                     if distSqr <= (250 * 250) then
                         VNPC_ForagerFeedCamp(member, camp, belly)
@@ -524,6 +535,25 @@ hook.Add("Think", "VNPC_PredatorCamps_AI_Loop", function()
                         if member.SetLastPosition then pcall(member.SetLastPosition, member, camp.pos) end
                         if member.SetSchedule then pcall(member.SetSchedule, member, SCHED_FORCED_GO) end
                     end
+                end
+            end
+        end
+    end
+end)
+
+hook.Add("EntityTakeDamage", "VNPC_PredatorCamp_SisterDefenseHook", function(target, dmginfo)
+    if not IsValid(target) or not target.VNPC_CampID then return end
+    local attacker = dmginfo:GetAttacker()
+    if not IsValid(attacker) or attacker == target or attacker.VNPC_CampID == target.VNPC_CampID then return end
+
+    local camp = VNPC_GetPredatorCamp(target)
+    if camp and camp.members then
+        for _, sister in ipairs(camp.members) do
+            if IsValid(sister) and sister ~= target and sister:Health() > 0 and not sister.VNPC_IsSleeping then
+                if sister:GetPos():DistToSqr(target:GetPos()) <= (1500 * 1500) then
+                    if sister.SetEnemy then pcall(sister.SetEnemy, sister, attacker) end
+                    if sister.SetLastPosition then pcall(sister.SetLastPosition, sister, attacker:GetPos()) end
+                    if sister.SetSchedule then pcall(sister.SetSchedule, sister, SCHED_FORCED_GO_RUN) end
                 end
             end
         end

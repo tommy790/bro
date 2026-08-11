@@ -131,6 +131,16 @@ hook.Add("Think", "VNPCS_HL2Campaign_DirectorLoop", function()
                     npc.VNPC_CampaignRemovedRange = true
                 end
                 if npc.SetSchedule then pcall(npc.SetSchedule, npc, SCHED_CHASE_ENEMY) end
+
+                -- Campaign Squad Coordination: alert nearby friendly predators to assist in surrounding the enemy
+                for _, ally in ipairs(ents.FindInSphere(npc:GetPos(), 300)) do
+                    if IsValid(ally) and ally ~= npc and ally ~= enemy and ally:Health() > 0 and (ally.VNPC_FemaleModelVore or ally.IsDrGNextbot or ally.Predator) then
+                        if not IsValid(ally:GetEnemy()) then
+                            if ally.SetEnemy then pcall(ally.SetEnemy, ally, enemy) end
+                            if ally.SetSchedule then pcall(ally.SetSchedule, ally, SCHED_CHASE_ENEMY) end
+                        end
+                    end
+                end
             end
         else
             if npc.CapabilitiesAdd and npc.VNPC_CampaignRemovedRange then

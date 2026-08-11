@@ -163,7 +163,8 @@ hook.Add("Think", "VNPCS_WillingCrawlAnimation_Loop", function()
         end
 
         local tNorm = math.Clamp((now - anim.startTime) / anim.duration, 0, 1)
-        prey.VNPC_IngestionDepth = math.sin(tNorm * math.pi * 0.5)
+        local tEase = tNorm * tNorm * (3 - 2 * tNorm)
+        prey.VNPC_IngestionDepth = math.sin(tEase * math.pi * 0.5)
 
         if IsValid(belly) and belly.SetBellySize then
             belly:SetBellySize()
@@ -175,7 +176,7 @@ hook.Add("Think", "VNPCS_WillingCrawlAnimation_Loop", function()
             local wombPos = wombBone and pred:GetBonePosition(wombBone) or (pred:GetPos() + Vector(0, 0, 32))
             local entrancePos = wombPos - pred:GetForward() * 22 - pred:GetUp() * 4
 
-            local curPos = LerpVector(tNorm, entrancePos, wombPos + pred:GetForward() * 4)
+            local curPos = LerpVector(tEase, entrancePos, wombPos + pred:GetForward() * 4)
             prey:SetPos(curPos)
             prey:SetAngles(Angle(0, pred:GetAngles().y, 0))
         else
@@ -187,15 +188,15 @@ hook.Add("Think", "VNPCS_WillingCrawlAnimation_Loop", function()
                     local mouthWorld = headPos + pred:GetForward() * 5 + pred:GetUp() * 1
                     local stomachWorld = belly:WorldSpaceCenter() + pred:GetUp() * 20
 
-                    if tNorm < 0.25 then
+                    if tEase < 0.25 then
                         -- STAGE 1 (0.0 to 0.25): Crawl up from chest/lap to open mouth
                         local climbStart = headPos + pred:GetForward() * 25 - pred:GetUp() * 15
-                        local climbPos = LerpVector(tNorm / 0.25, climbStart, mouthWorld)
+                        local climbPos = LerpVector(tEase / 0.25, climbStart, mouthWorld)
                         prey:SetPos(climbPos)
                         prey:SetAngles(Angle(180, pred:GetAngles().y, 0))
                     else
                         -- STAGE 2-4 (0.25 to 1.0): Slip down the esophagus into the stomach
-                        local esophNorm = (tNorm - 0.25) / 0.75
+                        local esophNorm = (tEase - 0.25) / 0.75
                         local esophWorld = LerpVector(esophNorm, mouthWorld, stomachWorld)
                         prey:SetPos(esophWorld)
                         prey:SetAngles(Angle(180, pred:GetAngles().y, 0))
@@ -204,21 +205,24 @@ hook.Add("Think", "VNPCS_WillingCrawlAnimation_Loop", function()
             end
         end
 
-        VNPC_AnimateWillingPreyCrawling(prey, anim.stage, tNorm)
+        VNPC_AnimateWillingPreyCrawling(prey, anim.stage, tEase)
 
-        if tNorm >= 0.30 and anim.stage < 1 then
+        if tEase >= 0.30 and anim.stage < 1 then
             anim.stage = 1
             deflateBoneCategory(prey, "head", Vector(0.01, 0.01, 0.01))
+            if prey.EmitSound then prey:EmitSound("physics/flesh/flesh_squishy_impact_hard" .. math.random(1, 4) .. ".wav", 75, math.random(95, 105)) end
         end
 
-        if tNorm >= 0.45 and anim.stage < 2 then
+        if tEase >= 0.45 and anim.stage < 2 then
             anim.stage = 2
             deflateBoneCategory(prey, "torso", Vector(0.01, 0.01, 0.01))
+            if prey.EmitSound then prey:EmitSound("physics/flesh/flesh_squishy_impact_hard" .. math.random(1, 4) .. ".wav", 75, math.random(95, 105)) end
         end
 
-        if tNorm >= 0.70 and anim.stage < 3 then
+        if tEase >= 0.70 and anim.stage < 3 then
             anim.stage = 3
             deflateBoneCategory(prey, "legs", Vector(0.01, 0.01, 0.01))
+            if prey.EmitSound then prey:EmitSound("physics/flesh/flesh_squishy_impact_hard" .. math.random(1, 4) .. ".wav", 75, math.random(95, 105)) end
         end
 
         if tNorm >= 1.00 then

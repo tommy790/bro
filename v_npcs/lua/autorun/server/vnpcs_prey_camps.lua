@@ -906,6 +906,27 @@ hook.Add("Think", "VNPC_PreyCamps_AI_Loop", function()
         local baseRate = camp_resource_rate:GetFloat()
         camp.resources = (camp.resources or 0) + ((baseRate + #camp.members * 0.35) * dt)
 
+        -- Intelligent Resource Harvesting: scan for nearby scrap/junk props around the camp to harvest
+        for _, scrap in ipairs(ents.FindInSphere(camp.pos, 1000)) do
+            if IsValid(scrap) and scrap:GetClass() == "prop_physics" and not scrap.VNPC_IsPreyCampWall and not scrap.VNPC_IsPreyCampHutPiece and not scrap.VNPC_IsCourtyardDefense and not scrap.VNPC_NoVore then
+                if scrap:GetPos():DistToSqr(camp.pos) < (300 * 300) then
+                    camp.resources = (camp.resources or 0) + 10.0
+                    scrap:Remove()
+                    break
+                end
+            end
+        end
+
+        -- Courtyard Cover Defense Tactics: when fort is breached or under attack, defenders take cover behind courtyard defenses
+        if (camp.breachAlertTime or 0) > (now - 15.0) and #(camp.courtyardDefenses or {}) > 0 then
+            for _, mem in ipairs(camp.members) do
+                if IsValid(mem) and mem:Health() > 0 and not mem.Vored and not mem.VNPC_IsSleeping then
+                    if mem.SetLastPosition then pcall(mem.SetLastPosition, mem, camp.courtyardDefenses[1]:GetPos()) end
+                    if mem.SetSchedule then pcall(mem.SetSchedule, mem, SCHED_TAKE_COVER_FROM_ENEMY) end
+                end
+            end
+        end
+
         -- Build wall fortifications when resources permit
         local cost = camp_wall_cost:GetFloat()
         local maxWalls = camp_max_walls:GetInt()
