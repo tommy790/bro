@@ -165,9 +165,9 @@ function VNPC_PlanPreyCampLayout(camp)
         end
     end
 
-    -- Dynamic perimeter radius adapts to living area size & member count
-    local targetRadius = math.Clamp(math.max(260, maxMemberDist + 150), 260, 700)
-    local numAngles = math.Clamp(8 + math.floor(#(camp.members or {}) * 0.4), 8, 16)
+    -- Dynamic perimeter radius adapts to living area size, member count, & territory expansion
+    local targetRadius = math.Clamp(math.max(camp.territoryRadius or 450.0, maxMemberDist + 150), 260, 3000)
+    local numAngles = math.Clamp(8 + math.floor((targetRadius - 260) / 75), 8, 28)
     local anchorPoints = {}
 
     -- 2. Cast radial 3D terrain raycasts to find natural world walls, buildings, or slopes
@@ -843,6 +843,8 @@ hook.Add("Think", "VNPC_PreyCamps_AI_Loop", function()
             local wallPos = wall:GetPos()
             for _, pred in ipairs(ents.FindInSphere(wallPos, 155)) do
                 if not IsValid(pred) or pred:Health() <= 0 then continue end
+                if pred.VNPC_PreyCampID and pred.VNPC_PreyCampID == camp.id then continue end
+                if VNPC_IsFemalePreyCitizen and VNPC_IsFemalePreyCitizen(pred) then continue end
                 if pred.IsDrGNextbot or pred.VNPC_FemaleModelVore or pred.Predator then
                     local belly = pred.VNPC_Belly or pred.Belly
                     local hasSpace = not IsValid(belly) or not belly.Prey or #belly.Prey < 5
@@ -862,6 +864,8 @@ hook.Add("Think", "VNPC_PreyCamps_AI_Loop", function()
             local hutPos = hut:GetPos()
             for _, pred in ipairs(ents.FindInSphere(hutPos, 160)) do
                 if not IsValid(pred) or pred:Health() <= 0 then continue end
+                if pred.VNPC_PreyCampID and pred.VNPC_PreyCampID == camp.id then continue end
+                if VNPC_IsFemalePreyCitizen and VNPC_IsFemalePreyCitizen(pred) then continue end
                 if pred.IsDrGNextbot or pred.VNPC_FemaleModelVore or pred.Predator then
                     local belly = pred.VNPC_Belly or pred.Belly
                     local hasSpace = not IsValid(belly) or not belly.Prey or #belly.Prey < 5
@@ -870,6 +874,34 @@ hook.Add("Think", "VNPC_PreyCamps_AI_Loop", function()
                         camp.breachAlertTime = now
                         VNPC_PredatorBreachPreyCampHut(pred, hut, camp)
                         break
+                    end
+                end
+            end
+        end
+
+        -- Dynamic Territory Expansion: Citizens actively expand their territory border outward as resources and population grow
+        camp.territoryRadius = camp.territoryRadius or 450.0
+        if camp.fortified and camp.resources >= 25.0 and #camp.members >= 5 and (camp.lastTerritoryExpandTime or 0) <= now then
+            if camp.territoryRadius < 3000.0 then
+                camp.lastTerritoryExpandTime = now + 40.0
+                camp.resources = math.max(0, camp.resources - 25.0)
+                camp.territoryRadius = math.min(3000.0, camp.territoryRadius + 200.0)
+                camp.plannedWalls = nil
+                camp.fortified = false
+            end
+        end
+
+        -- Instruct able-bodied citizens to patrol out and secure the expanded territory borders
+        if (camp.territoryRadius or 450.0) > 500.0 and (camp.lastPatrolOrderTime or 0) <= now then
+            camp.lastPatrolOrderTime = now + 15.0
+            for idx, mem in ipairs(camp.members) do
+                if IsValid(mem) and mem:Health() > 0 and not mem.VNPC_IsPregnant and not IsValid(mem:GetEnemy()) then
+                    if mem.VNPC_PreyRole ~= "emissary" and not mem.VNPC_IsPermanentFortPredator then
+                        local ang = math.rad(math.random(0, 360))
+                        local r = math.random(300, camp.territoryRadius * 0.9)
+                        local pPos = camp.pos + Vector(math.cos(ang) * r, math.sin(ang) * r, 0)
+                        if mem.SetLastPosition then pcall(mem.SetLastPosition, mem, pPos) end
+                        if mem.SetSchedule then pcall(mem.SetSchedule, mem, SCHED_FORCED_GO) end
                     end
                 end
             end
@@ -935,8 +967,8 @@ concommand.Add("vnpcs_prey_camps_status", function(ply)
                 pregCount = pregCount + 1
             end
         end
-        print(string.format(" -> Prey Camp [#%d] | Members: %d (Pregnant: %d) | Walls: %d | Huts: %d | Resources: %.1f | Fortified: %s",
-            camp.id, #camp.members, pregCount, #camp.walls, #(camp.huts or {}), camp.resources or 0, tostring(camp.fortified or false)))
+        print(string.format(" -> Prey Camp [#%d] | Members: %d (Pregnant: %d) | Territory Radius: %d | Walls: %d | Huts: %d | Courtyard Defenses: %d | Resources: %.1f | Fortified: %s",
+            camp.id, #camp.members, pregCount, math.floor(camp.territoryRadius or 450), #camp.walls, #(camp.huts or {}), #(camp.courtyardDefenses or {}), camp.resources or 0, tostring(camp.fortified or false)))
     end
     print("Total active prey camps: " .. #VNPC_ActivePreyCamps)
     print("=========================================")
@@ -1029,6 +1061,26 @@ concommand.Add("vnpcs_test_build_hut", function(ply)
     end
 end)
 
+concommand.Add("vnpcs_test_prey_expand_territory", function(ply)
+    if not IsValid(ply) then return end
+    local tr = ply:GetEyeTrace()
+    local target = tr.Entity
+    if not IsValid(target) or not VNPC_IsEligiblePreyNPC(target) then
+        ply:ChatPrint("[V-NPCs] Please aim at a valid citizen in a Prey Camp to test territory expansion!")
+        return
+    end
+    local camp = VNPC_GetPreyCamp(target)
+    if not camp then
+        camp = VNPC_AssignPreyToCamp(target)
+    end
+    if camp then
+        camp.territoryRadius = math.min(3000.0, (camp.territoryRadius or 450.0) + 300.0)
+        camp.plannedWalls = nil
+        camp.fortified = false
+        ply:ChatPrint("[V-NPCs] Prey Camp #" .. camp.id .. " expanded territory radius to " .. math.floor(camp.territoryRadius) .. " units and triggered dynamic perimeter expansion!")
+    end
+end)
+
 concommand.Add("vnpcs_clear_prey_camps", function(ply)
     local count = #VNPC_ActivePreyCamps
     for _, camp in ipairs(VNPC_ActivePreyCamps) do
@@ -1037,6 +1089,9 @@ concommand.Add("vnpcs_clear_prey_camps", function(ply)
         end
         for _, hut in ipairs(camp.huts or {}) do
             if IsValid(hut) then hut:Remove() end
+        end
+        for _, def in ipairs(camp.courtyardDefenses or {}) do
+            if IsValid(def) then def:Remove() end
         end
     end
     for _, ent in ipairs(ents.GetAll()) do

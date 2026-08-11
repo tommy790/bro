@@ -143,6 +143,9 @@ function VNPC_GiveFemaleModelVore(ent)
     function ent:EatEntity(target)
         if not IsValid(target) or (self.Swallowing and not self._InClumpVore) or target.Vored or self.Vored then return false end
         if target.VNPC_DigestedBone or target.VNPC_BoneOwner or target.VNPC_NoVore then return false end
+        if target.VNPC_IsPreyCampWall or target.VNPC_IsPreyCampHutPiece or target.VNPC_IsCourtyardDefense then
+            if self.VNPC_PreyCampID and target.VNPC_PreyCampID == self.VNPC_PreyCampID then return false end
+        end
         if VNPC_IsProtectedChildPrey and VNPC_IsProtectedChildPrey(target) then return false end
         if VNPC_IsPreyEmissary and VNPC_IsPreyEmissary(target) then return false end
         if target.VNPC_PreyCampID and self.VNPC_PreyCampID and target.VNPC_PreyCampID == self.VNPC_PreyCampID then return false end
@@ -389,11 +392,17 @@ function VNPC_GiveFemaleModelVore(ent)
 
     function ent:EatCondition(prey)
         if not IsValid(prey) or prey.VNPC_DigestedBone or prey.VNPC_BoneOwner or prey.VNPC_NoVore then return false end
+        if prey.VNPC_IsPreyCampWall or prey.VNPC_IsPreyCampHutPiece or prey.VNPC_IsCourtyardDefense then
+            if self.VNPC_PreyCampID and prey.VNPC_PreyCampID == self.VNPC_PreyCampID then return false end
+        end
         return true
     end
 
     function ent:CanEat(prey)
         if not IsValid(prey) or prey.VNPC_DigestedBone or prey.VNPC_BoneOwner or prey.VNPC_NoVore then return false end
+        if prey.VNPC_IsPreyCampWall or prey.VNPC_IsPreyCampHutPiece or prey.VNPC_IsCourtyardDefense then
+            if self.VNPC_PreyCampID and prey.VNPC_PreyCampID == self.VNPC_PreyCampID then return false end
+        end
         return true
     end
 
