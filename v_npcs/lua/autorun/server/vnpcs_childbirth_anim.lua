@@ -136,6 +136,7 @@ function VNPC_StartChildbirthAnimation(mother, child, camp)
                 table.insert(camp.members, child)
             end
             child.VNPC_PreyCampID = camp.id
+            camp.townDevPoints = (camp.townDevPoints or 0) + 50.0
         end
         if mother.VNPC_PreyCampBabyMother or mother.VNPC_IsPermanentFortPredator then
             child.VNPC_BornSister = nil

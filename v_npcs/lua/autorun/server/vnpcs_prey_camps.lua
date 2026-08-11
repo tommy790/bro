@@ -11,6 +11,8 @@ local camp_max_huts = CreateConVar("vnpcs_prey_camp_max_huts", "4", {FCVAR_ARCHI
 local love_enabled = CreateConVar("vnpcs_prey_camp_love_enabled", "1", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Enable love and pregnancy population growth in fortified prey camps")
 local pregnancy_time = CreateConVar("vnpcs_prey_camp_pregnancy_time", "120.0", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Duration in seconds for a pregnant female citizen to bear a new citizen")
 local camp_max_members = CreateConVar("vnpcs_prey_camp_max_members", "25", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Maximum total member capacity per prey camp")
+local town_evolve_enabled = CreateConVar("vnpcs_town_evolution_enabled", "1", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Enable automatic fort-to-town development and evolution over time")
+local town_evolve_rate = CreateConVar("vnpcs_town_evolution_rate", "1.5", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Base town development points earned per second per camp")
 
 VNPC_ActivePreyCamps = VNPC_ActivePreyCamps or {}
 
@@ -28,6 +30,267 @@ local PREY_HUT_PIECE_MODELS = {
     wall_front_r = "models/props_debris/wood_board04a.mdl", -- Front right doorframe panel
     roof = "models/props_junk/wood_pallet001a.mdl"         -- Roof pallet
 }
+
+VNPC_TownDevelopmentStages = VNPC_TownDevelopmentStages or {
+    [1] = {
+        name = "OUTPOST",
+        title = "Basic Fort Outpost",
+        ptsRequired = 0,
+        minMembers = 1,
+        radius = 350,
+        maxWalls = 12,
+        maxHuts = 3,
+        maxMembers = 15,
+        description = "Basic camp perimeter with fire pit and leader hut."
+    },
+    [2] = {
+        name = "SETTLEMENT",
+        title = "Fortified Settlement",
+        ptsRequired = 150,
+        minMembers = 4,
+        radius = 550,
+        maxWalls = 18,
+        maxHuts = 6,
+        maxMembers = 25,
+        description = "Upgraded barricades and expanded courtyard settlement."
+    },
+    [3] = {
+        name = "VILLAGE",
+        title = "Expanding Village",
+        ptsRequired = 350,
+        minMembers = 6,
+        radius = 750,
+        maxWalls = 24,
+        maxHuts = 10,
+        maxMembers = 35,
+        description = "Adds town streetlights and storage supply crates along pathways."
+    },
+    [4] = {
+        name = "FORTIFIED_TOWN",
+        title = "Fortified Town",
+        ptsRequired = 650,
+        minMembers = 10,
+        radius = 1000,
+        maxWalls = 32,
+        maxHuts = 16,
+        maxMembers = 50,
+        description = "Adds town watchtowers and guard checkpoints around outer perimeter."
+    },
+    [5] = {
+        name = "ENTIRE_TOWN",
+        title = "Entire Town",
+        ptsRequired = 1000,
+        minMembers = 15,
+        radius = 1400,
+        maxWalls = 48,
+        maxHuts = 24,
+        maxMembers = 75,
+        description = "Full town development with public market gathering square, benches, and outer town walls."
+    }
+}
+
+function VNPC_ConstructTownInfrastructure(camp, stage)
+    if not camp or not camp.pos then return end
+    camp.townInfrastructure = camp.townInfrastructure or {}
+
+    local center = camp.pos
+    local radius = camp.territoryRadius or 350
+
+    if stage == 2 then
+        local upgraded = 0
+        for _, wall in ipairs(camp.walls or {}) do
+            if IsValid(wall) and string.lower(wall:GetModel() or ""):find("wood_fence") then
+                wall:SetModel("models/props_fortifications/barricade01a.mdl")
+                wall:SetHealth(450)
+                upgraded = upgraded + 1
+                if upgraded >= 4 then break end
+            end
+        end
+    elseif stage == 3 then
+        local angles = { 45, 225 }
+        for _, angDeg in ipairs(angles) do
+            local rad = math.rad(angDeg)
+            local pos = center + Vector(math.cos(rad) * (radius * 0.45), math.sin(rad) * (radius * 0.45), 0)
+            local tr = util.TraceLine({ start = pos + Vector(0,0,40), endpos = pos - Vector(0,0,150), mask = MASK_SOLID_BRUSHONLY })
+            if tr.Hit and tr.HitNormal.z >= 0.70 then
+                local lamp = ents.Create("prop_physics")
+                if IsValid(lamp) then
+                    local mdl = "models/props_c17/lamppost03a_off.mdl"
+                    if not util.IsValidModel(mdl) then mdl = "models/props_wasteland/wood_fence01a.mdl" end
+                    lamp:SetModel(mdl)
+                    lamp:SetPos(tr.HitPos)
+                    lamp:SetAngles(Angle(0, angDeg, 0))
+                    lamp:Spawn()
+                    lamp:Activate()
+                    lamp.VNPC_IsTownInfrastructure = true
+                    lamp.VNPC_CampID = camp.id
+                    lamp.VNPC_NoVore = true
+                    lamp:SetHealth(500)
+                    local phys = lamp:GetPhysicsObject()
+                    if IsValid(phys) then phys:EnableMotion(false) phys:Sleep() end
+                    table.insert(camp.townInfrastructure, lamp)
+                end
+
+                local crate = ents.Create("prop_physics")
+                if IsValid(crate) then
+                    crate:SetModel("models/props_junk/wood_crate001a.mdl")
+                    crate:SetPos(tr.HitPos + Vector(25, 0, 5))
+                    crate:SetAngles(Angle(0, angDeg + 90, 0))
+                    crate:Spawn()
+                    crate:Activate()
+                    crate.VNPC_IsTownInfrastructure = true
+                    crate.VNPC_CampID = camp.id
+                    crate.VNPC_NoVore = true
+                    crate:SetHealth(300)
+                    local cPhys = crate:GetPhysicsObject()
+                    if IsValid(cPhys) then cPhys:EnableMotion(false) cPhys:Sleep() end
+                    table.insert(camp.townInfrastructure, crate)
+                end
+            end
+        end
+    elseif stage == 4 then
+        local angles = { 0, 180 }
+        for _, angDeg in ipairs(angles) do
+            local rad = math.rad(angDeg)
+            local pos = center + Vector(math.cos(rad) * (radius * 0.75), math.sin(rad) * (radius * 0.75), 0)
+            local tr = util.TraceLine({ start = pos + Vector(0,0,40), endpos = pos - Vector(0,0,150), mask = MASK_SOLID_BRUSHONLY })
+            if tr.Hit and tr.HitNormal.z >= 0.70 then
+                local tower = ents.Create("prop_physics")
+                if IsValid(tower) then
+                    local mdl = "models/props_fortifications/barricade_tall01a.mdl"
+                    if not util.IsValidModel(mdl) then mdl = "models/props_fortifications/barricade01a.mdl" end
+                    tower:SetModel(mdl)
+                    tower:SetPos(tr.HitPos)
+                    tower:SetAngles(Angle(0, angDeg, 0))
+                    tower:Spawn()
+                    tower:Activate()
+                    tower.VNPC_IsTownInfrastructure = true
+                    tower.VNPC_IsWatchtower = true
+                    tower.VNPC_CampID = camp.id
+                    tower.VNPC_NoVore = true
+                    tower:SetHealth(600)
+                    local phys = tower:GetPhysicsObject()
+                    if IsValid(phys) then phys:EnableMotion(false) phys:Sleep() end
+                    table.insert(camp.townInfrastructure, tower)
+                end
+            end
+        end
+    elseif stage == 5 then
+        local marketAng = math.rad(135)
+        local marketPos = center + Vector(math.cos(marketAng) * (radius * 0.35), math.sin(marketAng) * (radius * 0.35), 0)
+        local tr = util.TraceLine({ start = marketPos + Vector(0,0,40), endpos = marketPos - Vector(0,0,150), mask = MASK_SOLID_BRUSHONLY })
+        if tr.Hit and tr.HitNormal.z >= 0.70 then
+            local marketTbl = ents.Create("prop_physics")
+            if IsValid(marketTbl) then
+                marketTbl:SetModel("models/props_c17/FurnitureTable001a.mdl")
+                marketTbl:SetPos(tr.HitPos + Vector(0,0,2))
+                marketTbl:SetAngles(Angle(0, 135, 0))
+                marketTbl:Spawn()
+                marketTbl:Activate()
+                marketTbl.VNPC_IsTownInfrastructure = true
+                marketTbl.VNPC_IsTownMarket = true
+                marketTbl.VNPC_CampID = camp.id
+                marketTbl.VNPC_NoVore = true
+                marketTbl:SetHealth(800)
+                local phys = marketTbl:GetPhysicsObject()
+                if IsValid(phys) then phys:EnableMotion(false) phys:Sleep() end
+                table.insert(camp.townInfrastructure, marketTbl)
+            end
+
+            local benchOffsets = { Vector(30, 0, 0), Vector(-30, 0, 0) }
+            for _, bOff in ipairs(benchOffsets) do
+                local chair = ents.Create("prop_physics")
+                if IsValid(chair) then
+                    chair:SetModel("models/props_c17/FurnitureChair001a.mdl")
+                    chair:SetPos(tr.HitPos + bOff + Vector(0,0,2))
+                    chair:SetAngles(Angle(0, 135, 0))
+                    chair:Spawn()
+                    chair:Activate()
+                    chair.VNPC_IsTownInfrastructure = true
+                    chair.VNPC_CampID = camp.id
+                    chair.VNPC_NoVore = true
+                    chair:SetHealth(300)
+                    local cPhys = chair:GetPhysicsObject()
+                    if IsValid(cPhys) then cPhys:EnableMotion(false) cPhys:Sleep() end
+                    table.insert(camp.townInfrastructure, chair)
+                end
+            end
+        end
+
+        camp.fortified = false
+        if VNPC_PlanPreyCampLayout then
+            VNPC_PlanPreyCampLayout(camp)
+        end
+    end
+end
+
+function VNPC_EvolvePreyCampTownStage(camp, newStage)
+    if not camp or not VNPC_TownDevelopmentStages[newStage] then return false end
+    local oldStage = camp.townStage or 1
+    if newStage == oldStage then return false end
+
+    local stageData = VNPC_TownDevelopmentStages[newStage]
+    camp.townStage = newStage
+    camp.townStageName = stageData.name
+    camp.territoryRadius = stageData.radius
+    camp.maxWalls = stageData.maxWalls
+    camp.maxHuts = stageData.maxHuts
+    camp.maxMembers = stageData.maxMembers
+
+    VNPC_ConstructTownInfrastructure(camp, newStage)
+
+    for _, mem in ipairs(camp.members or {}) do
+        if IsValid(mem) and mem.EmitSound then
+            mem:EmitSound("buttons/button14.wav", 80, math.random(95, 105))
+        end
+    end
+
+    print(string.format("[V-NPCs] TOWN EVOLUTION: Prey Camp #%d evolved from Stage %d to Stage %d [%s - %s]! (Territory: %d, Max Walls: %d, Max Huts: %d, Max Citizens: %d)",
+        camp.id, oldStage, newStage, stageData.name, stageData.title, stageData.radius, stageData.maxWalls, stageData.maxHuts, stageData.maxMembers))
+    return true
+end
+
+function VNPC_UpdatePreyCampTownEvolution(camp, now, dt)
+    if not camp or not town_evolve_enabled:GetBool() then return end
+    camp.townStage = camp.townStage or 1
+    camp.townDevPoints = camp.townDevPoints or 0
+    camp.townInfrastructure = camp.townInfrastructure or {}
+
+    for i = #camp.townInfrastructure, 1, -1 do
+        local prop = camp.townInfrastructure[i]
+        if not IsValid(prop) then
+            table.remove(camp.townInfrastructure, i)
+        end
+    end
+
+    local curStage = camp.townStage
+    if curStage >= 5 then
+        if (camp.resources or 0) < 350.0 then
+            camp.resources = (camp.resources or 0) + (1.5 * dt)
+        end
+        return
+    end
+
+    local baseRate = town_evolve_rate:GetFloat() or 1.5
+    local ptsEarned = (baseRate + (#camp.members * 0.45)) * dt
+
+    if camp.fortified then
+        ptsEarned = ptsEarned * 1.35
+    end
+    if (camp.resources or 0) >= 60.0 then
+        ptsEarned = ptsEarned * 1.20
+    end
+
+    camp.townDevPoints = camp.townDevPoints + ptsEarned
+
+    local nextStage = curStage + 1
+    local nextData = VNPC_TownDevelopmentStages[nextStage]
+    if nextData and camp.townDevPoints >= nextData.ptsRequired and #camp.members >= nextData.minMembers then
+        if camp.fortified or curStage == 1 then
+            VNPC_EvolvePreyCampTownStage(camp, nextStage)
+        end
+    end
+end
 
 function VNPC_IsEligiblePreyNPC(ent)
     if not IsValid(ent) or ent:Health() <= 0 then return false end
@@ -99,6 +362,11 @@ function VNPC_CreatePreyCamp(pos, founder)
         members = { founder },
         walls = {},
         huts = {},
+        townStage = 1,
+        townStageName = "OUTPOST",
+        townDevPoints = 0,
+        territoryRadius = 350,
+        townInfrastructure = {},
         fortified = false,
         resources = 15.0,
         createTime = CurTime(),
@@ -757,6 +1025,7 @@ function VNPC_ConstructPreyCampWall(camp)
         wall:EmitSound("physics/wood/wood_box_impact_hard1.wav", 75, math.random(95, 105))
     end
 
+    camp.townDevPoints = (camp.townDevPoints or 0) + 20.0
     return true
 end
 
@@ -1035,6 +1304,7 @@ function VNPC_ConstructPreyCampHut(camp)
         }
         camp.huts = camp.huts or {}
         table.insert(camp.huts, hut)
+        camp.townDevPoints = (camp.townDevPoints or 0) + 35.0
         camp.activeHutSite = nil
     end
 
@@ -1567,10 +1837,15 @@ hook.Add("Think", "VNPC_PreyCamps_AI_Loop", function()
             if IsValid(scrap) and scrap:GetClass() == "prop_physics" and not scrap.VNPC_IsPreyCampWall and not scrap.VNPC_IsPreyCampHutPiece and not scrap.VNPC_IsCourtyardDefense and not scrap.VNPC_NoVore and not scrap.VNPC_IsCookedPropMeal then
                 if scrap:GetPos():DistToSqr(camp.pos) < (300 * 300) then
                     camp.resources = (camp.resources or 0) + 10.0
+                    camp.townDevPoints = (camp.townDevPoints or 0) + 15.0
                     scrap:Remove()
                     break
                 end
             end
+        end
+
+        if VNPC_UpdatePreyCampTownEvolution then
+            VNPC_UpdatePreyCampTownEvolution(camp, now, dt)
         end
 
         -- Courtyard Cover Defense Tactics: when fort is breached or under attack, defenders take cover behind courtyard defenses
@@ -1782,8 +2057,10 @@ concommand.Add("vnpcs_prey_camps_status", function(ply)
         local leaderStr = IsValid(camp.leader) and string.format(" | Leader: #%d [%s]", camp.leader:EntIndex(), camp.leader.PrintName or camp.leader:GetClass()) or " | Leader: NONE"
         local hutStr = IsValid(camp.leaderTable) and " | Leader Hut & Table: BUILT" or " | Leader Hut & Table: NONE"
         local decStr = camp.leaderDecision and string.format(" | Strategy Decision: %s", camp.leaderDecision) or ""
-        print(string.format(" -> Prey Camp [#%d] | Members: %d%s (Pregnant: %d)%s%s%s%s%s%s | Territory Radius: %d | Walls: %d | Huts: %d | Courtyard Defenses: %d | Resources: %.1f | Fortified: %s",
-            camp.id, #camp.members, stateStr, pregCount, indoorStr, guardStr, infStr, leaderStr, hutStr, decStr, math.floor(camp.territoryRadius or 450), #camp.walls, #(camp.huts or {}), #(camp.courtyardDefenses or {}), camp.resources or 0, tostring(camp.fortified or false)))
+        local stageData = VNPC_TownDevelopmentStages and VNPC_TownDevelopmentStages[camp.townStage or 1]
+        local townStr = string.format(" | Town Stage: %d [%s] (Dev Pts: %d / %d)", camp.townStage or 1, stageData and stageData.name or "OUTPOST", math.floor(camp.townDevPoints or 0), stageData and stageData.ptsRequired or 0)
+        print(string.format(" -> Prey Camp [#%d] | Members: %d%s (Pregnant: %d)%s%s%s%s%s%s%s | Territory Radius: %d | Walls: %d | Huts: %d | Courtyard Defenses: %d | Resources: %.1f | Fortified: %s",
+            camp.id, #camp.members, stateStr, pregCount, indoorStr, guardStr, infStr, leaderStr, hutStr, decStr, townStr, math.floor(camp.territoryRadius or 450), #camp.walls, #(camp.huts or {}), #(camp.courtyardDefenses or {}), camp.resources or 0, tostring(camp.fortified or false)))
     end
     print("Total active prey camps: " .. #VNPC_ActivePreyCamps)
     print("=========================================")
@@ -1845,6 +2122,41 @@ concommand.Add("vnpcs_test_leader_decision", function(ply, cmd, args)
         end
     end
     print(string.format("[V-NPCs] Test: Forced all Camp Leaders to order decision [%s] and assemble at their Leader Hut Table!", targetDec))
+end)
+
+concommand.Add("vnpcs_test_town_evolve", function(ply)
+    local count = 0
+    for _, camp in ipairs(VNPC_ActivePreyCamps or {}) do
+        local cur = camp.townStage or 1
+        local nextStage = math.min(5, cur + 1)
+        if nextStage > cur then
+            if VNPC_EvolvePreyCampTownStage(camp, nextStage) then
+                count = count + 1
+            end
+        end
+    end
+    print("[V-NPCs] Test: Evolved " .. count .. " Prey Camp(s) to their next Town Development Stage!")
+end)
+
+concommand.Add("vnpcs_test_set_town_stage", function(ply, cmd, args)
+    local targetStage = math.Clamp(tonumber(args[1]) or 5, 1, 5)
+    local count = 0
+    for _, camp in ipairs(VNPC_ActivePreyCamps or {}) do
+        if VNPC_EvolvePreyCampTownStage(camp, targetStage) then
+            count = count + 1
+        end
+    end
+    print("[V-NPCs] Test: Set " .. count .. " Prey Camp(s) directly to Town Development Stage " .. targetStage .. " (" .. tostring((VNPC_TownDevelopmentStages[targetStage] or {}).name) .. ")!")
+end)
+
+concommand.Add("vnpcs_test_add_town_points", function(ply, cmd, args)
+    local amount = tonumber(args[1]) or 250
+    local count = 0
+    for _, camp in ipairs(VNPC_ActivePreyCamps or {}) do
+        camp.townDevPoints = (camp.townDevPoints or 0) + amount
+        count = count + 1
+    end
+    print("[V-NPCs] Test: Added " .. amount .. " Town Development Points to " .. count .. " Prey Camp(s)!")
 end)
 
 concommand.Add("vnpcs_test_prey_love", function(ply)
