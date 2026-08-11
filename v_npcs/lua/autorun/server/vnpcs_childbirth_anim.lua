@@ -171,25 +171,85 @@ hook.Add("Think", "VNPC_BabyCitizenGrowth_Loop", function()
             continue
         end
 
-        -- 2. Born Baby Citizen: grow from 0.35 to 1.0 over 60 seconds
+        -- 2. Born Baby Citizen: female babies eat small prey (headcrabs) & drink water to grow; males use natural timer
         if ent.VNPC_IsGrowingBaby then
-            local duration = ent.VNPC_BabyGrowDuration or 60.0
-            local tNorm = math.Clamp((now - (ent.VNPC_BabyBirthTime or now)) / duration, 0, 1)
-            local scale = 0.35 + (tNorm * 0.65)
-            ent:SetModelScale(scale, 0)
+            local isFemale = (ent.VNPC_ChildGender == "female" or string.find(string.lower(ent:GetModel() or ""), "female"))
+            if isFemale then
+                local progress = math.Clamp(ent.VNPC_GrowthProgress or 0.0, 0.0, 100.0)
+                local scale = 0.35 + (progress / 100.0) * 0.65
+                ent:SetModelScale(scale, 0)
 
-            if tNorm >= 1.00 then
-                ent:SetModelScale(1.0, 0)
-                ent.VNPC_IsGrowingBaby = nil
-                ent.VNPC_ProtectedChild = nil
+                if progress >= 100.0 then
+                    ent:SetModelScale(1.0, 0)
+                    ent.VNPC_IsGrowingBaby = nil
+                    ent.VNPC_ProtectedChild = nil
+                    ent.VNPC_GrowthProgress = nil
 
-                if (ent.VNPC_AdoptedByPredator or ent.VNPC_BornSister) and VNPC_TransformToPredator then
-                    VNPC_TransformToPredator(ent, ent.VNPC_AdoptedByPredator or ent.VNPC_MotherRef)
-                    return
+                    if (ent.VNPC_AdoptedByPredator or ent.VNPC_BornSister) and VNPC_TransformToPredator then
+                        VNPC_TransformToPredator(ent, ent.VNPC_AdoptedByPredator or ent.VNPC_MotherRef)
+                        return
+                    end
+
+                    if ent.EmitSound then
+                        ent:EmitSound("npc/citizen/vo/readytohelp.wav", 80, 105)
+                    end
+                    print("[V-NPCs] Female Baby Growth Complete: Baby " .. tostring(ent) .. " reached 100% growth by eating small prey & drinking water!")
+                    hook.Run("VNPC_OnBabyGrowthComplete", ent)
+                else
+                    -- Hunt small prey (Headcrabs, grubs, small NPCs <= 60 HP) to grow
+                    if (ent.VNPC_NextBabyHuntTime or 0) <= now then
+                        ent.VNPC_NextBabyHuntTime = now + 3.0
+                        local bestSmall = nil
+                        local bestDistSqr = 600 * 600
+                        for _, prey in ipairs(ents.FindInSphere(ent:GetPos(), 600)) do
+                            if IsValid(prey) and prey ~= ent and prey:Health() > 0 and not prey.Vored and not prey.VNPC_Vored then
+                                local species = VNPC_GetPreySpecies and VNPC_GetPreySpecies(prey) or ""
+                                if species == "headcrab" or (prey:GetMaxHealth() or 100) <= 60 then
+                                    local dSqr = prey:GetPos():DistToSqr(ent:GetPos())
+                                    if dSqr <= bestDistSqr then
+                                        bestSmall = prey
+                                        bestDistSqr = dSqr
+                                    end
+                                end
+                            end
+                        end
+                        if IsValid(bestSmall) then
+                            if bestDistSqr <= (90 * 90) then
+                                ent.VNPC_GrowthProgress = math.Clamp((ent.VNPC_GrowthProgress or 0.0) + 35.0, 0, 100)
+                                if ent.EmitSound then ent:EmitSound("gulps/g" .. math.random(1, 10) .. ".wav", 80, 105) end
+                                print("[V-NPCs] Baby Female Growth: Baby " .. tostring(ent) .. " ate small prey " .. tostring(bestSmall) .. " (+35 Growth -> " .. ent.VNPC_GrowthProgress .. "/100)!")
+                                if ent.EatEntity then
+                                    ent:EatEntity(bestSmall)
+                                else
+                                    bestSmall:Remove()
+                                end
+                            else
+                                if ent.SetLastPosition then pcall(ent.SetLastPosition, ent, bestSmall:GetPos()) end
+                                if ent.SetSchedule then pcall(ent.SetSchedule, ent, SCHED_FORCED_GO_RUN) end
+                            end
+                        end
+                    end
                 end
+            else
+                -- Male babies grow on the natural timer
+                local duration = ent.VNPC_BabyGrowDuration or 60.0
+                local tNorm = math.Clamp((now - (ent.VNPC_BabyBirthTime or now)) / duration, 0, 1)
+                local scale = 0.35 + (tNorm * 0.65)
+                ent:SetModelScale(scale, 0)
 
-                if ent.EmitSound then
-                    ent:EmitSound("npc/citizen/vo/readytohelp.wav", 80, 105)
+                if tNorm >= 1.00 then
+                    ent:SetModelScale(1.0, 0)
+                    ent.VNPC_IsGrowingBaby = nil
+                    ent.VNPC_ProtectedChild = nil
+
+                    if (ent.VNPC_AdoptedByPredator or ent.VNPC_BornSister) and VNPC_TransformToPredator then
+                        VNPC_TransformToPredator(ent, ent.VNPC_AdoptedByPredator or ent.VNPC_MotherRef)
+                        return
+                    end
+
+                    if ent.EmitSound then
+                        ent:EmitSound("npc/citizen/vo/readytohelp.wav", 80, 105)
+                    end
                 end
             end
         end
@@ -235,4 +295,17 @@ concommand.Add("vnpcs_test_childbirth", function(ply)
     local camp = VNPC_GetPreyCamp and VNPC_GetPreyCamp(target) or nil
     VNPC_StartChildbirthAnimation(target, target.VNPC_UnbornChild, camp)
     ply:ChatPrint("[V-NPCs] Triggered sitting childbirth bone pose animation and baby birth on " .. tostring(target) .. "!")
+end)
+
+concommand.Add("vnpcs_test_baby_grow", function(ply)
+    local count = 0
+    for _, ent in ipairs(ents.GetAll()) do
+        if IsValid(ent) and ent.VNPC_IsGrowingBaby then
+            ent.VNPC_GrowthProgress = (ent.VNPC_GrowthProgress or 0) + 35.0
+            count = count + 1
+        end
+    end
+    local msg = "[V-NPCs] Added +35 Growth Progress to all " .. count .. " growing female babies!"
+    print(msg)
+    if IsValid(ply) then ply:ChatPrint(msg) end
 end)

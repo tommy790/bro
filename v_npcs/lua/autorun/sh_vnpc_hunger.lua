@@ -281,6 +281,27 @@ if SERVER then
                         end
                     end
                 end
+            elseif GetConVar("vnpcs_prey_stamina_enabled"):GetBool() and not ent:IsPlayer() and (ent:GetClass():find("citizen") or ent:GetClass():find("rebel") or ent:GetClass():find("refugee") or ent.VNPC_PreyCampID) then
+                local curStam = VNPC_GetPreyStamina(ent)
+                local isRunning = ent.IsMoving and ent:IsMoving() and (ent:GetSchedule() == SCHED_FORCED_GO_RUN or ent:GetSchedule() == SCHED_CHASE_ENEMY or IsValid(ent:GetEnemy()))
+                if isRunning then
+                    local newStam = math.max(0, curStam - 3.5)
+                    VNPC_SetPreyStamina(ent, newStam)
+                    if newStam <= 0 and not ent.VNPC_IsExhausted then
+                        ent.VNPC_IsExhausted = true
+                        if ent.SetSchedule then pcall(ent.SetSchedule, ent, SCHED_FORCED_GO) end
+                        if ent.EmitSound and (ent.VNPC_NextExhaustSound or 0) <= now then
+                            ent.VNPC_NextExhaustSound = now + 12.0
+                            ent:EmitSound("npc/alyx/sigh01.wav", 75, math.random(90, 98))
+                        end
+                    end
+                else
+                    local newStam = math.min(100, curStam + 2.5)
+                    VNPC_SetPreyStamina(ent, newStam)
+                    if newStam >= 30.0 then
+                        ent.VNPC_IsExhausted = nil
+                    end
+                end
             end
         end
     end)
@@ -411,6 +432,50 @@ function VNPC_AddPredatorXP(pred, amount, reason)
     end
 end
 
+CreateConVar("vnpcs_prey_stamina_enabled", "1", {FCVAR_REPLICATED, FCVAR_ARCHIVE}, "Enable dynamic stamina bar for prey NPCs")
+
+function VNPC_GetPreyStamina(ent)
+    if not IsValid(ent) then return 100.0 end
+    if not ent.VNPC_Stamina then
+        ent.VNPC_Stamina = 100.0
+    end
+    return ent.VNPC_Stamina
+end
+
+function VNPC_SetPreyStamina(ent, val)
+    if not IsValid(ent) then return end
+    ent.VNPC_Stamina = math.Clamp(val or 100.0, 0.0, 100.0)
+    if SERVER and ent.SetNWFloat then
+        ent:SetNWFloat("VNPC_Stamina", ent.VNPC_Stamina)
+    end
+end
+
+function VNPC_PredatorMonsterGrowth(pred, count)
+    if not IsValid(pred) or pred.VNPC_IsGrowingBaby or (pred:GetModelScale() or 1.0) < 0.95 then return end
+    if pred:IsPlayer() then return end
+
+    pred.VNPC_MonsterGrowth = (pred.VNPC_MonsterGrowth or 0) + (tonumber(count) or 1)
+    -- Grow +2% scale per prey absorbed, up to a maximum of +20% bigger than normal (1.20x scale) at 10 prey!
+    local scaleBonus = math.Clamp(pred.VNPC_MonsterGrowth * 0.02, 0.0, 0.20)
+    local targetScale = 1.00 + scaleBonus
+
+    pred.VNPC_MonsterScale = targetScale
+    pred:SetModelScale(targetScale, 1)
+
+    -- Scale MaxHealth as she grows into a Monster Predator! (+25 MaxHP per 2% scale, up to +250 MaxHP at 1.20x)
+    if SERVER then
+        local baseHP = pred.VNPC_BaseMaxHealth or pred:GetMaxHealth() or 100
+        pred.VNPC_BaseMaxHealth = baseHP
+        local monsterHP = baseHP + math.floor(scaleBonus * 1250)
+        pred:SetMaxHealth(monsterHP)
+        if pred:Health() < monsterHP then
+            pred:SetHealth(math.min(monsterHP, pred:Health() + 25))
+        end
+        print("[V-NPCs] Monster Growth: Predator " .. tostring(pred) .. " absorbed prey and grew larger! (Prey Absorbed: " .. pred.VNPC_MonsterGrowth .. ", Monster Scale: " .. string.format("%.2fx", targetScale) .. ", MaxHP: " .. monsterHP .. ")")
+        hook.Run("VNPC_OnPredatorMonsterGrowth", pred, targetScale)
+    end
+end
+
 concommand.Add("vnpcs_pred_xp_status", function(ply)
     print("===============================================================")
     print("         V-NPCs PREDATOR EXPERIENCE & LEVELING STATUS          ")
@@ -530,4 +595,76 @@ concommand.Add("vnpcs_test_stormfox2_temp", function(ply, cmd, args)
     local temp = tonumber(args[1]) or 20.0
     VNPC_SimulatedStormFox2Temp = temp
     ply:ChatPrint("[V-NPCs] Set simulated StormFox 2 outdoor temperature to: " .. temp .. " C")
+end)
+
+concommand.Add("vnpcs_prey_stamina_status", function(ply)
+    print("===============================================================")
+    print("          V-NPCs PREY STAMINA & EXHAUSTION STATUS              ")
+    print("===============================================================")
+    print(" - Stamina System Enabled: " .. tostring(GetConVar("vnpcs_prey_stamina_enabled"):GetBool()))
+    local count = 0
+    for _, ent in ipairs(ents.GetAll()) do
+        if IsValid(ent) and not ent:IsPlayer() and (ent:GetClass():find("citizen") or ent:GetClass():find("rebel") or ent:GetClass():find("refugee") or ent.VNPC_PreyCampID) then
+            count = count + 1
+            local stam = VNPC_GetPreyStamina(ent)
+            local stateStr = ent.VNPC_IsExhausted and "EXHAUSTED (Sprinting Disabled)" or "READY"
+            print(string.format(" - Prey #%d [%s]: Stamina = %.1f%% | State = %s", ent:EntIndex(), ent.PrintName or ent:GetClass(), stam, stateStr))
+        end
+    end
+    if count == 0 then
+        print(" - Active Prey Citizens: NONE currently spawned")
+    end
+    print("===============================================================")
+end)
+
+concommand.Add("vnpcs_test_prey_exhaust", function(ply)
+    local count = 0
+    for _, ent in ipairs(ents.GetAll()) do
+        if IsValid(ent) and not ent:IsPlayer() and (ent:GetClass():find("citizen") or ent:GetClass():find("rebel") or ent:GetClass():find("refugee") or ent.VNPC_PreyCampID) then
+            VNPC_SetPreyStamina(ent, 0)
+            ent.VNPC_IsExhausted = true
+            count = count + 1
+        end
+    end
+    local msg = "[V-NPCs] Forced stamina bar to 0% on " .. count .. " prey citizens! They are now exhausted."
+    print(msg)
+    if IsValid(ply) then ply:ChatPrint(msg) end
+end)
+
+concommand.Add("vnpcs_monster_growth_status", function(ply)
+    print("===============================================================")
+    print("         V-NPCs PREDATOR MONSTER GROWTH STAGE STATUS           ")
+    print("===============================================================")
+    local count = 0
+    for _, ent in ipairs(ents.GetAll()) do
+        if IsValid(ent) and (ent.IsDrGNextbot or ent.VNPC_FemaleModelVore or ent.Predator) and not ent:IsPlayer() then
+            count = count + 1
+            local absorbed = ent.VNPC_MonsterGrowth or 0
+            local scale = ent.VNPC_MonsterScale or ent:GetModelScale() or 1.0
+            print(string.format(" - Predator #%d [%s]: Prey Absorbed = %d | Monster Scale = %.2fx (Max: 1.20x) | MaxHP = %d", ent:EntIndex(), ent.PrintName or ent:GetClass(), absorbed, scale, ent:GetMaxHealth()))
+        end
+    end
+    if count == 0 then
+        print(" - Active Predators: NONE currently spawned")
+    end
+    print("===============================================================")
+end)
+
+concommand.Add("vnpcs_test_monster_grow", function(ply)
+    if not IsValid(ply) then return end
+    local tr = ply:GetEyeTrace()
+    local target = tr.Entity
+    if not IsValid(target) or not (target.IsDrGNextbot or target.VNPC_FemaleModelVore or target.Predator) then
+        local count = 0
+        for _, pred in ipairs(ents.GetAll()) do
+            if IsValid(pred) and (pred.IsDrGNextbot or pred.VNPC_FemaleModelVore or pred.Predator) and not pred:IsPlayer() then
+                VNPC_PredatorMonsterGrowth(pred, 1)
+                count = count + 1
+            end
+        end
+        ply:ChatPrint("[V-NPCs] Added +1 Monster Growth to all " .. count .. " active predators!")
+        return
+    end
+    VNPC_PredatorMonsterGrowth(target, 1)
+    ply:ChatPrint("[V-NPCs] Added +1 Monster Growth to predator " .. tostring(target) .. "! New Scale: " .. string.format("%.2fx", target.VNPC_MonsterScale or 1.0))
 end)

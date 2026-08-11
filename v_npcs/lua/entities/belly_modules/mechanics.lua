@@ -608,6 +608,10 @@ function ENT:AbsorbSpecificPrey(index)
         VNPC_AddPredatorXP(self.NPC, 100, "Absorbed prey in stomach")
     end
 
+    if IsValid(self.NPC) and VNPC_PredatorMonsterGrowth then
+        VNPC_PredatorMonsterGrowth(self.NPC, 1)
+    end
+
     if VNPC_ScheduleDigestedBoneSpit then
         VNPC_ScheduleDigestedBoneSpit(self.NPC or self:GetOwner() or self:GetParent(), self)
     end
