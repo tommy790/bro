@@ -358,10 +358,41 @@ function VNPC_PredatorBreachPreyCampWall(pred, wall, camp)
     if not wall.VNPC_IsPreyCampWall then return end
 
     if pred.VNPC_IsInfiltratingFort and pred.VNPC_IsInfiltratingFort.id == camp.id then
-        wall:SetNoDraw(true)
-        wall:SetSolid(SOLID_NONE)
-        pred.VNPC_InfiltrationBreachedWalls = pred.VNPC_InfiltrationBreachedWalls or {}
-        table.insert(pred.VNPC_InfiltrationBreachedWalls, wall)
+        -- SWALLOW THE WALL: Instead of disabling collision, swallow the wall into her belly!
+        pred.VNPC_InfiltrationSwallowedWalls = pred.VNPC_InfiltrationSwallowedWalls or {}
+        table.insert(pred.VNPC_InfiltrationSwallowedWalls, {
+            mdl = wall:GetModel() or "models/props_wasteland/wood_fence01a.mdl",
+            pos = wall:GetPos(),
+            ang = wall:GetAngles(),
+            health = wall:GetMaxHealth() or 350,
+            isGate = wall.VNPC_IsPreyCampGate,
+            closedAng = wall.VNPC_GateClosedAng,
+            openAng = wall.VNPC_GateOpenAng,
+            isWall = true
+        })
+
+        for idx, w in ipairs(camp.walls) do
+            if w == wall then
+                table.remove(camp.walls, idx)
+                break
+            end
+        end
+
+        local belly = pred.VNPC_Belly or pred.Belly
+        if IsValid(belly) and belly.AddPrey then
+            pcall(belly.AddPrey, belly, wall)
+        elseif pred.EatEntity then
+            pcall(pred.EatEntity, pred, wall)
+        else
+            wall:SetNoDraw(true)
+            wall:SetSolid(0)
+            wall:SetParent(pred)
+            timer.Simple(0.1, function()
+                if IsValid(wall) then wall:Remove() end
+            end)
+        end
+
+        -- Do NOT raise suspicion or sound breach alert while infiltrating!
         return
     end
 
@@ -619,10 +650,28 @@ function VNPC_PredatorBreachPreyCampHut(pred, hutOrPiece, camp)
     if not IsValid(targetProp) then return end
 
     if pred.VNPC_IsInfiltratingFort and pred.VNPC_IsInfiltratingFort.id == camp.id then
-        targetProp:SetNoDraw(true)
-        targetProp:SetSolid(SOLID_NONE)
-        pred.VNPC_InfiltrationBreachedWalls = pred.VNPC_InfiltrationBreachedWalls or {}
-        table.insert(pred.VNPC_InfiltrationBreachedWalls, targetProp)
+        pred.VNPC_InfiltrationSwallowedWalls = pred.VNPC_InfiltrationSwallowedWalls or {}
+        table.insert(pred.VNPC_InfiltrationSwallowedWalls, {
+            mdl = targetProp:GetModel() or "models/props_wasteland/wood_fence01a.mdl",
+            pos = targetProp:GetPos(),
+            ang = targetProp:GetAngles(),
+            health = targetProp:GetMaxHealth() or 100,
+            isHutPiece = true
+        })
+
+        local belly = pred.VNPC_Belly or pred.Belly
+        if IsValid(belly) and belly.AddPrey then
+            pcall(belly.AddPrey, belly, targetProp)
+        elseif pred.EatEntity then
+            pcall(pred.EatEntity, pred, targetProp)
+        else
+            targetProp:SetNoDraw(true)
+            targetProp:SetSolid(0)
+            targetProp:SetParent(pred)
+            timer.Simple(0.1, function()
+                if IsValid(targetProp) then targetProp:Remove() end
+            end)
+        end
         return
     end
 
@@ -850,7 +899,53 @@ function VNPC_PreyCampInfiltration_AI(now)
             local pred = camp.infiltrator
             local victim = pred.VNPC_InfiltrationTarget
             if IsValid(victim) and (victim.Vored or victim.VNPC_Vored or victim:Health() <= 0) then
-                -- INFILTRATION SWALLOW COMPLETE: Repair the wall damage to leave zero suspicion!
+                -- INFILTRATION SWALLOW COMPLETE: Regurgitate/rebuild swallowed walls and repair wall damage to leave zero suspicion!
+                if pred.VNPC_InfiltrationSwallowedWalls then
+                    local belly = pred.VNPC_Belly or pred.Belly
+                    for _, data in ipairs(pred.VNPC_InfiltrationSwallowedWalls) do
+                        local newWall = ents.Create("prop_physics")
+                        if IsValid(newWall) then
+                            newWall:SetModel(data.mdl or "models/props_wasteland/wood_fence01a.mdl")
+                            newWall:SetPos(data.pos)
+                            newWall:SetAngles(data.ang)
+                            newWall:Spawn()
+                            newWall:Activate()
+                            newWall:SetHealth(data.health or 350)
+                            if data.isGate then
+                                newWall.VNPC_IsPreyCampGate = true
+                                newWall.VNPC_GateClosedAng = data.closedAng or data.ang
+                                newWall.VNPC_GateOpenAng = data.openAng or data.ang
+                            end
+                            if data.isWall then
+                                newWall.VNPC_IsPreyCampWall = true
+                                newWall.VNPC_PreyCampID = camp.id
+                                newWall.VNPC_CampRef = camp
+                                table.insert(camp.walls, newWall)
+                            elseif data.isHutPiece then
+                                newWall.VNPC_IsPreyCampHutPiece = true
+                                newWall.VNPC_PreyCampID = camp.id
+                            end
+                            local phys = newWall:GetPhysicsObject()
+                            if IsValid(phys) then
+                                phys:SetVelocity(Vector(0,0,0))
+                                phys:EnableMotion(false)
+                                phys:Sleep()
+                            end
+                        end
+                        if IsValid(belly) and belly.Prey then
+                            for pIdx = #belly.Prey, 1, -1 do
+                                local pInfo = belly.Prey[pIdx]
+                                if pInfo and IsValid(pInfo.Entity) and pInfo.Entity:GetModel() == data.mdl then
+                                    pInfo.Entity:Remove()
+                                    table.remove(belly.Prey, pIdx)
+                                    break
+                                end
+                            end
+                        end
+                    end
+                    pred.VNPC_InfiltrationSwallowedWalls = nil
+                end
+
                 if pred.VNPC_InfiltrationBreachedWalls then
                     for _, wall in ipairs(pred.VNPC_InfiltrationBreachedWalls) do
                         if IsValid(wall) then
@@ -1507,13 +1602,11 @@ concommand.Add("vnpcs_test_fort_infiltration", function(ply)
     camp.infiltrator = pred
     camp.suspicionLevel = 0
 
-    -- 3. Quietly breach a wall to demonstrate stealth entry and repair!
+    -- 3. Quietly swallow a wall to demonstrate stealth entry and repair/regurgitate!
     if camp.walls and #camp.walls > 0 then
         local wall = camp.walls[1]
         if IsValid(wall) then
-            wall:SetNoDraw(true)
-            wall:SetSolid(SOLID_NONE)
-            table.insert(pred.VNPC_InfiltrationBreachedWalls, wall)
+            VNPC_PredatorBreachPreyCampWall(pred, wall, camp)
         end
     end
 
