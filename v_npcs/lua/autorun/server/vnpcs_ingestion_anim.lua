@@ -122,43 +122,165 @@ VNPC_PreyStruggleProfiles = {
     }
 }
 
-local function VNPC_AnimatePreyStruggling(prey, stage, tNorm, movesetName)
+function VNPC_GetPreySpecies(prey)
+    if not IsValid(prey) then return "human" end
+    local cls = string.lower(prey:GetClass() or "")
+    local mdl = string.lower(prey:GetModel() or "")
+
+    if cls:find("antlionguard") or mdl:find("antlion_guard") or mdl:find("antlionguard") then
+        return "antlionguard"
+    elseif cls:find("antlion") or mdl:find("antlion") then
+        return "antlion"
+    elseif cls:find("headcrab") or mdl:find("headcrab") then
+        return "headcrab"
+    elseif cls:find("zombie") or mdl:find("zombie") then
+        return "zombie"
+    elseif cls:find("vortigaunt") or mdl:find("vortigaunt") then
+        return "vortigaunt"
+    else
+        return "human"
+    end
+end
+
+function VNPC_AnimateSpeciesStruggling(prey, species, stage, tNorm, movesetName)
     if not IsValid(prey) then return end
     local now = CurTime()
-    local profile = VNPC_PreyStruggleProfiles[string.lower(tostring(movesetName or "default"))] or VNPC_PreyStruggleProfiles["default"]
+    local count = prey:GetBoneCount() or 0
 
-    local spine = prey:LookupBone("ValveBiped.Bip01_Spine1") or prey:LookupBone("Spine1") or prey:LookupBone("ValveBiped.Bip01_Spine")
-    if spine and profile.spine then
-        prey:ManipulateBoneAngles(spine, profile.spine(now))
+    if species == "antlionguard" then
+        -- Antlion Guard: Heavy, powerful stomping and massive body thrashing
+        for i = 0, count - 1 do
+            local bName = string.lower(prey:GetBoneName(i) or "")
+            if bName:find("spine") or bName:find("body") or bName:find("thorax") then
+                prey:ManipulateBoneAngles(i, Angle(math.sin(now * 8) * 20, math.cos(now * 6) * 12, 0))
+            elseif bName:find("head") or bName:find("horn") or bName:find("jaw") then
+                if stage < 1 then
+                    prey:ManipulateBoneAngles(i, Angle(math.sin(now * 10) * 25, 0, math.cos(now * 10) * 15))
+                end
+            elseif bName:find("arm") or bName:find("claw") or bName:find("hand") then
+                if stage < 2 then
+                    prey:ManipulateBoneAngles(i, Angle(math.sin(now * 12 + i) * 35, -25, math.cos(now * 12 + i) * 20))
+                end
+            elseif bName:find("leg") or bName:find("thigh") or bName:find("calf") or bName:find("foot") then
+                if stage < 3 then
+                    prey:ManipulateBoneAngles(i, Angle(math.sin(now * 14 + i) * 45, 0, math.cos(now * 14 + i) * 25))
+                end
+            end
+        end
+
+    elseif species == "antlion" then
+        -- Antlion: Frantic insectoid scuttling, wing buzzing, and leg thrashing
+        for i = 0, count - 1 do
+            local bName = string.lower(prey:GetBoneName(i) or "")
+            if bName:find("wing") then
+                prey:ManipulateBoneAngles(i, Angle(math.sin(now * 40 + i) * 55, 0, 0))
+            elseif bName:find("spine") or bName:find("body") or bName:find("thorax") then
+                prey:ManipulateBoneAngles(i, Angle(0, math.sin(now * 16) * 18, math.cos(now * 14) * 15))
+            elseif bName:find("head") or bName:find("mandible") or bName:find("jaw") then
+                if stage < 1 then
+                    prey:ManipulateBoneAngles(i, Angle(0, math.sin(now * 22) * 30, 0))
+                end
+            elseif bName:find("leg") or bName:find("arm") or bName:find("claw") or bName:find("thigh") or bName:find("calf") then
+                if stage < 3 then
+                    prey:ManipulateBoneAngles(i, Angle(math.sin(now * 24 + i) * 40, math.cos(now * 24 + i) * 25, 0))
+                end
+            end
+        end
+
+    elseif species == "headcrab" then
+        -- Headcrab: Frantic pouncing, twisting, and crab claw swiping
+        for i = 0, count - 1 do
+            local bName = string.lower(prey:GetBoneName(i) or "")
+            if bName:find("body") or bName:find("spine") then
+                prey:ManipulateBoneAngles(i, Angle(math.sin(now * 16) * 22, 0, math.cos(now * 16) * 18))
+            elseif bName:find("leg") or bName:find("claw") or bName:find("finger") then
+                if stage < 3 then
+                    prey:ManipulateBoneAngles(i, Angle(math.sin(now * 22 + i) * 45, math.cos(now * 22 + i) * 30, 0))
+                end
+            end
+        end
+
+    elseif species == "zombie" then
+        -- Zombie: Wild, erratic claw swiping and back-arching zombie thrashing
+        for i = 0, count - 1 do
+            local bName = string.lower(prey:GetBoneName(i) or "")
+            if bName:find("spine") or bName:find("body") or bName:find("pelvis") then
+                prey:ManipulateBoneAngles(i, Angle(math.sin(now * 14) * 24, 0, math.cos(now * 10) * 16))
+            elseif bName:find("head") or bName:find("neck") then
+                if stage < 1 then
+                    prey:ManipulateBoneAngles(i, Angle(math.sin(now * 16) * 25, math.cos(now * 14) * 20, 0))
+                end
+            elseif bName:find("arm") or bName:find("hand") or bName:find("clavicle") then
+                if stage < 2 then
+                    prey:ManipulateBoneAngles(i, Angle(math.sin(now * 16 + i) * 45 - 15, math.cos(now * 16 + i) * 35, 0))
+                end
+            elseif bName:find("thigh") or bName:find("calf") or bName:find("leg") or bName:find("foot") then
+                if stage < 3 then
+                    prey:ManipulateBoneAngles(i, Angle(0, math.sin(now * 15 + i) * 45, 0))
+                end
+            end
+        end
+
+    elseif species == "vortigaunt" then
+        -- Vortigaunt: Sweeping alien arm thrashing and energetic body writhing
+        for i = 0, count - 1 do
+            local bName = string.lower(prey:GetBoneName(i) or "")
+            if bName:find("spine") or bName:find("body") then
+                prey:ManipulateBoneAngles(i, Angle(math.sin(now * 12) * 18, math.cos(now * 10) * 15, 0))
+            elseif bName:find("arm") or bName:find("hand") or bName:find("wrist") or bName:find("claw") then
+                if stage < 2 then
+                    prey:ManipulateBoneAngles(i, Angle(math.sin(now * 15 + i) * 45, math.cos(now * 15 + i) * 35, 20))
+                end
+            elseif bName:find("thigh") or bName:find("calf") or bName:find("leg") or bName:find("foot") then
+                if stage < 3 then
+                    prey:ManipulateBoneAngles(i, Angle(math.sin(now * 14 + i) * 40, 0, math.cos(now * 14 + i) * 20))
+                end
+            end
+        end
+
+    else
+        -- Human / Citizen / Combine / Metropolice: Humanoid struggling profiles
+        local profile = VNPC_PreyStruggleProfiles[string.lower(tostring(movesetName or "default"))] or VNPC_PreyStruggleProfiles["default"]
+
+        local spine = prey:LookupBone("ValveBiped.Bip01_Spine1") or prey:LookupBone("Spine1") or prey:LookupBone("ValveBiped.Bip01_Spine")
+        if spine and profile.spine then
+            prey:ManipulateBoneAngles(spine, profile.spine(now))
+        end
+
+        if stage < 2 then
+            local rArm = prey:LookupBone("ValveBiped.Bip01_R_UpperArm") or prey:LookupBone("R_UpperArm")
+            local lArm = prey:LookupBone("ValveBiped.Bip01_L_UpperArm") or prey:LookupBone("L_UpperArm")
+            local rFore = prey:LookupBone("ValveBiped.Bip01_R_Forearm") or prey:LookupBone("R_Forearm")
+            local lFore = prey:LookupBone("ValveBiped.Bip01_L_Forearm") or prey:LookupBone("L_Forearm")
+
+            if rArm and profile.armR then prey:ManipulateBoneAngles(rArm, profile.armR(now)) end
+            if lArm and profile.armL then prey:ManipulateBoneAngles(lArm, profile.armL(now)) end
+            if rFore and profile.foreR then prey:ManipulateBoneAngles(rFore, profile.foreR(now)) end
+            if lFore and profile.foreL then prey:ManipulateBoneAngles(lFore, profile.foreL(now)) end
+        end
+
+        if stage < 3 then
+            local rThigh = prey:LookupBone("ValveBiped.Bip01_R_Thigh") or prey:LookupBone("R_Thigh")
+            local lThigh = prey:LookupBone("ValveBiped.Bip01_L_Thigh") or prey:LookupBone("L_Thigh")
+            local rCalf = prey:LookupBone("ValveBiped.Bip01_R_Calf") or prey:LookupBone("R_Calf")
+            local lCalf = prey:LookupBone("ValveBiped.Bip01_L_Calf") or prey:LookupBone("L_Calf")
+
+            local kA = profile.kickA(now)
+            local kB = profile.kickB(now)
+            local cA = profile.calf(now)
+
+            if rThigh then prey:ManipulateBoneAngles(rThigh, Angle(0, kA, 0)) end
+            if lThigh then prey:ManipulateBoneAngles(lThigh, Angle(0, kB, 0)) end
+            if rCalf then prey:ManipulateBoneAngles(rCalf, Angle(0, cA, 0)) end
+            if lCalf then prey:ManipulateBoneAngles(lCalf, Angle(0, cA, 0)) end
+        end
     end
+end
 
-    if stage < 2 then
-        local rArm = prey:LookupBone("ValveBiped.Bip01_R_UpperArm") or prey:LookupBone("R_UpperArm")
-        local lArm = prey:LookupBone("ValveBiped.Bip01_L_UpperArm") or prey:LookupBone("L_UpperArm")
-        local rFore = prey:LookupBone("ValveBiped.Bip01_R_Forearm") or prey:LookupBone("R_Forearm")
-        local lFore = prey:LookupBone("ValveBiped.Bip01_L_Forearm") or prey:LookupBone("L_Forearm")
-
-        if rArm and profile.armR then prey:ManipulateBoneAngles(rArm, profile.armR(now)) end
-        if lArm and profile.armL then prey:ManipulateBoneAngles(lArm, profile.armL(now)) end
-        if rFore and profile.foreR then prey:ManipulateBoneAngles(rFore, profile.foreR(now)) end
-        if lFore and profile.foreL then prey:ManipulateBoneAngles(lFore, profile.foreL(now)) end
-    end
-
-    if stage < 3 then
-        local rThigh = prey:LookupBone("ValveBiped.Bip01_R_Thigh") or prey:LookupBone("R_Thigh")
-        local lThigh = prey:LookupBone("ValveBiped.Bip01_L_Thigh") or prey:LookupBone("L_Thigh")
-        local rCalf = prey:LookupBone("ValveBiped.Bip01_R_Calf") or prey:LookupBone("R_Calf")
-        local lCalf = prey:LookupBone("ValveBiped.Bip01_L_Calf") or prey:LookupBone("L_Calf")
-
-        local kA = profile.kickA(now)
-        local kB = profile.kickB(now)
-        local cA = profile.calf(now)
-
-        if rThigh then prey:ManipulateBoneAngles(rThigh, Angle(0, kA, 0)) end
-        if lThigh then prey:ManipulateBoneAngles(lThigh, Angle(0, kB, 0)) end
-        if rCalf then prey:ManipulateBoneAngles(rCalf, Angle(0, cA, 0)) end
-        if lCalf then prey:ManipulateBoneAngles(lCalf, Angle(0, cA, 0)) end
-    end
+local function VNPC_AnimatePreyStruggling(prey, stage, tNorm, movesetName)
+    if not IsValid(prey) then return end
+    local species = VNPC_GetPreySpecies(prey)
+    VNPC_AnimateSpeciesStruggling(prey, species, stage, tNorm, movesetName)
 end
 
 function VNPC_StartIngestionAnimation(pred, prey, belly)
@@ -354,8 +476,39 @@ concommand.Add("vnpcs_ingestion_status", function(ply)
     for index, anim in ipairs(activeIngestions) do
         if IsValid(anim.pred) and IsValid(anim.prey) then
             local pct = math.Clamp((CurTime() - anim.startTime) / anim.duration * 100, 0, 100)
-            print(string.format("   #%d: Predator [%s] swallowing [%s] -> Stage %d (%.1f%% complete)", index, anim.pred.PrintName or anim.pred:GetClass(), anim.prey.PrintName or anim.prey:GetClass(), anim.stage, pct))
+            local species = VNPC_GetPreySpecies(anim.prey)
+            print(string.format("   #%d: Predator [%s] swallowing [%s] (Species: %s) -> Stage %d (%.1f%% complete)", index, anim.pred.PrintName or anim.pred:GetClass(), anim.prey.PrintName or anim.prey:GetClass(), string.upper(species), anim.stage, pct))
         end
     end
     print("===============================================================")
+end)
+
+hook.Add("Think", "VNPCS_InsideBellyPreyStruggle_Loop", function()
+    local now = CurTime()
+    if (VNPC_NextBellyStruggleThink or 0) > now then return end
+    VNPC_NextBellyStruggleThink = now + 0.1
+
+    for _, belly in ipairs(ents.FindByClass("ent_*_belly")) do
+        if IsValid(belly) and belly.Prey then
+            for _, info in ipairs(belly.Prey) do
+                if info and IsValid(info.Entity) and (info.Alive == true or info.Entity:Health() > 0) and not info.Absorbing then
+                    VNPC_AnimatePreyStruggling(info.Entity, 1, 1.0, belly.MovesetName or "default")
+                end
+            end
+        end
+    end
+end)
+
+concommand.Add("vnpcs_test_prey_struggle", function(ply)
+    if not IsValid(ply) then return end
+    local tr = ply:GetEyeTrace()
+    local target = tr.Entity
+    if not IsValid(target) or not (target:IsNPC() or target:IsPlayer() or target:IsNextBot()) then
+        ply:ChatPrint("[V-NPCs] Please aim at an NPC to test species swallowed struggling animations!")
+        return
+    end
+
+    local species = VNPC_GetPreySpecies(target)
+    VNPC_AnimateSpeciesStruggling(target, species, 1, 0.5, "default")
+    ply:ChatPrint("[V-NPCs] Tested species swallowed struggling animation for species: [" .. string.upper(species) .. "] on target " .. tostring(target) .. "!")
 end)
