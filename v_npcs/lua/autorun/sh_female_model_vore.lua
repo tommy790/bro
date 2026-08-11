@@ -1490,6 +1490,17 @@ VNPC_WaterDrinkingBonePose = {
     ["ValveBiped.Bip01_L_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(-80, -20, 10) }
 }
 
+VNPC_UnbirthWillingReceiveBonePose = {
+    ["ValveBiped.Bip01_Head1"] = { pos = Vector(0, 0, 0), ang = Angle(0, 35, -10) },
+    ["ValveBiped.Bip01_Spine"] = { pos = Vector(0, 0, 0), ang = Angle(8, 0, 0) },
+    ["ValveBiped.Bip01_Spine1"] = { pos = Vector(0, 0, 0), ang = Angle(5, 0, 0) },
+    ["ValveBiped.Bip01_Pelvis"] = { pos = Vector(0, -6, -8), ang = Angle(-15, 0, 0) },
+    ["ValveBiped.Bip01_R_Thigh"] = { pos = Vector(0, 0, 0), ang = Angle(-20, -20, 0) },
+    ["ValveBiped.Bip01_L_Thigh"] = { pos = Vector(0, 0, 0), ang = Angle(-20, 20, 0) },
+    ["ValveBiped.Bip01_R_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(25, -15, 10) },
+    ["ValveBiped.Bip01_L_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(25, 15, -10) }
+}
+
 VNPC_UnbirthAnimatedBoneList = {
     [0] = { -- rest (seductive/waiting standing pose)
         ["ValveBiped.Bip01_Head1"] = { pos = Vector(0, 0, 0), ang = Angle(0, 10, -5) },
@@ -2131,7 +2142,9 @@ function VNPC_AnimatedBoneOffsets(ent)
     local phase = ent:GetNWInt("FacialPhase", -1)
     local animList = VNPC_GetAnimatedBoneList(ent)
     local data = animList[phase] or animList[0]
-    if (ent.VNPC_IsMountingHeavyPrey or (ent.GetNWBool and ent:GetNWBool("VNPC_IsMountingHeavyPrey"))) and VNPC_HeavyGroundMountBonePose then
+    if (ent.VNPC_IsWillingUnbirthCrawl or (ent.GetNWBool and ent:GetNWBool("VNPC_IsWillingUnbirthCrawl"))) and VNPC_UnbirthWillingReceiveBonePose then
+        data = VNPC_UnbirthWillingReceiveBonePose
+    elseif (ent.VNPC_IsMountingHeavyPrey or (ent.GetNWBool and ent:GetNWBool("VNPC_IsMountingHeavyPrey"))) and VNPC_HeavyGroundMountBonePose then
         data = VNPC_HeavyGroundMountBonePose
     elseif (ent.VNPC_IsDrinkingWater or (ent.GetNWBool and ent:GetNWBool("VNPC_IsDrinkingWater"))) and VNPC_WaterDrinkingBonePose then
         data = VNPC_WaterDrinkingBonePose

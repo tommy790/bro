@@ -109,6 +109,36 @@ function VNPC_StartWillingCrawlAnimation(pred, prey, belly)
     return true
 end
 
+function VNPC_StartUnbirthWillingCrawlAnimation(pred, prey, belly)
+    if not IsValid(pred) or not IsValid(prey) or not IsValid(belly) then return false end
+    local enabled = GetConVar("vnpcs_willing_crawl_enabled")
+    if enabled and not enabled:GetBool() then return false end
+
+    local duration = 6.5
+
+    prey:SetNoDraw(false)
+    prey.VNPC_IsBeingSwallowed = true
+    prey.VNPC_IsWillingCrawl = true
+    prey.VNPC_IsWillingUnbirthCrawl = true
+    pred.VNPC_IsWillingUnbirthCrawl = true
+    if pred.SetNWBool then pred:SetNWBool("VNPC_IsWillingUnbirthCrawl", true) end
+
+    prey:SetSolid(SOLID_NONE)
+    prey:SetMoveType(MOVETYPE_NONE)
+
+    table.insert(activeWillingCrawls, {
+        pred = pred,
+        prey = prey,
+        belly = belly,
+        startTime = CurTime(),
+        duration = duration,
+        stage = 0,
+        isUnbirthWilling = true
+    })
+
+    return true
+end
+
 hook.Add("Think", "VNPCS_WillingCrawlAnimation_Loop", function()
     local enabled = GetConVar("vnpcs_willing_crawl_enabled")
     if enabled and not enabled:GetBool() then return end
@@ -139,25 +169,37 @@ hook.Add("Think", "VNPCS_WillingCrawlAnimation_Loop", function()
             belly:SetBellySize()
         end
 
-        local headBone = pred:LookupBone("ValveBiped.Bip01_Head1") or pred:LookupBone("Head") or pred:LookupBone("head")
-        if headBone then
-            local headPos = pred:GetBonePosition(headBone)
-            if headPos then
-                local mouthWorld = headPos + pred:GetForward() * 5 + pred:GetUp() * 1
-                local stomachWorld = belly:WorldSpaceCenter() + pred:GetUp() * 20
+        if anim.isUnbirthWilling then
+            -- WILLING UNBIRTH CRAWL: prey crawls from behind directly into backwards-facing predator's womb (pelvis)!
+            local wombBone = pred:LookupBone("ValveBiped.Bip01_Pelvis") or pred:LookupBone("Pelvis") or pred:LookupBone("pelvis")
+            local wombPos = wombBone and pred:GetBonePosition(wombBone) or (pred:GetPos() + Vector(0, 0, 32))
+            local entrancePos = wombPos - pred:GetForward() * 22 - pred:GetUp() * 4
 
-                if tNorm < 0.25 then
-                    -- STAGE 1 (0.0 to 0.25): Crawl up from chest/lap to open mouth
-                    local climbStart = headPos + pred:GetForward() * 25 - pred:GetUp() * 15
-                    local climbPos = LerpVector(tNorm / 0.25, climbStart, mouthWorld)
-                    prey:SetPos(climbPos)
-                    prey:SetAngles(Angle(180, pred:GetAngles().y, 0))
-                else
-                    -- STAGE 2-4 (0.25 to 1.0): Slip down the esophagus into the stomach
-                    local esophNorm = (tNorm - 0.25) / 0.75
-                    local esophWorld = LerpVector(esophNorm, mouthWorld, stomachWorld)
-                    prey:SetPos(esophWorld)
-                    prey:SetAngles(Angle(180, pred:GetAngles().y, 0))
+            local curPos = LerpVector(tNorm, entrancePos, wombPos + pred:GetForward() * 4)
+            prey:SetPos(curPos)
+            prey:SetAngles(Angle(0, pred:GetAngles().y, 0))
+        else
+            -- NORMAL WILLING CRAWL: prey crawls into mouth
+            local headBone = pred:LookupBone("ValveBiped.Bip01_Head1") or pred:LookupBone("Head") or pred:LookupBone("head")
+            if headBone then
+                local headPos = pred:GetBonePosition(headBone)
+                if headPos then
+                    local mouthWorld = headPos + pred:GetForward() * 5 + pred:GetUp() * 1
+                    local stomachWorld = belly:WorldSpaceCenter() + pred:GetUp() * 20
+
+                    if tNorm < 0.25 then
+                        -- STAGE 1 (0.0 to 0.25): Crawl up from chest/lap to open mouth
+                        local climbStart = headPos + pred:GetForward() * 25 - pred:GetUp() * 15
+                        local climbPos = LerpVector(tNorm / 0.25, climbStart, mouthWorld)
+                        prey:SetPos(climbPos)
+                        prey:SetAngles(Angle(180, pred:GetAngles().y, 0))
+                    else
+                        -- STAGE 2-4 (0.25 to 1.0): Slip down the esophagus into the stomach
+                        local esophNorm = (tNorm - 0.25) / 0.75
+                        local esophWorld = LerpVector(esophNorm, mouthWorld, stomachWorld)
+                        prey:SetPos(esophWorld)
+                        prey:SetAngles(Angle(180, pred:GetAngles().y, 0))
+                    end
                 end
             end
         end
@@ -190,6 +232,9 @@ hook.Add("Think", "VNPCS_WillingCrawlAnimation_Loop", function()
             end
             prey.VNPC_IsBeingSwallowed = false
             prey.VNPC_IsWillingCrawl = nil
+            prey.VNPC_IsWillingUnbirthCrawl = nil
+            pred.VNPC_IsWillingUnbirthCrawl = nil
+            if pred.SetNWBool then pred:SetNWBool("VNPC_IsWillingUnbirthCrawl", false) end
             prey.VNPC_IngestionDepth = 1.0
 
             if belly.AddPrey then
@@ -264,16 +309,20 @@ function VNPC_WillingPreyCampfire_AI(now)
                         end
 
                         if IsValid(awakePred) then
-                            -- Awake predator found at camp! Willing prey crawls into stomach through the mouth!
                             local belly = awakePred.VNPC_Belly or awakePred.Belly
                             if not IsValid(belly) and VNPC_AttachFemaleModelVore then
                                 VNPC_AttachFemaleModelVore(awakePred)
                                 belly = awakePred.VNPC_Belly or awakePred.Belly
                             end
                             if IsValid(belly) then
-                                VNPC_StartWillingCrawlAnimation(awakePred, ent, belly)
+                                if awakePred.VNPC_AssignedMoveset == "unbirth" then
+                                    VNPC_StartUnbirthWillingCrawlAnimation(awakePred, ent, belly)
+                                    print("[V-NPCs] Willing prey " .. tostring(ent) .. " investigated Predator Camp #" .. camp.id .. " and crawled into backwards-facing unbirth predator " .. tostring(awakePred) .. "'s womb!")
+                                else
+                                    VNPC_StartWillingCrawlAnimation(awakePred, ent, belly)
+                                    print("[V-NPCs] Willing prey " .. tostring(ent) .. " investigated Predator Camp #" .. camp.id .. " and crawled into awake predator " .. tostring(awakePred) .. "'s stomach through the mouth!")
+                                end
                                 ent.VNPC_InvestigatingCamp = nil
-                                print("[V-NPCs] Willing prey " .. tostring(ent) .. " investigated Predator Camp #" .. camp.id .. " and crawled into awake predator " .. tostring(awakePred) .. "'s stomach through the mouth!")
                             end
                         else
                             -- Predators are sleeping/resting OR out hunting; prey just leaves!
@@ -295,11 +344,46 @@ function VNPC_WillingPreyCampfire_AI(now)
     end
 end
 
+function VNPC_UnbirthWillingCrawl_AI(now)
+    local enabled = GetConVar("vnpcs_willing_crawl_enabled")
+    if enabled and not enabled:GetBool() then return end
+
+    for _, pred in ipairs(ents.FindByClass("npc_*")) do
+        if not IsValid(pred) or pred:Health() <= 0 or pred.Vored or pred.VNPC_Vored then continue end
+        if pred.VNPC_AssignedMoveset ~= "unbirth" then continue end
+        if IsValid(pred:GetEnemy()) or pred.VNPC_IsWillingUnbirthCrawl or pred.Swallowing then continue end
+
+        local predPos = pred:GetPos()
+        local predBack = -pred:GetForward()
+
+        for _, prey in ipairs(ents.FindByClass("npc_*")) do
+            if not VNPC_IsWillingPrey(prey) or prey == pred or prey.Vored or prey.VNPC_Vored or prey.VNPC_IsWillingCrawl then continue end
+            if prey:GetPos():DistToSqr(predPos) <= (140 * 140) then
+                local toPrey = (prey:GetPos() - predPos):GetNormalized()
+                toPrey.z = 0
+                if predBack:Dot(toPrey) > 0.45 then
+                    local belly = pred.VNPC_Belly or pred.Belly
+                    if not IsValid(belly) and VNPC_AttachFemaleModelVore then
+                        VNPC_AttachFemaleModelVore(pred)
+                        belly = pred.VNPC_Belly or pred.Belly
+                    end
+                    if IsValid(belly) then
+                        VNPC_StartUnbirthWillingCrawlAnimation(pred, prey, belly)
+                        print("[V-NPCs] Willing Unbirth Crawl: Predator " .. tostring(pred) .. " facing backwards against willing prey " .. tostring(prey) .. "; willing prey is crawling into her womb!")
+                        break
+                    end
+                end
+            end
+        end
+    end
+end
+
 hook.Add("Think", "VNPCS_WillingPreyCampfire_Loop", function()
     local now = CurTime()
     if (VNPC_NextWillingCampfireThink or 0) > now then return end
     VNPC_NextWillingCampfireThink = now + 1.0
     VNPC_WillingPreyCampfire_AI(now)
+    VNPC_UnbirthWillingCrawl_AI(now)
 end)
 
 concommand.Add("vnpcs_test_willing_campfire", function(ply)
@@ -328,4 +412,59 @@ concommand.Add("vnpcs_test_willing_campfire", function(ply)
     if target.SetSchedule then pcall(target.SetSchedule, target, SCHED_FORCED_GO_RUN) end
 
     ply:ChatPrint("[V-NPCs] Set willing prey " .. tostring(target) .. " to investigate Predator Camp #" .. bestCamp.id .. "'s campfire!")
+end)
+
+concommand.Add("vnpcs_test_willing_unbirth", function(ply)
+    if not IsValid(ply) then return end
+    local tr = ply:GetEyeTrace()
+    local target = tr.Entity
+    if not IsValid(target) or not (target:IsNPC() or target:IsNextBot()) then
+        ply:ChatPrint("[V-NPCs] Please aim at an NPC to test willing unbirth womb crawling!")
+        return
+    end
+
+    local pred = nil
+    local prey = nil
+    local isPredTarget = (target.IsDrGNextbot or target.VNPC_FemaleModelVore or target.Predator)
+
+    if isPredTarget then
+        pred = target
+        for _, ent in ipairs(ents.FindByClass("npc_*")) do
+            if IsValid(ent) and ent ~= pred and VNPC_IsWillingPrey(ent) then
+                prey = ent
+                break
+            end
+        end
+    else
+        prey = target
+        for _, ent in ipairs(ents.FindByClass("npc_*")) do
+            if IsValid(ent) and ent ~= prey and (ent.IsDrGNextbot or ent.VNPC_FemaleModelVore or ent.Predator) then
+                pred = ent
+                break
+            end
+        end
+    end
+
+    if not IsValid(pred) or not IsValid(prey) then
+        ply:ChatPrint("[V-NPCs] Could not find both a predator and a willing prey nearby!")
+        return
+    end
+
+    pred.VNPC_AssignedMoveset = "unbirth"
+    prey.VNPC_PreyPersonality = "willing"
+
+    -- Position predator facing backwards against willing prey!
+    pred:SetPos(prey:GetPos() + prey:GetForward() * 38)
+    pred:SetAngles(Angle(0, prey:GetAngles().y, 0))
+
+    local belly = pred.VNPC_Belly or pred.Belly
+    if not IsValid(belly) and VNPC_AttachFemaleModelVore then
+        VNPC_AttachFemaleModelVore(pred)
+        belly = pred.VNPC_Belly or pred.Belly
+    end
+
+    if IsValid(belly) then
+        VNPC_StartUnbirthWillingCrawlAnimation(pred, prey, belly)
+        ply:ChatPrint("[V-NPCs] Tested Willing Unbirth: Predator " .. tostring(pred) .. " facing backwards against willing prey " .. tostring(prey) .. " crawling into her womb!")
+    end
 end)
