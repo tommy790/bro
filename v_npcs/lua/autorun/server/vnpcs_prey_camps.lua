@@ -140,47 +140,94 @@ end
 
 function VNPC_PlanPreyCampLayout(camp)
     if not camp or not camp.pos then return end
-    local SHAPES = { "square", "octagon", "hexagon" }
-    camp.layoutShape = camp.layoutShape or SHAPES[math.random(1, #SHAPES)]
-    local shape = camp.layoutShape
 
-    local numSides = (shape == "square" and 4) or ((shape == "hexagon" and 6) or 8)
-    local radius = 240 + math.min(#(camp.members or {}), 15) * 6
-    local center = camp.pos + Vector(0, 0, 32)
-    local vertices = {}
+    -- 1. Dynamically calculate center of mass and bounding radius of all living camp members & structures
+    local center = camp.pos
+    local validMembers = 0
+    local sumPos = Vector(0, 0, 0)
+    for _, mem in ipairs(camp.members or {}) do
+        if IsValid(mem) and mem:Health() > 0 then
+            sumPos = sumPos + mem:GetPos()
+            validMembers = validMembers + 1
+        end
+    end
+    if validMembers > 0 then
+        center = (sumPos / validMembers)
+    end
+    center = center + Vector(0, 0, 32)
+    camp.center = center
 
-    for s = 1, numSides do
-        local rad = math.rad((s - 1) * (360 / numSides) + (shape == "square" and 45 or 0))
-        table.insert(vertices, center + Vector(math.cos(rad) * radius, math.sin(rad) * radius, 0))
+    local maxMemberDist = 0
+    for _, mem in ipairs(camp.members or {}) do
+        if IsValid(mem) and mem:Health() > 0 then
+            local d = mem:GetPos():Distance(center)
+            if d > maxMemberDist then maxMemberDist = d end
+        end
     end
 
+    -- Dynamic perimeter radius adapts to living area size & member count
+    local targetRadius = math.Clamp(math.max(260, maxMemberDist + 150), 260, 700)
+    local numAngles = math.Clamp(8 + math.floor(#(camp.members or {}) * 0.4), 8, 16)
+    local anchorPoints = {}
+
+    -- 2. Cast radial 3D terrain raycasts to find natural world walls, buildings, or slopes
+    for s = 1, numAngles do
+        local rad = math.rad((s - 1) * (360 / numAngles))
+        local dir = Vector(math.cos(rad), math.sin(rad), 0)
+        local endPos = center + dir * (targetRadius * 1.25)
+
+        local wallTrace = util.TraceLine({
+            start = center,
+            endpos = endPos,
+            mask = MASK_SOLID_BRUSHONLY
+        })
+
+        local anchorPos = nil
+        if wallTrace.Hit and wallTrace.Fraction > 0.35 and wallTrace.Fraction < 0.95 then
+            anchorPos = wallTrace.HitPos - dir * 16
+        else
+            local groundCandidate = center + dir * targetRadius
+            local groundTrace = util.TraceLine({
+                start = groundCandidate + Vector(0, 0, 100),
+                endpos = groundCandidate - Vector(0, 0, 250),
+                mask = MASK_SOLID_BRUSHONLY
+            })
+            anchorPos = groundTrace.Hit and (groundTrace.HitPos + Vector(0, 0, 2)) or (groundCandidate - Vector(0, 0, 30))
+        end
+        table.insert(anchorPoints, anchorPos)
+    end
+
+    -- 3. Connect adjacent perimeter anchors and subdivide open spans into dynamic barrier segments
     camp.plannedWalls = {}
     local gatePlaced = false
 
-    for s = 1, numSides do
-        local next_s = (s % numSides) + 1
-        local pStart = vertices[s]
-        local pEnd = vertices[next_s]
-        local sideLen = pStart:Distance(pEnd)
-        local numSegs = math.max(2, math.ceil(sideLen / 86))
+    for s = 1, #anchorPoints do
+        local next_s = (s % #anchorPoints) + 1
+        local P1 = anchorPoints[s]
+        local P2 = anchorPoints[next_s]
+        local sideLen = P1:Distance(P2)
+        local numSegs = math.max(1, math.ceil(sideLen / 86))
 
         for seg = 1, numSegs do
             local t1 = (seg - 1) / numSegs
             local t2 = seg / numSegs
-            local P1 = LerpVector(t1, pStart, pEnd)
-            local P2 = LerpVector(t2, pStart, pEnd)
-            local midPos = (P1 + P2) * 0.5 + Vector(0, 0, 45)
+            local pStart = LerpVector(t1, P1, P2)
+            local pEnd = LerpVector(t2, P1, P2)
+            local midPos = (pStart + pEnd) * 0.5 + Vector(0, 0, 45)
 
-            local tr = util.TraceLine({
+            local floorTrace = util.TraceLine({
                 start = midPos,
-                endpos = midPos - Vector(0, 0, 220),
+                endpos = midPos - Vector(0, 0, 240),
                 mask = MASK_SOLID_BRUSHONLY
             })
 
-            local floorPos = tr.Hit and (tr.HitPos + Vector(0, 0, 2)) or (midPos - Vector(0, 0, 45))
-            local wallDir = (P2 - P1):GetNormalized()
-            local outwardNormal = Vector(-wallDir.y, wallDir.x, 0):GetNormalized()
-            local wallAng = Angle(0, wallDir:Angle().y, 0)
+            local floorPos = floorTrace.Hit and (floorTrace.HitPos + Vector(0, 0, 2)) or (midPos - Vector(0, 0, 45))
+            local wallDir = (pEnd - pStart):GetNormalized()
+            local yaw = wallDir:Angle().y
+            local dz = pEnd.z - pStart.z
+            local pitch = math.deg(math.atan2(-dz, sideLen / numSegs))
+            local wallAng = Angle(pitch, yaw, 0)
+
             local isGate = false
             if not gatePlaced and s == 1 and seg == math.floor(numSegs * 0.5) then
                 isGate = true
@@ -191,7 +238,8 @@ function VNPC_PlanPreyCampLayout(camp)
                 pos = floorPos,
                 ang = wallAng,
                 isGate = isGate,
-                built = false
+                built = false,
+                isUpgrade = (camp.breachAlertTime and (CurTime() - camp.breachAlertTime) < 180)
             })
         end
     end
@@ -219,6 +267,8 @@ function VNPC_ConstructPreyCampWall(camp)
     local mdl = nil
     if targetPlan.isGate then
         mdl = "models/props_wasteland/wood_fence01a.mdl"
+    elseif targetPlan.isUpgrade then
+        mdl = "models/props_fortifications/barricade01a.mdl"
     else
         camp.wallModel = camp.wallModel or PREY_WALL_MODELS[math.random(1, #PREY_WALL_MODELS)]
         mdl = camp.wallModel
@@ -239,7 +289,7 @@ function VNPC_ConstructPreyCampWall(camp)
     wall.VNPC_IsPreyCampWall = true
     wall.VNPC_PreyCampID = camp.id
     wall.VNPC_CampRef = camp
-    wall:SetHealth(180)
+    wall:SetHealth(targetPlan.isUpgrade and 350 or 180)
 
     if targetPlan.isGate then
         wall.VNPC_IsPreyCampGate = true
@@ -249,7 +299,6 @@ function VNPC_ConstructPreyCampWall(camp)
 
     table.insert(camp.walls, wall)
 
-    -- Freeze wall physics so it stands firm as a defensive fortification
     local phys = wall:GetPhysicsObject()
     if IsValid(phys) then
         phys:SetVelocity(Vector(0,0,0))
@@ -268,7 +317,6 @@ function VNPC_PredatorBreachPreyCampWall(pred, wall, camp)
     if not IsValid(pred) or not IsValid(wall) or not camp then return end
     if not wall.VNPC_IsPreyCampWall then return end
 
-    -- Remove wall from camp perimeter
     for idx, w in ipairs(camp.walls) do
         if w == wall then
             table.remove(camp.walls, idx)
@@ -276,7 +324,6 @@ function VNPC_PredatorBreachPreyCampWall(pred, wall, camp)
         end
     end
 
-    -- Predator swallows the wall prop to breach the camp
     local belly = pred.VNPC_Belly or pred.Belly
     if IsValid(belly) and belly.AddPrey then
         pcall(belly.AddPrey, belly, wall)
@@ -293,16 +340,23 @@ function VNPC_PredatorBreachPreyCampWall(pred, wall, camp)
             if IsValid(wall) then wall:Remove() end
         end)
     end
+
+    camp.breachAlertTime = CurTime()
+    local maxWalls = camp_max_walls:GetInt()
+    if #camp.walls < (maxWalls * 0.7) then
+        camp.plannedWalls = nil
+        camp.fortified = false
+    end
 end
 
 function VNPC_CalculateCampHutPosition(camp)
     if not camp or not camp.pos then return nil, nil end
-    local numHuts = math.Clamp(camp_max_huts:GetInt(), 1, 6)
-    local radius = 90 + ((#(camp.huts or {})) * 55)
-    local center = camp.pos + Vector(0, 0, 32)
+    local numHuts = math.Clamp(math.ceil(#(camp.members or {}) / 3), 1, camp_max_huts:GetInt() or 6)
+    local radius = 85 + ((#(camp.huts or {})) * 50)
+    local center = (camp.center or camp.pos) + Vector(0, 0, 32)
 
     for i = 0, numHuts - 1 do
-        local theta = (i / numHuts) * (2 * math.pi) + math.rad(45)
+        local theta = (i / numHuts) * (2 * math.pi) + math.rad(math.random(0, 360))
         local candidatePos = center + Vector(math.cos(theta) * radius, math.sin(theta) * radius, 65)
 
         local tr = util.TraceLine({
@@ -311,10 +365,10 @@ function VNPC_CalculateCampHutPosition(camp)
             mask = MASK_SOLID_BRUSHONLY
         })
 
-        if tr.Hit and tr.HitNormal.z > 0.6 then
+        if tr.Hit and tr.HitNormal.z > 0.65 then
             local occupied = false
             for _, h in ipairs(camp.huts or {}) do
-                if IsValid(h) and h:GetPos():DistToSqr(tr.HitPos) < (130 * 130) then
+                if IsValid(h) and h:GetPos():DistToSqr(tr.HitPos) < (120 * 120) then
                     occupied = true
                     break
                 end
@@ -513,6 +567,78 @@ function VNPC_PredatorBreachPreyCampHut(pred, hutOrPiece, camp)
     end
 end
 
+function VNPC_ConstructPreyCampCourtyardDefense(camp)
+    if not camps_enabled:GetBool() or not camp or not camp.fortified then return false end
+    camp.courtyardDefenses = camp.courtyardDefenses or {}
+    local maxDefenses = math.Clamp(math.floor(camp_max_walls:GetInt() * 0.5), 2, 12)
+    if #camp.courtyardDefenses >= maxDefenses then return false end
+
+    local center = (camp.center or camp.pos) + Vector(0, 0, 32)
+    local angle = math.rad(math.random(0, 360))
+    local dist = math.random(75, 180)
+    local candidatePos = center + Vector(math.cos(angle) * dist, math.sin(angle) * dist, 50)
+
+    local tr = util.TraceLine({
+        start = candidatePos,
+        endpos = candidatePos - Vector(0, 0, 200),
+        mask = MASK_SOLID_BRUSHONLY
+    })
+
+    if not tr.Hit or tr.HitNormal.z < 0.65 then return false end
+
+    for _, existing in ipairs(camp.courtyardDefenses) do
+        if IsValid(existing) and existing:GetPos():DistToSqr(tr.HitPos) < (85 * 85) then
+            return false
+        end
+    end
+    for _, hut in ipairs(camp.huts or {}) do
+        if IsValid(hut) and hut:GetPos():DistToSqr(tr.HitPos) < (100 * 100) then
+            return false
+        end
+    end
+
+    local prop = ents.Create("prop_physics")
+    if not IsValid(prop) then return false end
+
+    local models = {
+        "models/props_fortifications/barricade01a.mdl",
+        "models/props_c17/woodbarrel001.mdl",
+        "models/props_junk/wood_crate001a.mdl",
+        "models/props_wasteland/wood_fence01a.mdl"
+    }
+    local mdl = models[math.random(1, #models)]
+    if not util.IsValidModel(mdl) then
+        mdl = "models/props_c17/woodbarrel001.mdl"
+    end
+
+    prop:SetModel(mdl)
+    prop:SetPos(tr.HitPos + Vector(0, 0, 4))
+    prop:SetAngles(Angle(0, math.random(0, 360), 0))
+    prop:Spawn()
+    prop:Activate()
+
+    prop.VNPC_IsPreyCampWall = true
+    prop.VNPC_IsCourtyardDefense = true
+    prop.VNPC_PreyCampID = camp.id
+    prop.VNPC_CampRef = camp
+    prop:SetHealth(240)
+
+    table.insert(camp.courtyardDefenses, prop)
+
+    local phys = prop:GetPhysicsObject()
+    if IsValid(phys) then
+        phys:SetVelocity(Vector(0,0,0))
+        phys:EnableMotion(false)
+        phys:Sleep()
+    end
+
+    if prop.EmitSound then
+        prop:EmitSound("physics/wood/wood_box_impact_hard1.wav", 75, math.random(95, 105))
+    end
+
+    return true
+end
+
 function VNPC_PreyCampLove_AI(camp, now)
     if not love_enabled:GetBool() or not camp or not camp.fortified then return end
     local maxMembers = camp_max_members:GetInt()
@@ -648,6 +774,15 @@ hook.Add("Think", "VNPC_PreyCamps_AI_Loop", function()
             end
         end
 
+        -- Prune destroyed courtyard defenses
+        camp.courtyardDefenses = camp.courtyardDefenses or {}
+        for d = #camp.courtyardDefenses, 1, -1 do
+            local def = camp.courtyardDefenses[d]
+            if not IsValid(def) then
+                table.remove(camp.courtyardDefenses, d)
+            end
+        end
+
         if VNPC_CheckPreyCampConquest then
             VNPC_CheckPreyCampConquest(camp)
         end
@@ -682,6 +817,13 @@ hook.Add("Think", "VNPC_PreyCamps_AI_Loop", function()
             end
         end
 
+        -- When fortified, dynamically build courtyard cover barricades & defensive checkpoints
+        if camp.fortified and camp.resources >= 12.0 then
+            if VNPC_ConstructPreyCampCourtyardDefense(camp) then
+                camp.resources = math.max(0, camp.resources - 12.0)
+            end
+        end
+
         -- Instruct idle prey members to take shelter inside/near built little huts
         if #camp.huts > 0 then
             for idx, mem in ipairs(camp.members) do
@@ -706,6 +848,7 @@ hook.Add("Think", "VNPC_PreyCamps_AI_Loop", function()
                     local hasSpace = not IsValid(belly) or not belly.Prey or #belly.Prey < 5
                     if hasSpace and (pred.VNPC_NextWallBreachTime or 0) <= now then
                         pred.VNPC_NextWallBreachTime = now + 5.0
+                        camp.breachAlertTime = now
                         VNPC_PredatorBreachPreyCampWall(pred, wall, camp)
                         break
                     end
@@ -724,8 +867,38 @@ hook.Add("Think", "VNPC_PreyCamps_AI_Loop", function()
                     local hasSpace = not IsValid(belly) or not belly.Prey or #belly.Prey < 5
                     if hasSpace and (pred.VNPC_NextHutBreachTime or 0) <= now then
                         pred.VNPC_NextHutBreachTime = now + 5.0
+                        camp.breachAlertTime = now
                         VNPC_PredatorBreachPreyCampHut(pred, hut, camp)
                         break
+                    end
+                end
+            end
+        end
+
+        -- Dynamic threat-driven adaptive replan: when 30% or more of walls are breached, trigger a full perimeter replan
+        if camp.fortified and #camp.walls < (maxWalls * 0.7) then
+            camp.plannedWalls = nil
+            camp.fortified = false
+        end
+
+        -- Dynamic AI Cover & Defense Behaviors: when enemies approach within 800 units, citizens & fort predators move to cover
+        local nearEnemy = nil
+        for _, ent in ipairs(ents.FindInSphere(camp.pos, 800)) do
+            if IsValid(ent) and ent:Health() > 0 and (ent.IsDrGNextbot or ent.VNPC_FemaleModelVore or ent.Predator) then
+                if not ent.VNPC_IsPermanentFortPredator then
+                    nearEnemy = ent
+                    break
+                end
+            end
+        end
+
+        if IsValid(nearEnemy) and #(camp.courtyardDefenses or {}) > 0 then
+            for idx, mem in ipairs(camp.members) do
+                if IsValid(mem) and mem:Health() > 0 then
+                    local targetCover = camp.courtyardDefenses[((idx - 1) % #camp.courtyardDefenses) + 1]
+                    if IsValid(targetCover) and mem:GetPos():DistToSqr(targetCover:GetPos()) > (130 * 130) then
+                        if mem.SetLastPosition then pcall(mem.SetLastPosition, mem, targetCover:GetPos()) end
+                        if mem.SetSchedule then pcall(mem.SetSchedule, mem, SCHED_FORCED_GO) end
                     end
                 end
             end
