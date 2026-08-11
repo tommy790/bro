@@ -5,7 +5,7 @@ local camps_enabled = CreateConVar("vnpcs_prey_camps_enabled", "1", {FCVAR_ARCHI
 local camp_target_size = CreateConVar("vnpcs_prey_camp_target_size", "10", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Target number of prey NPCs per camp (at least 10 prey)")
 local camp_resource_rate = CreateConVar("vnpcs_prey_camp_resource_rate", "1.5", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Base resource accumulation rate per second for prey camps")
 local camp_wall_cost = CreateConVar("vnpcs_prey_camp_wall_cost", "25.0", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Resource cost to construct one defensive wall prop")
-local camp_max_walls = CreateConVar("vnpcs_prey_camp_max_walls", "16", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Maximum number of defensive wall props around a prey camp perimeter")
+local camp_max_walls = CreateConVar("vnpcs_prey_camp_max_walls", "24", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Maximum number of defensive wall props around a prey camp perimeter")
 local camp_hut_cost = CreateConVar("vnpcs_prey_camp_hut_cost", "45.0", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Resource cost to construct a little hut inside a fortified prey camp")
 local camp_max_huts = CreateConVar("vnpcs_prey_camp_max_huts", "4", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Maximum number of little huts inside a fortified prey camp courtyard")
 local love_enabled = CreateConVar("vnpcs_prey_camp_love_enabled", "1", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Enable love and pregnancy population growth in fortified prey camps")
@@ -15,20 +15,16 @@ local camp_max_members = CreateConVar("vnpcs_prey_camp_max_members", "25", {FCVA
 VNPC_ActivePreyCamps = VNPC_ActivePreyCamps or {}
 
 local PREY_WALL_MODELS = {
-    "models/props_c17/fence01a.mdl",
-    "models/props_c17/fence01b.mdl",
-    "models/props_wasteland/wood_fence01a.mdl",
-    "models/props_fortifications/barricade01a.mdl",
-    "models/props_c17/concrete_barrier001a.mdl",
-    "models/props_junk/wood_crate001a.mdl"
+    "models/props_wasteland/wood_fence01a.mdl",       -- Large 128-unit wooden fence barrier
+    "models/props_c17/fence01a.mdl",                  -- Large chainlink fence barrier
+    "models/props_c17/fence03a.mdl",                  -- Industrial fence barrier
+    "models/props_fortifications/barricade01a.mdl"    -- Sturdy fortification barricade
 }
 
 local PREY_HUT_MODELS = {
-    "models/props_wasteland/wood_room001a.mdl",       -- Small wooden shack / cabin
+    "models/props_wasteland/wood_room001a.mdl",       -- Wooden cabin / shack structure
     "models/props_c17/FurnitureShack001a.mdl",        -- Compact tin/wood shack
-    "models/props_buildings/collapsedbuilding01a.mdl",-- Small shelter
-    "models/props_c17/canister01a.mdl",               -- Compact shelter canister
-    "models/props_wasteland/cargo_container01.mdl"    -- Cargo container shelter
+    "models/props_buildings/collapsedbuilding01a.mdl" -- Compact shelter
 }
 
 function VNPC_IsEligiblePreyNPC(ent)
@@ -140,8 +136,8 @@ end
 -- Advanced math & map geometry geometry calculator for perimeter wall coordinates
 function VNPC_CalculateCampWallPositions(camp)
     if not camp or not camp.pos then return nil, nil end
-    local numWalls = math.Clamp(camp_max_walls:GetInt(), 6, 24)
-    local radius = 280 + (#camp.members * 18)
+    local radius = 220 + math.min(#(camp.members or {}), 15) * 8
+    local numWalls = math.max(12, math.ceil((2 * math.pi * radius) / 105))
     local center = camp.pos + Vector(0, 0, 32)
 
     for i = 0, numWalls - 1 do
@@ -151,7 +147,7 @@ function VNPC_CalculateCampWallPositions(camp)
         -- Downward raycast against map geometry to find terrain floor normal
         local tr = util.TraceLine({
             start = candidatePos,
-            endpos = candidatePos - Vector(0, 0, 220),
+            endpos = candidatePos - Vector(0, 0, 250),
             mask = MASK_SOLID_BRUSHONLY
         })
 
@@ -159,18 +155,17 @@ function VNPC_CalculateCampWallPositions(camp)
             -- Verify minimum spacing from existing wall props
             local occupied = false
             for _, w in ipairs(camp.walls) do
-                if IsValid(w) and w:GetPos():DistToSqr(tr.HitPos) < (110 * 110) then
+                if IsValid(w) and w:GetPos():DistToSqr(tr.HitPos) < (75 * 75) then
                     occupied = true
                     break
                 end
             end
 
             if not occupied then
-                -- Outward-facing yaw and terrain-aligned roll/pitch
                 local outwardDir = (tr.HitPos - center):GetNormalized()
                 local yaw = outwardDir:Angle().y + 90
                 local ang = Angle(0, yaw, 0)
-                return tr.HitPos + Vector(0, 0, 10), ang
+                return tr.HitPos + Vector(0, 0, 2), ang
             end
         end
     end
@@ -186,7 +181,8 @@ function VNPC_ConstructPreyCampWall(camp)
     local wall = ents.Create("prop_physics")
     if not IsValid(wall) then return false end
 
-    local mdl = PREY_WALL_MODELS[math.random(1, #PREY_WALL_MODELS)]
+    camp.wallModel = camp.wallModel or PREY_WALL_MODELS[math.random(1, #PREY_WALL_MODELS)]
+    local mdl = camp.wallModel
     if not util.IsValidModel(mdl) then
         mdl = "models/props_c17/fence01a.mdl"
     end
@@ -214,10 +210,6 @@ function VNPC_ConstructPreyCampWall(camp)
 
     if wall.EmitSound then
         wall:EmitSound("physics/wood/wood_box_impact_hard1.wav", 75, math.random(95, 105))
-    end
-
-    for _, p in ipairs(player.GetAll()) do
-        p:ChatPrint("[V-NPCs] Prey Camp #" .. camp.id .. " constructed a defensive wall using map geometry! (Active walls: " .. #camp.walls .. ")")
     end
 
     return true
