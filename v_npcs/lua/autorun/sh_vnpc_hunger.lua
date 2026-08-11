@@ -122,7 +122,8 @@ VNPC_PreyCookedMealModels = VNPC_PreyCookedMealModels or {
         name = "Hotdog",
         type = "food",
         hungerRelief = 60.0,
-        thirstRelief = 10.0
+        thirstRelief = 10.0,
+        mealBellyWeight = 45.0
     },
     burger = {
         model = "models/food/burger.mdl",
@@ -130,7 +131,8 @@ VNPC_PreyCookedMealModels = VNPC_PreyCookedMealModels or {
         name = "Burger",
         type = "food",
         hungerRelief = 75.0,
-        thirstRelief = 10.0
+        thirstRelief = 10.0,
+        mealBellyWeight = 60.0
     },
     soda = {
         model = "models/props_junk/popcan01a.mdl",
@@ -138,7 +140,8 @@ VNPC_PreyCookedMealModels = VNPC_PreyCookedMealModels or {
         name = "Soda",
         type = "drink",
         hungerRelief = 15.0,
-        thirstRelief = 75.0
+        thirstRelief = 75.0,
+        mealBellyWeight = 50.0
     }
 }
 
@@ -148,6 +151,64 @@ function VNPC_GetCookedMealModel(mealType)
         return data.model
     end
     return data.fallback
+end
+
+function VNPC_GetPreyBellyAnchorBone(ent)
+    if not IsValid(ent) then return 0 end
+    local bones = {"ValveBiped.Bip01_Spine", "ValveBiped.Bip01_Spine1", "ValveBiped.Bip01_Spine2", "Spine", "Spine1"}
+    for _, name in ipairs(bones) do
+        local bone = ent:LookupBone(name)
+        if bone and bone >= 0 then
+            return bone
+        end
+    end
+    return 0
+end
+
+function VNPC_EnsureFemalePreyBelly(ent)
+    if not SERVER or not IsValid(ent) then return nil end
+    if IsValid(ent.VNPC_Belly or ent.Belly) then
+        return ent.VNPC_Belly or ent.Belly
+    end
+
+    local belly = ents.Create("ent_vore_belly")
+    if not IsValid(belly) then return nil end
+
+    ent.Belly_Angles = ent.Belly_Angles or Angle(0, 90, 90)
+    ent.Belly_Offset = ent.Belly_Offset or (VNPC_GetFixedFemaleBellyOffset and VNPC_GetFixedFemaleBellyOffset(ent) or Vector(0, 3.5, 0))
+    ent.BellyProperties = ent.BellyProperties or {
+        BellyColor = Color(195,145,122),
+        WeightGainAmount = 0.5,
+        DigestionStrength = 3,
+        AbsorptionPower = 2,
+        MaxBaseSize = 0.5,
+        FatFoldsMaxSize = 1
+    }
+
+    belly:SetPos(ent:GetPos())
+    belly:SetParent(ent)
+    belly:SetProperties(ent.BellyProperties, ent)
+    belly:SetNPC(ent)
+    belly:Spawn()
+    belly:Activate()
+
+    local spineBone = VNPC_GetPreyBellyAnchorBone(ent)
+    belly:FollowBone(ent, spineBone)
+    if not belly:GetParent() or belly:GetParent() ~= ent then
+        belly:SetParent(ent)
+    end
+    belly:SetLocalAngles(ent.Belly_Angles)
+    belly:SetLocalPos(ent.Belly_Offset)
+    if belly.SetBellySize then
+        belly:SetBellySize()
+    end
+
+    ent.VNPC_Belly = belly
+    ent.Belly = belly
+    if ent.SetNWEntity then
+        ent:SetNWEntity("Belly", belly)
+    end
+    return belly
 end
 
 function VNPC_GetThirst(ent)
@@ -347,6 +408,16 @@ if SERVER then
                     VNPC_SetThirst(ent, VNPC_GetThirst(ent) + preyThirstRate)
                 end
 
+                if (ent.VNPC_FoodMealWeight or 0) > 0 then
+                    ent.VNPC_FoodMealWeight = math.max(0, ent.VNPC_FoodMealWeight - 1.2)
+                    if IsValid(ent.VNPC_Belly) then
+                        ent.VNPC_Belly.VNPC_FoodMealWeight = ent.VNPC_FoodMealWeight
+                        if ent.VNPC_Belly.SetBellySize then
+                            ent.VNPC_Belly:SetBellySize()
+                        end
+                    end
+                end
+
                 if GetConVar("vnpcs_prey_stamina_enabled"):GetBool() then
                     local curStam = VNPC_GetPreyStamina(ent)
                     local isRunning = ent.IsMoving and ent:IsMoving() and (ent:GetSchedule() == SCHED_FORCED_GO_RUN or ent:GetSchedule() == SCHED_CHASE_ENEMY or IsValid(ent:GetEnemy()))
@@ -396,7 +467,13 @@ concommand.Add("vnpcs_hunger_status", function(ply)
                 if ent.VNPC_IsCookingMeal then
                     mealState = "COOKING " .. string.upper(ent.VNPC_CookingMealType or "MEAL")
                 elseif ent.VNPC_IsEatingMeal then
-                    mealState = "EATING " .. string.upper(ent.VNPC_EatingMealType or "MEAL") .. " (No Belly Expansion)"
+                    if VNPC_IsFemalePreyCitizen and VNPC_IsFemalePreyCitizen(ent) then
+                        mealState = "SWALLOWING " .. string.upper(ent.VNPC_EatingMealType or "MEAL") .. " WHOLE (Belly Expanded)"
+                    else
+                        mealState = "CHEWING " .. string.upper(ent.VNPC_EatingMealType or "MEAL") .. " (No Belly Expansion)"
+                    end
+                elseif (ent.VNPC_FoodMealWeight or 0) > 0 then
+                    mealState = string.format("DIGESTING SWALLOWED FOOD (Belly Expanded | Food Weight = %.1f)", ent.VNPC_FoodMealWeight)
                 elseif hunger >= 60.0 then
                     mealState = "SEEKING COOKED PROP MEAL (Hungry)"
                 end
@@ -428,13 +505,19 @@ concommand.Add("vnpcs_thirst_status", function(ply)
             elseif VNPC_IsPreyNPC(ent) then
                 preyCount = preyCount + 1
                 local thirst = VNPC_GetThirst(ent)
-                local stateStr = "NORMAL | No Belly Expansion"
+                local stateStr = "NORMAL"
                 if ent.VNPC_IsCookingMeal and ent.VNPC_CookingMealType == "soda" then
-                    stateStr = "COOKING SODA (No Belly Expansion)"
+                    stateStr = "COOKING SODA"
                 elseif ent.VNPC_IsEatingMeal and ent.VNPC_EatingMealType == "soda" then
-                    stateStr = "DRINKING SODA (No Belly Expansion)"
+                    if VNPC_IsFemalePreyCitizen and VNPC_IsFemalePreyCitizen(ent) then
+                        stateStr = "SWALLOWING SODA WHOLE (Belly Expanded)"
+                    else
+                        stateStr = "DRINKING SODA (No Belly Expansion)"
+                    end
+                elseif (ent.VNPC_FoodMealWeight or 0) > 0 then
+                    stateStr = string.format("DIGESTING SWALLOWED SODA/MEAL (Belly Expanded | Food Weight = %.1f)", ent.VNPC_FoodMealWeight)
                 elseif thirst >= 60.0 then
-                    stateStr = "THIRSTY (Seeking Cooked Soda / Water | No Belly Expansion)"
+                    stateStr = "THIRSTY (Seeking Cooked Soda / Water)"
                 end
                 print(string.format(" - Prey #%d [%s]: Thirst = %.1f%% | State = %s", ent:EntIndex(), ent.PrintName or ent:GetClass(), thirst, stateStr))
             end
@@ -483,6 +566,31 @@ concommand.Add("vnpcs_test_prey_cook_meal", function(ply, cmd, args)
         end
     end
     print("[V-NPCs] Ordered " .. found .. " female citizen prey at prey camps to cook a prop meal (" .. string.upper(mealType) .. ").")
+end)
+
+concommand.Add("vnpcs_test_prey_swallow_meal", function(ply, cmd, args)
+    local mealType = string.lower(args[1] or "burger")
+    local mealData = VNPC_PreyCookedMealModels[mealType] or VNPC_PreyCookedMealModels.burger
+    local found = 0
+    for _, ent in ipairs(ents.GetAll()) do
+        if VNPC_IsPreyNPC(ent) and (VNPC_IsFemalePreyCitizen and VNPC_IsFemalePreyCitizen(ent) or string.lower(ent:GetModel() or ""):find("female") or string.lower(ent:GetModel() or ""):find("f_") or string.lower(ent:GetModel() or ""):find("alyx")) then
+            VNPC_EnsureFemalePreyBelly(ent)
+            ent.VNPC_NoBellyExpansionFromMeal = false
+            ent.VNPC_FoodMealWeight = (ent.VNPC_FoodMealWeight or 0) + (mealData.mealBellyWeight or 60.0)
+            if IsValid(ent.VNPC_Belly) then
+                ent.VNPC_Belly.VNPC_FoodMealWeight = ent.VNPC_FoodMealWeight
+                if ent.VNPC_Belly.SetBellySize then
+                    ent.VNPC_Belly:SetBellySize()
+                end
+            end
+            if ent.EmitSound then
+                ent:EmitSound("gulps/g" .. math.random(1, 10) .. ".wav", 75, math.random(95, 105))
+            end
+            found = found + 1
+            print(string.format("[V-NPCs] Test: Female Citizen Prey #%d swallowed a %s whole without chewing! Belly expanded! (Food Weight = %.1f)", ent:EntIndex(), string.upper(mealType), ent.VNPC_FoodMealWeight))
+        end
+    end
+    print("[V-NPCs] Commanded " .. found .. " female citizen prey to swallow a " .. string.upper(mealType) .. " whole (Belly Expanded!).")
 end)
 
 CreateConVar("vnpcs_pred_xp_enabled", "1", {FCVAR_REPLICATED, FCVAR_ARCHIVE}, "Enable predator experience (XP) and leveling system")

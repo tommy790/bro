@@ -452,22 +452,33 @@ function VNPC_PreyMealConsumption_AI(camp, now)
                     VNPC_SetThirst(bestConsumer, math.max(0, VNPC_GetThirst(bestConsumer) - (mealData.thirstRelief or 60.0)))
                 end
 
-                -- STRICT REQUIREMENT: ZERO BELLY EXPANSION from cooked prop meals (hotdog, burger, soda)
-                bestConsumer.VNPC_NoBellyExpansionFromMeal = true
-                bestConsumer.VNPC_WaterDrank = 0
-                if IsValid(bestConsumer.VNPC_Belly) then
-                    bestConsumer.VNPC_Belly.VNPC_WaterWeight = 0
-                end
-
-                if bestConsumer.EmitSound then
-                    if prop.VNPC_MealType == "soda" then
-                        bestConsumer:EmitSound("gulps/g" .. math.random(1, 10) .. ".wav", 75, math.random(95, 105))
-                    else
-                        bestConsumer:EmitSound("npc/barnacle/barnacle_crunch2.wav", 75, math.random(95, 105))
+                if VNPC_IsFemalePreyCitizen and VNPC_IsFemalePreyCitizen(bestConsumer) then
+                    -- FEMALE PREY CITIZENS SWALLOW MEALS WHOLE WITHOUT CHEWING -> BELLY EXPANDS FROM FOOD
+                    VNPC_EnsureFemalePreyBelly(bestConsumer)
+                    bestConsumer.VNPC_NoBellyExpansionFromMeal = false
+                    bestConsumer.VNPC_FoodMealWeight = (bestConsumer.VNPC_FoodMealWeight or 0) + (mealData.mealBellyWeight or 50.0)
+                    if IsValid(bestConsumer.VNPC_Belly) then
+                        bestConsumer.VNPC_Belly.VNPC_FoodMealWeight = bestConsumer.VNPC_FoodMealWeight
+                        if bestConsumer.VNPC_Belly.SetBellySize then
+                            bestConsumer.VNPC_Belly:SetBellySize()
+                        end
                     end
+                    if bestConsumer.EmitSound then
+                        bestConsumer:EmitSound("gulps/g" .. math.random(1, 10) .. ".wav", 75, math.random(95, 105))
+                    end
+                    print(string.format("[V-NPCs] Female Prey Citizen #%d [%s] swallowed prop meal %s (%s) whole without chewing! Belly expanded! [Hunger = %.1f%%, Thirst = %.1f%%, Food Weight = %.1f]", bestConsumer:EntIndex(), bestConsumer.PrintName or bestConsumer:GetClass(), mealData.name or prop.VNPC_MealType, prop.VNPC_MealType, VNPC_GetHunger(bestConsumer), VNPC_GetThirst(bestConsumer), bestConsumer.VNPC_FoodMealWeight))
+                else
+                    -- MALE PREY CITIZENS CHEW NORMALLY -> ZERO BELLY EXPANSION
+                    bestConsumer.VNPC_NoBellyExpansionFromMeal = true
+                    if bestConsumer.EmitSound then
+                        if prop.VNPC_MealType == "soda" then
+                            bestConsumer:EmitSound("gulps/g" .. math.random(1, 10) .. ".wav", 75, math.random(95, 105))
+                        else
+                            bestConsumer:EmitSound("npc/barnacle/barnacle_crunch2.wav", 75, math.random(95, 105))
+                        end
+                    end
+                    print(string.format("[V-NPCs] Male Prey Citizen #%d [%s] chewed and ate prop meal %s (%s) [Hunger = %.1f%%, Thirst = %.1f%%, Belly Expansion = NONE]!", bestConsumer:EntIndex(), bestConsumer.PrintName or bestConsumer:GetClass(), mealData.name or prop.VNPC_MealType, prop.VNPC_MealType, VNPC_GetHunger(bestConsumer), VNPC_GetThirst(bestConsumer)))
                 end
-
-                print(string.format("[V-NPCs] Prey Citizen #%d [%s] consumed prop meal %s (%s) [Hunger = %.1f%%, Thirst = %.1f%%, Belly Expansion = NONE]!", bestConsumer:EntIndex(), bestConsumer.PrintName or bestConsumer:GetClass(), mealData.name or prop.VNPC_MealType, prop.VNPC_MealType, VNPC_GetHunger(bestConsumer), VNPC_GetThirst(bestConsumer)))
 
                 table.remove(camp.cookedMeals, i)
                 if IsValid(prop) then

@@ -2,13 +2,14 @@ ENT.BaseScale = 0 --AKA BELLY FAT LEFT OVER
 ENT.MaxBaseScale = 0.5
 
 function ENT:GetBellySize() --this gets the scale of all the stuff in the stomach
-    -- Ensure consuming cooked prop meals (hotdog, burger, soda) causes ZERO belly expansion
-    if IsValid(self.NPC) and (self.NPC.VNPC_NoBellyExpansionFromMeal or (self.NPC.VNPC_IsCitizenPrey and not self.NPC.VNPC_IsPermanentFortPredator)) and not (self.Prey and #self.Prey > 0) then
+    -- Ensure consuming prop meals causes ZERO belly expansion ONLY for male prey who chew or explicitly flagged non-expanding eaters
+    if IsValid(self.NPC) and self.NPC.VNPC_NoBellyExpansionFromMeal and not (self.Prey and #self.Prey > 0) and not ((self.NPC.VNPC_FoodMealWeight or 0) > 0) then
         return self.BaseScale
     end
 
     local waterVal = (self.VNPC_WaterWeight or 0) + (IsValid(self.NPC) and (self.NPC.VNPC_WaterDrank or 0) or 0)
-    local totalVal = self:GetCollectivePreyValue() + waterVal
+    local foodMealVal = (self.VNPC_FoodMealWeight or 0) + (IsValid(self.NPC) and (self.NPC.VNPC_FoodMealWeight or 0) or 0)
+    local totalVal = self:GetCollectivePreyValue() + waterVal + foodMealVal
     local scale = totalVal * 0.013 --no meaning number
 
     if scale > 1 then
