@@ -387,12 +387,22 @@ function VNPC_WildPredPreyMate(female, male)
     return true
 end
 
+function VNPC_IsFamilyOrMate(entA, entB)
+    if not IsValid(entA) or not IsValid(entB) or entA == entB then return true end
+    if entA.VNPC_WildMate == entB or entB.VNPC_WildMate == entA then return true end
+    if entA.VNPC_WildPartner == entB or entB.VNPC_WildPartner == entA then return true end
+    if entA.VNPC_WildChild == entB or entB.VNPC_WildChild == entA then return true end
+    if entA.VNPC_MotherRef == entB or entB.VNPC_MotherRef == entA then return true end
+    if entA.VNPC_FatherRef == entB or entB.VNPC_FatherRef == entA then return true end
+    if entA.VNPC_LovedPartner == entB or entB.VNPC_LovedPartner == entA then return true end
+    return false
+end
+
 function VNPC_WildGiveBirth(mother)
     if not IsValid(mother) then return nil end
 
     mother.VNPC_IsPregnant = nil
     mother.VNPC_BabyGrowthValue = nil
-    mother.VNPC_WildMate = nil
 
     if VNPC_StartChildbirthAnimation then
         VNPC_StartChildbirthAnimation(mother, nil, nil)
@@ -407,6 +417,13 @@ function VNPC_WildGiveBirth(mother)
     end
 
     if IsValid(child) then
+        child.VNPC_MotherRef = mother
+        mother.VNPC_WildChild = child
+        if IsValid(mother.VNPC_WildMate) then
+            child.VNPC_FatherRef = mother.VNPC_WildMate
+            mother.VNPC_WildMate.VNPC_WildChild = child
+        end
+
         VNPC_MakeWildWanderer(child)
         if mother.VNPC_WildType == "predator" and (child.VNPC_ChildGender == "female" or string.find(string.lower(child:GetModel() or ""), "female")) then
             child.VNPC_WildType = "predator"
@@ -457,6 +474,84 @@ function VNPC_WildMating_AI(now)
     end
 end
 
+function VNPC_WildFamilyDefense_AI(now)
+    if not ecology_enabled:GetBool() then return end
+
+    for _, w in ipairs(VNPC_ActiveWildWanderers) do
+        if not IsValid(w) or w:Health() <= 0 or w.Vored or w.VNPC_Vored then continue end
+        if (w.VNPC_NextFamilyDefenseTime or 0) > now then continue end
+        w.VNPC_NextFamilyDefenseTime = now + 0.5
+
+        -- Gather family protectees: child or mate
+        local protectees = {}
+        if IsValid(w.VNPC_WildChild) and w.VNPC_WildChild:Health() > 0 and not w.VNPC_WildChild.Vored then
+            table.insert(protectees, w.VNPC_WildChild)
+        end
+        if IsValid(w.VNPC_WildMate) and w.VNPC_WildMate:Health() > 0 and not w.VNPC_WildMate.Vored then
+            table.insert(protectees, w.VNPC_WildMate)
+        end
+        if IsValid(w.VNPC_WildPartner) and w.VNPC_WildPartner:Health() > 0 and not w.VNPC_WildPartner.Vored then
+            table.insert(protectees, w.VNPC_WildPartner)
+        end
+
+        if #protectees == 0 then continue end
+        local wPos = w:GetPos()
+
+        -- Scan nearby predators threatening our child or mate
+        for _, threat in ipairs(ents.FindInSphere(wPos, 1100)) do
+            if not IsValid(threat) or threat == w or threat.Vored or threat.VNPC_Vored or threat:Health() <= 0 then continue end
+            if VNPC_IsFamilyOrMate(w, threat) then continue end
+            local isPredThreat = (threat.IsDrGNextbot or threat.VNPC_FemaleModelVore or threat.Predator or threat.VNPC_WildType == "predator")
+            if not isPredThreat then continue end
+
+            for _, p in ipairs(protectees) do
+                if threat:GetPos():DistToSqr(p:GetPos()) <= (750 * 750) or threat:GetEnemy() == p then
+                    -- Mother / Mate fiercely rushes to defend their family!
+                    if w.SetEnemy then pcall(w.SetEnemy, w, threat) end
+                    if w.SetLastPosition then pcall(w.SetLastPosition, w, threat:GetPos()) end
+                    if w.SetSchedule then pcall(w.SetSchedule, w, SCHED_FORCED_GO_RUN) end
+
+                    -- If protector is a predator and within grab distance, swallow or fight the threat!
+                    if (w.VNPC_WildType == "predator" or w.VNPC_FemaleModelVore or w.Predator) and wPos:Distance(threat:GetPos()) <= 165 then
+                        if w.EatEntity and w:EatEntity(threat) then
+                            if w.EmitSound then w:EmitSound("belly/snd_digeststart.wav", 85, 100) end
+                        end
+                    end
+                    break
+                end
+            end
+        end
+    end
+end
+
+hook.Add("EntityTakeDamage", "VNPC_WildFamilyProtection_DamageHook", function(target, dmginfo)
+    if not IsValid(target) then return end
+    local attacker = dmginfo:GetAttacker()
+    if not IsValid(attacker) or attacker == target or attacker.Vored or attacker.VNPC_Vored then return end
+
+    -- Check if target is a wild child or mate with a surviving protector nearby
+    local protector = nil
+    if IsValid(target.VNPC_MotherRef) and target.VNPC_MotherRef:Health() > 0 and not target.VNPC_MotherRef.Vored then
+        protector = target.VNPC_MotherRef
+    elseif IsValid(target.VNPC_WildMate) and target.VNPC_WildMate:Health() > 0 and not target.VNPC_WildMate.Vored then
+        protector = target.VNPC_WildMate
+    elseif IsValid(target.VNPC_FatherRef) and target.VNPC_FatherRef:Health() > 0 and not target.VNPC_FatherRef.Vored then
+        protector = target.VNPC_FatherRef
+    end
+
+    if IsValid(protector) and protector:GetPos():DistToSqr(target:GetPos()) <= (1200 * 1200) then
+        if protector.SetEnemy then pcall(protector.SetEnemy, protector, attacker) end
+        if protector.SetLastPosition then pcall(protector.SetLastPosition, protector, attacker:GetPos()) end
+        if protector.SetSchedule then pcall(protector.SetSchedule, protector, SCHED_FORCED_GO_RUN) end
+
+        if (protector.VNPC_WildType == "predator" or protector.VNPC_FemaleModelVore or protector.Predator) and protector:GetPos():Distance(attacker:GetPos()) <= 165 then
+            if protector.EatEntity and protector:EatEntity(attacker) then
+                dmginfo:SetDamage(0)
+            end
+        end
+    end
+end)
+
 -- Main Wild Wanderers Ecology Loop
 hook.Add("Think", "VNPC_WildEcology_AI_Loop", function()
     if not ecology_enabled:GetBool() then return end
@@ -464,6 +559,9 @@ hook.Add("Think", "VNPC_WildEcology_AI_Loop", function()
 
     if VNPC_WildMating_AI then
         VNPC_WildMating_AI(now)
+    end
+    if VNPC_WildFamilyDefense_AI then
+        VNPC_WildFamilyDefense_AI(now)
     end
 
     -- Prune dead / invalid wild wanderers
@@ -659,5 +757,29 @@ concommand.Add("vnpcs_test_wild_birth", function(ply)
         ply:ChatPrint("[V-NPCs] Instant wild birth triggered! Child: " .. tostring(child))
     else
         ply:ChatPrint("[V-NPCs] Triggered wild birth on " .. tostring(target) .. "!")
+    end
+end)
+
+concommand.Add("vnpcs_test_wild_defense", function(ply)
+    if not IsValid(ply) then return end
+    local tr = ply:GetEyeTrace()
+    local target = tr.Entity
+    if not IsValid(target) or not (target:IsNPC() or target:IsNextBot()) then
+        ply:ChatPrint("[V-NPCs] Please aim at a wild NPC to test family/mate defense!")
+        return
+    end
+
+    local protector = target.VNPC_MotherRef or target.VNPC_WildMate or target.VNPC_FatherRef
+    if not IsValid(protector) then
+        ply:ChatPrint("[V-NPCs] Aimed NPC has no mother or mate protector! Use vnpcs_test_wild_mate or vnpcs_test_wild_birth first.")
+        return
+    end
+
+    -- Spawn a hostile predator threat nearby to trigger family defense!
+    local threat = VNPC_SpawnWildNPC(true, target:GetPos() + Vector(120, 0, 0))
+    if IsValid(threat) then
+        if protector.SetEnemy then pcall(protector.SetEnemy, protector, threat) end
+        if protector.SetSchedule then pcall(protector.SetSchedule, protector, SCHED_FORCED_GO_RUN) end
+        ply:ChatPrint("[V-NPCs] Spawned hostile wild predator " .. tostring(threat) .. "! Protector " .. tostring(protector) .. " is rushing to defend " .. tostring(target) .. "!")
     end
 end)

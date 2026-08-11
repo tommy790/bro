@@ -146,7 +146,8 @@ function VNPC_GiveFemaleModelVore(ent)
         if target.VNPC_IsPreyCampWall or target.VNPC_IsPreyCampHutPiece or target.VNPC_IsCourtyardDefense then
             if self.VNPC_PreyCampID and target.VNPC_PreyCampID == self.VNPC_PreyCampID then return false end
         end
-        if VNPC_IsProtectedChildPrey and VNPC_IsProtectedChildPrey(target) then return false end
+        if VNPC_IsFamilyOrMate and VNPC_IsFamilyOrMate(self, target) then return false end
+        if not (self.VNPC_IsWildWanderer and self.VNPC_WildType == "predator") and VNPC_IsProtectedChildPrey and VNPC_IsProtectedChildPrey(target) then return false end
         if VNPC_IsPreyEmissary and VNPC_IsPreyEmissary(target) then return false end
         if target.VNPC_PreyCampID and self.VNPC_PreyCampID and target.VNPC_PreyCampID == self.VNPC_PreyCampID then return false end
         if not target:GetModel() or target:GetClass():find("func") then return false end
@@ -656,7 +657,8 @@ hook.Add("Think", "VNPC_FemaleModelVore_AI", function()
             for _, ent in ipairs(ents.FindInSphere(npc:GetPos(), eff_detect)) do
                 if IsValid(ent) and ent ~= npc and not ent.Vored and (ent:IsPlayer() or ent:IsNPC()) then
                     if ent.VNPC_DigestedBone or ent.VNPC_BoneOwner or ent.VNPC_NoVore then continue end
-                    if VNPC_IsProtectedChildPrey and VNPC_IsProtectedChildPrey(ent) then continue end
+                    if VNPC_IsFamilyOrMate and VNPC_IsFamilyOrMate(npc, ent) then continue end
+                    if not (npc.VNPC_IsWildWanderer and npc.VNPC_WildType == "predator") and VNPC_IsProtectedChildPrey and VNPC_IsProtectedChildPrey(ent) then continue end
                     if VNPC_IsPreyEmissary and VNPC_IsPreyEmissary(ent) then continue end
                     if npc.GetRelationship and npc:GetRelationship(ent) == D_HT then
                         local targetRad = (ent.OBBMaxs and ent:OBBMaxs():Length2D() or 30)
@@ -774,7 +776,8 @@ hook.Add("EntityTakeDamage", "VNPC_FemaleModelVore_MeleeSwallow", function(targe
 
     local attacker = dmginfo:GetAttacker()
     if not IsValid(attacker) or attacker == target or attacker.Vored or attacker.VNPC_Vored then return end
-    if VNPC_IsProtectedChildPrey and VNPC_IsProtectedChildPrey(attacker) then return end
+    if VNPC_IsFamilyOrMate and VNPC_IsFamilyOrMate(target, attacker) then return end
+    if not (target.VNPC_IsWildWanderer and target.VNPC_WildType == "predator") and VNPC_IsProtectedChildPrey and VNPC_IsProtectedChildPrey(attacker) then return end
     if VNPC_IsPreyEmissary and VNPC_IsPreyEmissary(attacker) then return end
 
     local dist = target:GetPos():Distance(attacker:GetPos())
