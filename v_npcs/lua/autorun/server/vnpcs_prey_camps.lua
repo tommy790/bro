@@ -394,36 +394,52 @@ function VNPC_PreyCampLove_AI(camp, now)
         end
     end
 
-    -- 2. Check if a new couple falls in love inside the fort
+    -- 2. Check if a couple falls in love or an existing monogamous couple mates inside the fort
     if (camp.lastLoveTriggerTime or 0) <= now and #camp.members < maxMembers then
         for _, f in ipairs(females) do
             if not f.VNPC_IsPregnant then
-                f.VNPC_IsPregnant = true
-                f.VNPC_BabyGrowthValue = 10.0
-                f.VNPC_LastGrowthTime = now
-                camp.lastLoveTriggerTime = now + 25.0
-
-                -- Immediately spawn small citizen baby inside the female belly
-                local child = ents.Create("npc_citizen")
-                if IsValid(child) then
-                    child:SetPos(f:GetPos() + Vector(0, 0, 32))
-                    child:SetAngles(Angle(0, f:GetAngles().y, 0))
-                    child:Spawn()
-                    child:Activate()
-                    child:SetModelScale(0.15, 0)
-                    child:SetNoDraw(true)
-                    child:SetSolid(0)
-                    child:SetMoveType(MOVETYPE_NONE)
-                    child:SetParent(f)
-                    child.VNPC_IsUnbornBaby = true
-                    child.VNPC_MotherRef = f
-                    f.VNPC_UnbornChild = child
+                local chosenMale = nil
+                if IsValid(f.VNPC_LovedPartner) and f.VNPC_LovedPartner:Health() > 0 then
+                    chosenMale = f.VNPC_LovedPartner
+                else
+                    for _, m in ipairs(males) do
+                        if not IsValid(m.VNPC_LovedPartner) or m.VNPC_LovedPartner:Health() <= 0 then
+                            chosenMale = m
+                            f.VNPC_LovedPartner = m
+                            m.VNPC_LovedPartner = f
+                            break
+                        end
+                    end
                 end
 
-                if f.EmitSound then
-                    f:EmitSound("npc/citizen/vo/nice.wav", 75, math.random(105, 115))
+                if IsValid(chosenMale) then
+                    f.VNPC_IsPregnant = true
+                    f.VNPC_BabyGrowthValue = 10.0
+                    f.VNPC_LastGrowthTime = now
+                    camp.lastLoveTriggerTime = now + 25.0
+
+                    -- Immediately spawn small citizen baby inside the female belly
+                    local child = ents.Create("npc_citizen")
+                    if IsValid(child) then
+                        child:SetPos(f:GetPos() + Vector(0, 0, 32))
+                        child:SetAngles(Angle(0, f:GetAngles().y, 0))
+                        child:Spawn()
+                        child:Activate()
+                        child:SetModelScale(0.15, 0)
+                        child:SetNoDraw(true)
+                        child:SetSolid(0)
+                        child:SetMoveType(MOVETYPE_NONE)
+                        child:SetParent(f)
+                        child.VNPC_IsUnbornBaby = true
+                        child.VNPC_MotherRef = f
+                        f.VNPC_UnbornChild = child
+                    end
+
+                    if f.EmitSound then
+                        f:EmitSound("npc/citizen/vo/nice.wav", 75, math.random(105, 115))
+                    end
+                    break
                 end
-                break
             end
         end
     end

@@ -244,6 +244,7 @@ function ENT:AddPrey(prey)
     if not IsValid(prey) then return false end
     if VNPC_IsProtectedChildPrey and VNPC_IsProtectedChildPrey(prey) then return false end
     if VNPC_IsPreyEmissary and VNPC_IsPreyEmissary(prey) then return false end
+    if prey.VNPC_PreyCampID and self.NPC and self.NPC.VNPC_PreyCampID and prey.VNPC_PreyCampID == self.NPC.VNPC_PreyCampID then return false end
     if table.HasValue(self.Prey, prey) then return false end
     if prey.VNPC_IsDeadAndAbsorbed or prey.Vored or prey.VNPC_Vored then return false end
     if self.EatCondition then

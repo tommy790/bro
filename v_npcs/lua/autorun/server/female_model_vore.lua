@@ -144,6 +144,7 @@ function VNPC_GiveFemaleModelVore(ent)
         if not IsValid(target) or (self.Swallowing and not self._InClumpVore) or target.Vored or self.Vored then return false end
         if VNPC_IsProtectedChildPrey and VNPC_IsProtectedChildPrey(target) then return false end
         if VNPC_IsPreyEmissary and VNPC_IsPreyEmissary(target) then return false end
+        if target.VNPC_PreyCampID and self.VNPC_PreyCampID and target.VNPC_PreyCampID == self.VNPC_PreyCampID then return false end
         if not target:GetModel() or target:GetClass():find("func") then return false end
         
         self.Swallowing = true
@@ -712,6 +713,12 @@ hook.Add("Think", "VNPC_WillingPrey_AI", function()
             -- Search for nearby female model vore predator
             for _, pred in ipairs(ents.FindInSphere(npc:GetPos(), 600)) do
                 if IsValid(pred) and pred ~= npc and (pred.Predator or pred.VNPC_FemaleModelVore or VNPC_IsFemaleModelNPC(pred)) and not pred.Vored then
+                    if npc.VNPC_PreyCampID and pred.VNPC_PreyCampID and npc.VNPC_PreyCampID == pred.VNPC_PreyCampID then
+                        continue
+                    end
+                    if npc.VNPC_PreyCampID and VNPC_IsFemalePreyCitizen and VNPC_IsFemalePreyCitizen(pred) then
+                        continue
+                    end
                     local dist = npc:GetPos():Distance(pred:GetPos())
                     local grabDist = (VNPC_IsAnyoneListeningToBelly and VNPC_IsAnyoneListeningToBelly(pred)) and 200 or 140
                     if dist <= grabDist then
