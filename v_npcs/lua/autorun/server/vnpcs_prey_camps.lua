@@ -101,17 +101,7 @@ end
 
 function VNPC_AssignPreyToCamp(npc, force)
     if not camps_enabled:GetBool() or not VNPC_IsEligiblePreyNPC(npc) then return nil end
-    if npc.VNPC_IsWildWanderer then return nil end
     if npc.VNPC_IsPermanentFortPredator then return nil end
-
-    -- Only Q-menu spawned NPCs (or explicitly forced / camp-born children) can create/join camps;
-    -- NPCs spawned automatically in the wild do not make camps and become wild wanderers instead.
-    if not force and (VNPC_IsPlayerSpawned and not VNPC_IsPlayerSpawned(npc)) then
-        if VNPC_MakeWildWanderer then
-            VNPC_MakeWildWanderer(npc)
-        end
-        return nil
-    end
 
     if not npc.VNPC_PreyPersonality and not npc.PreyPersonality then
         local preyPersList = { "fighter", "passive", "panicked", "stubborn", "willing" }
@@ -746,7 +736,8 @@ hook.Add("Think", "VNPC_PreyCamps_AI_Loop", function()
 
     -- 1. Enroll eligible prey NPCs into prey camps
     for _, ent in ipairs(ents.GetAll()) do
-        if VNPC_IsEligiblePreyNPC(ent) and not ent.VNPC_PreyCampID then
+        if VNPC_IsEligiblePreyNPC(ent) and (not ent.VNPC_PreyCampID or ent.VNPC_PreyCampID == "wild") then
+            ent.VNPC_PreyCampID = nil
             VNPC_AssignPreyToCamp(ent)
         end
     end

@@ -40,7 +40,6 @@ function VNPC_MakeWildWanderer(ent)
 
     if ent.IsDrGNextbot or ent.VNPC_FemaleModelVore or ent.Predator then
         ent.VNPC_WildType = "predator"
-        ent.VNPC_CampID = "wild"
         local scale = pred_danger:GetFloat() or 1.35
         local curMax = ent:GetMaxHealth() or 100
         ent:SetMaxHealth(math.floor(curMax * scale))
@@ -55,7 +54,6 @@ function VNPC_MakeWildWanderer(ent)
         end
     else
         ent.VNPC_WildType = "prey"
-        ent.VNPC_PreyCampID = "wild"
         local rPers = preyPersList[math.random(1, #preyPersList)]
         ent.VNPC_PreyPersonality = rPers
         ent.PreyPersonality = rPers
@@ -188,6 +186,9 @@ function VNPC_SpawnWildNPC(isPredator, posOverride)
             ent:Activate()
             VNPC_ForceGiveWildPredatorVore(ent)
             VNPC_MakeWildWanderer(ent)
+            if VNPC_AssignPredatorToCamp then
+                VNPC_AssignPredatorToCamp(ent)
+            end
         end
     else
         local info = WILD_PREY_CLASSES[math.random(1, #WILD_PREY_CLASSES)]
@@ -199,6 +200,9 @@ function VNPC_SpawnWildNPC(isPredator, posOverride)
             ent:Activate()
             ent.VNPC_IsDangerousPreyFlag = info.danger
             VNPC_MakeWildWanderer(ent)
+            if VNPC_AssignPreyToCamp then
+                VNPC_AssignPreyToCamp(ent)
+            end
         end
     end
     return ent

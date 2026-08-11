@@ -17,29 +17,6 @@ local PRED_TENT_MODELS = {
     "models/props_wasteland/cargo_container01.mdl"    -- Container shelter
 }
 
-function VNPC_IsPlayerSpawned(ent)
-    if not IsValid(ent) then return false end
-    if ent.VNPC_SpawnedByPlayer then return true end
-    if ent.GetCreator and IsValid(ent:GetCreator()) and ent:GetCreator():IsPlayer() then return true end
-    if ent.PlayerSpawned then return true end
-    if ent.VNPC_IsGrowingBaby or ent.VNPC_ProtectedChild or ent.VNPC_IsCampBornChild then return true end
-    if ent.VNPC_BornSister or ent.VNPC_AdoptedByPredator then return true end
-    if ent.VNPC_IsPreyEmissary or ent.VNPC_IsPermanentFortPredator then return true end
-    return false
-end
-
-hook.Add("PlayerSpawnedNPC", "VNPC_MarkQMenuSpawnedNPC", function(ply, ent)
-    if IsValid(ent) then
-        ent.VNPC_SpawnedByPlayer = true
-    end
-end)
-
-hook.Add("PlayerSpawnedSENT", "VNPC_MarkQMenuSpawnedSENT", function(ply, ent)
-    if IsValid(ent) then
-        ent.VNPC_SpawnedByPlayer = true
-    end
-end)
-
 function VNPC_GetPredatorCamp(pred)
     if not IsValid(pred) or not pred.VNPC_CampID then return nil end
     for _, camp in ipairs(VNPC_ActivePredatorCamps) do
@@ -89,33 +66,10 @@ end
 function VNPC_AssignPredatorToCamp(pred, force)
     if not camps_enabled:GetBool() then return nil end
     if not IsValid(pred) or pred:Health() <= 0 then return nil end
-    if pred.VNPC_IsWildWanderer then return nil end
     if pred.VNPC_IsPermanentFortPredator then return nil end
 
-    -- Only Q-menu spawned NPCs (or explicitly forced / camp-born children) can create/join camps;
-    -- NPCs spawned automatically in the wild do not make camps and become wild wanderers instead.
-    if not force and not VNPC_IsPlayerSpawned(pred) then
-        if VNPC_MakeWildWanderer then
-            VNPC_MakeWildWanderer(pred)
-        end
-        return nil
-    end
-
-    local cls = string.lower(pred:GetClass() or "")
-    local isCorePredClass = (cls == "npc_metropolice" or cls == "npc_combine_s" or cls == "npc_vortigaunt" or cls == "npc_citizen")
-    if not isCorePredClass and VNPC_GetPredatorPersonality then
-        local pers, _ = VNPC_GetPredatorPersonality(pred)
-        if string.lower(tostring(pers or "")) == "loving" then
-            if math.random(1, 100) <= 75 then
-                if VNPC_MakeWildWanderer and VNPC_MakeWildWanderer(pred) then
-                    return nil
-                end
-            end
-        end
-    end
-
     if not pred.VNPC_PredatorPersonality and not (pred.VoreSettings and pred.VoreSettings.PredatorPersonality) then
-        local predPersList = { "aggressive", "opportunistic", "glutton", "shy", "selective", "gentle" }
+        local predPersList = { "aggressive", "opportunistic", "glutton", "shy", "selective", "gentle", "loving" }
         local pPers = predPersList[math.random(1, #predPersList)]
         pred.VNPC_PredatorPersonality = pPers
         if pred.VoreSettings then
@@ -312,7 +266,8 @@ hook.Add("Think", "VNPC_PredatorCamps_AI_Loop", function()
         if not pred.VNPC_FemaleModelVore and VNPC_GiveFemaleModelVore then
             VNPC_GiveFemaleModelVore(pred)
         end
-        if not pred.VNPC_CampID and not pred.VNPC_IsPermanentFortPredator then
+        if (not pred.VNPC_CampID or pred.VNPC_CampID == "wild") and not pred.VNPC_IsPermanentFortPredator then
+            pred.VNPC_CampID = nil
             VNPC_AssignPredatorToCamp(pred)
         end
     end
