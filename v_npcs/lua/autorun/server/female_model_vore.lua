@@ -47,8 +47,8 @@ end
 
 function VNPC_GiveFemaleModelVore(ent)
     if not IsValid(ent) then return false end
-    if ent.VNPC_FemaleModelVore then return true end
-    if not VNPC_IsFemaleModelNPC(ent) then return false end
+    if IsValid(ent.VNPC_Belly or ent.Belly) then return true end
+    if not ent.VNPC_ForceFemaleVore and not VNPC_IsFemaleModelNPC(ent) then return false end
     
     ent.VNPC_FemaleModelVore = true
     ent.Predator = true
@@ -522,9 +522,9 @@ hook.Add("Think", "VNPC_FemaleModelVore_Think", function()
     local now = CurTime()
     for _, npc in ipairs(ents.FindByClass("npc_*")) do
         if not IsValid(npc) then continue end
-        if not npc.VNPC_FemaleModelVore and (npc.VNPC_NextVoreCheckTime or 0) <= now then
-            npc.VNPC_NextVoreCheckTime = now + 5.0
-            if VNPC_IsFemaleModelNPC(npc) then
+        if not IsValid(npc.VNPC_Belly or npc.Belly) and (npc.VNPC_NextVoreCheckTime or 0) <= now then
+            npc.VNPC_NextVoreCheckTime = now + 2.0
+            if npc.VNPC_ForceFemaleVore or VNPC_IsFemaleModelNPC(npc) then
                 VNPC_GiveFemaleModelVore(npc)
             end
         end
@@ -608,8 +608,9 @@ hook.Add("Think", "VNPC_FemaleModelVore_AI", function()
         local enemy = npc:GetEnemy()
         local prefer_swallow = GetConVar("vnpcs_ai_prefer_swallowing")
         if IsValid(enemy) and enemy ~= npc and not enemy.Vored then
+            local targetRad = (enemy.OBBMaxs and enemy:OBBMaxs():Length2D() or 30)
             local dist = npc:GetPos():Distance(enemy:GetPos())
-            local battle_grab = math.max(130, eff_grab * 1.5)
+            local battle_grab = math.max(140, eff_grab * 1.5) + targetRad
             if dist <= battle_grab then
                 if npc.CapabilitiesAdd and npc.VNPC_RemovedRangeAttack then
                     pcall(npc.CapabilitiesAdd, npc, CAP_WEAPON_RANGE_ATTACK1)
@@ -635,7 +636,9 @@ hook.Add("Think", "VNPC_FemaleModelVore_AI", function()
                     if VNPC_IsProtectedChildPrey and VNPC_IsProtectedChildPrey(ent) then continue end
                     if VNPC_IsPreyEmissary and VNPC_IsPreyEmissary(ent) then continue end
                     if npc.GetRelationship and npc:GetRelationship(ent) == D_HT then
-                        if npc:GetPos():Distance(ent:GetPos()) <= eff_grab then
+                        local targetRad = (ent.OBBMaxs and ent:OBBMaxs():Length2D() or 30)
+                        local grab_reach = math.max(110, eff_grab) + targetRad
+                        if npc:GetPos():Distance(ent:GetPos()) <= grab_reach then
                             npc:EatEntity(ent)
                             break
                         elseif npc.SetEnemy then
@@ -731,6 +734,24 @@ hook.Add("Think", "VNPC_WillingPrey_AI", function()
                     end
                 end
             end
+        end
+    end
+end)
+
+hook.Add("EntityTakeDamage", "VNPC_FemaleModelVore_MeleeSwallow", function(target, dmginfo)
+    if not IsValid(target) or not target.VNPC_FemaleModelVore then return end
+    if target.Swallowing then return end
+
+    local attacker = dmginfo:GetAttacker()
+    if not IsValid(attacker) or attacker == target or attacker.Vored or attacker.VNPC_Vored then return end
+    if VNPC_IsProtectedChildPrey and VNPC_IsProtectedChildPrey(attacker) then return end
+    if VNPC_IsPreyEmissary and VNPC_IsPreyEmissary(attacker) then return end
+
+    local dist = target:GetPos():Distance(attacker:GetPos())
+    local targetRad = (attacker.OBBMaxs and attacker:OBBMaxs():Length2D() or 30)
+    if dist <= (150 + targetRad) then
+        if target.EatEntity and target:EatEntity(attacker) then
+            dmginfo:SetDamage(0)
         end
     end
 end)

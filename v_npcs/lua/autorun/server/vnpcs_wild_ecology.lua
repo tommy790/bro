@@ -136,38 +136,18 @@ local WILD_PREDATOR_CLASSES = {
 
 function VNPC_ForceGiveWildPredatorVore(ent)
     if not IsValid(ent) then return false end
-    if ent.VNPC_FemaleModelVore then return true end
-
-    ent.VNPC_FemaleModelVore = true
-    ent.Predator = true
-    ent.Belly_Angles = ent.Belly_Angles or Angle(0, 90, 90)
-    ent.Belly_Offset = VNPC_GetFixedFemaleBellyOffset and VNPC_GetFixedFemaleBellyOffset(ent) or Vector(0, 3.5, 0)
-
-    ent.VoreSettings = ent.VoreSettings or {
-        EatsPlayers = true,
-        OnlyEatsEnemies = false,
-        BurpsEnabled = true,
-        DigestionStrength = 3,
-        AbsorptionSpeed = 2,
-        StruggleMultiplier = 1.5,
-        HasWeightGain = true,
-        FatFoldsMaxSize = 0.5
-    }
-    ent.BellyProperties = ent.BellyProperties or {
-        BellyColor = Color(195,145,122), 
-        DigestionStrength = 3,
-        AbsorptionPower = 1.5,
-        StruggleMultiplier = 1.25,
-        MaxBaseSize = 0.5,
-        BaseSize = 0,
-        FatFoldsMaxSize = 1
-    }
-
-    if VNPC_AttachFemaleModelVore then
-        VNPC_AttachFemaleModelVore(ent)
-    elseif VNPC_GiveFemaleModelVore then
+    ent.VNPC_ForceFemaleVore = true
+    if VNPC_GiveFemaleModelVore then
         VNPC_GiveFemaleModelVore(ent)
     end
+    timer.Simple(0.25, function()
+        if IsValid(ent) and not IsValid(ent.VNPC_Belly or ent.Belly) then
+            ent.VNPC_ForceFemaleVore = true
+            if VNPC_GiveFemaleModelVore then
+                VNPC_GiveFemaleModelVore(ent)
+            end
+        end
+    end)
     return true
 end
 
