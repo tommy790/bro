@@ -1490,6 +1490,57 @@ VNPC_WaterDrinkingBonePose = {
     ["ValveBiped.Bip01_L_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(-80, -20, 10) }
 }
 
+VNPC_UnbirthAnimatedBoneList = {
+    [0] = { -- rest (seductive/waiting standing pose)
+        ["ValveBiped.Bip01_Head1"] = { pos = Vector(0, 0, 0), ang = Angle(0, 10, -5) },
+        ["ValveBiped.Bip01_Spine"] = { pos = Vector(0, 0, 0), ang = Angle(5, 0, 0) },
+        ["ValveBiped.Bip01_R_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(15, -10, 10) },
+        ["ValveBiped.Bip01_L_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(15, 10, -10) },
+        ["ValveBiped.Bip01_R_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(-30, 10, 0) },
+        ["ValveBiped.Bip01_L_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(-30, -10, 0) }
+    },
+    [1] = { -- swallow (Unbirth mount: pred leaps/squats down over prey, legs spread wide around prey's upper body)
+        ["ValveBiped.Bip01_Head1"] = { pos = Vector(0, 0, 0), ang = Angle(25, 0, 0) },
+        ["ValveBiped.Bip01_Spine"] = { pos = Vector(0, 0, -15), ang = Angle(30, 0, 0) },
+        ["ValveBiped.Bip01_Spine1"] = { pos = Vector(0, 0, 0), ang = Angle(15, 0, 0) },
+        ["ValveBiped.Bip01_Pelvis"] = { pos = Vector(0, 0, -18), ang = Angle(-25, 0, 0) },
+        ["ValveBiped.Bip01_R_Thigh"] = { pos = Vector(0, 0, 0), ang = Angle(-70, -45, 0) },
+        ["ValveBiped.Bip01_L_Thigh"] = { pos = Vector(0, 0, 0), ang = Angle(-70, 45, 0) },
+        ["ValveBiped.Bip01_R_Calf"] = { pos = Vector(0, 0, 0), ang = Angle(110, 0, 0) },
+        ["ValveBiped.Bip01_L_Calf"] = { pos = Vector(0, 0, 0), ang = Angle(110, 0, 0) },
+        ["ValveBiped.Bip01_R_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(55, -25, 30) },
+        ["ValveBiped.Bip01_L_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(55, 25, -30) },
+        ["ValveBiped.Bip01_R_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(-80, 20, 0) },
+        ["ValveBiped.Bip01_L_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(-80, -20, 0) }
+    },
+    [2] = { -- full belly / pregnant womb pose (hands resting protectively on lower belly/womb)
+        ["ValveBiped.Bip01_Head1"] = { pos = Vector(0, 0, 0), ang = Angle(-15, 0, 0) },
+        ["ValveBiped.Bip01_Spine"] = { pos = Vector(0, 0, 0), ang = Angle(-10, 0, 0) },
+        ["ValveBiped.Bip01_R_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(45, -30, 25) },
+        ["ValveBiped.Bip01_L_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(45, 30, -25) },
+        ["ValveBiped.Bip01_R_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(-110, 40, -30) },
+        ["ValveBiped.Bip01_L_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(-110, -40, 30) },
+        ["ValveBiped.Bip01_R_Hand"] = { pos = Vector(0, 0, 0), ang = Angle(20, 0, 45) },
+        ["ValveBiped.Bip01_L_Hand"] = { pos = Vector(0, 0, 0), ang = Angle(20, 0, -45) }
+    },
+    [3] = { -- burp / absorption sigh (arch back slightly with hands cradling full womb)
+        ["ValveBiped.Bip01_Head1"] = { pos = Vector(0, 0, 0), ang = Angle(-25, 10, 0) },
+        ["ValveBiped.Bip01_Spine"] = { pos = Vector(0, 0, 0), ang = Angle(-18, 0, 0) },
+        ["ValveBiped.Bip01_R_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(50, -30, 30) },
+        ["ValveBiped.Bip01_L_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(50, 30, -30) },
+        ["ValveBiped.Bip01_R_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(-120, 45, -30) },
+        ["ValveBiped.Bip01_L_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(-120, -45, 30) }
+    },
+    [4] = { -- final gulp / womb absorption settling
+        ["ValveBiped.Bip01_Head1"] = { pos = Vector(0, 0, 0), ang = Angle(-5, 0, 0) },
+        ["ValveBiped.Bip01_Spine"] = { pos = Vector(0, 0, 0), ang = Angle(-5, 0, 0) },
+        ["ValveBiped.Bip01_R_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(40, -25, 20) },
+        ["ValveBiped.Bip01_L_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(40, 25, -20) },
+        ["ValveBiped.Bip01_R_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(-100, 35, -25) },
+        ["ValveBiped.Bip01_L_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(-100, -35, 25) }
+    }
+}
+
 VNPC_CarmelitaAnimatedBoneList = {
     [0] = { -- rest
         ["ValveBiped.Bip01_Head1"] = { pos = Vector(0, 0, 0), ang = Angle(0, 0, 0) },
@@ -1753,7 +1804,7 @@ VNPC_BoneMovesets["carmelita"] = VNPC_CarmelitaAnimatedBoneList
 VNPC_BoneMovesets["dasha"] = VNPC_DashaAnimatedBoneList
 VNPC_BoneMovesets["femasriel"] = VNPC_FemAsrielAnimatedBoneList
 VNPC_BoneMovesets["shy"] = VNPC_ShyAnimatedBoneList
-VNPC_BoneMovesets["embarrassed"] = VNPC_ShyAnimatedBoneList
+VNPC_BoneMovesets["unbirth"] = VNPC_UnbirthAnimatedBoneList
 
 function VNPC_RegisterBoneMoveset(name, movesetTable)
     if not name or not istable(movesetTable) then return end
@@ -1767,16 +1818,19 @@ VNPC_PersonalityMovesetWeights = {
     ["shy"] = {
         ["default"] = 5,
         ["breamsatel"] = 5,
-        ["carmelita"] = 3
+        ["carmelita"] = 3,
+        ["unbirth"] = 4
     },
     ["aggressive"] = {
         ["bonfie"] = 4,
         ["dasha"] = 4,
-        ["chiku"] = 4
+        ["chiku"] = 4,
+        ["unbirth"] = 4
     },
     ["opportunistic"] = {
         ["ballerpuppy"] = 3,
-        ["femasriel"] = 3
+        ["femasriel"] = 3,
+        ["unbirth"] = 3
     }
 }
 
@@ -2070,8 +2124,6 @@ function VNPC_AnimatedBoneOffsets(ent)
         data = VNPC_SleepingFullBellyKeyframes
     elseif (ent.VNPC_InChildbirthPose or 0) > CurTime() and VNPC_ChildbirthSittingPoseKeyframe then
         data = VNPC_ChildbirthSittingPoseKeyframe
-    elseif (ent.VNPC_IsEmbarrassed or 0) > CurTime() and VNPC_ShyAnimatedBoneList then
-        data = VNPC_ShyAnimatedBoneList[2]
     end
 
     if phase ~= ent.LastFacialPhase then
