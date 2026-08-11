@@ -120,9 +120,29 @@ hook.Add("Think", "VNPCS_SwallowedPrey_SafetyLoop", function()
 
     for _, belly in ipairs(ents.GetAll()) do
         if IsValid(belly) and belly.Prey and istable(belly.Prey) then
-            for _, info in ipairs(belly.Prey) do
-                local prey = info.Entity
-                if IsValid(prey) and not prey.VNPC_IsBeingSwallowed then
+            local seen = {}
+            for i = #belly.Prey, 1, -1 do
+                local info = belly.Prey[i]
+                local prey = info and info.Entity
+                if not prey or not IsValid(prey) then
+                    if info and not info.Absorbing then
+                        table.remove(belly.Prey, i)
+                    end
+                    continue
+                end
+
+                if seen[prey] then
+                    table.remove(belly.Prey, i)
+                    continue
+                end
+                seen[prey] = true
+
+                if prey:Health() <= 0 and not info.Absorbing and belly.AbsorbSpecificPrey then
+                    pcall(belly.AbsorbSpecificPrey, belly, i)
+                    continue
+                end
+
+                if not prey.VNPC_IsBeingSwallowed then
                     prey:SetNoDraw(true)
                     prey:AddEffects(EF_NODRAW)
                     prey:SetRenderMode(RENDERMODE_NONE)
@@ -138,6 +158,71 @@ hook.Add("Think", "VNPCS_SwallowedPrey_SafetyLoop", function()
             end
         end
     end
+end)
+
+hook.Add("CreateEntityRagdoll", "VNPC_PreventSwallowedPreyRagdoll", function(owner, ragdoll)
+    if IsValid(owner) and (owner.Vored or owner.VNPC_Vored or owner.VNPC_IsDeadAndAbsorbed) then
+        if IsValid(ragdoll) then
+            ragdoll.Vored = true
+            ragdoll.VNPC_Vored = true
+            ragdoll.VNPC_IsDeadAndAbsorbed = true
+            ragdoll:SetNoDraw(true)
+            ragdoll:SetSolid(0)
+            timer.Simple(0, function()
+                if IsValid(ragdoll) then ragdoll:Remove() end
+            end)
+        end
+        return false
+    end
+end)
+
+hook.Add("EntityTakeDamage", "VNPC_ProtectSwallowedPreyFromExternalDamage", function(target, dmginfo)
+    if IsValid(target) and (target.Vored or target.VNPC_Vored or target.VNPC_IsDeadAndAbsorbed) then
+        if dmginfo:GetDamageType() == DMG_REMOVENORAGDOLL or dmginfo:GetDamage() >= 999999 then
+            return
+        end
+        dmginfo:SetDamage(0)
+        return true
+    end
+end)
+
+hook.Add("OnEntityCreated", "VNPC_PreventSwallowedDuplicateRagdoll", function(ent)
+    timer.Simple(0, function()
+        if not IsValid(ent) then return end
+        if ent:GetClass() == "prop_ragdoll" or ent.VNPC_IsCorpse then
+            local owner = ent:GetOwner()
+            if IsValid(owner) and (owner.Vored or owner.VNPC_Vored or owner.VNPC_IsDeadAndAbsorbed) then
+                ent.Vored = true
+                ent.VNPC_Vored = true
+                ent.VNPC_IsDeadAndAbsorbed = true
+                ent:Remove()
+                return
+            end
+            local parent = ent:GetParent()
+            if IsValid(parent) and (parent:GetClass() == "ent_vore_belly" or parent.Vored or parent.VNPC_Vored) then
+                ent.Vored = true
+                ent.VNPC_Vored = true
+                ent.VNPC_IsDeadAndAbsorbed = true
+                ent:Remove()
+                return
+            end
+            for _, belly in ipairs(ents.FindByClass("ent_vore_belly")) do
+                if IsValid(belly) and belly.Prey and istable(belly.Prey) then
+                    for _, pTable in ipairs(belly.Prey) do
+                        if pTable and (not IsValid(pTable.Entity) or pTable.Entity:Health() <= 0 or pTable.Entity.VNPC_IsDeadAndAbsorbed) then
+                            if ent:GetPos():DistToSqr(belly:GetPos()) < (120 * 120) then
+                                ent.Vored = true
+                                ent.VNPC_Vored = true
+                                ent.VNPC_IsDeadAndAbsorbed = true
+                                ent:Remove()
+                                return
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end)
 end)
 
 function VNPC_SwallowAttachedEntities(belly, prey)
@@ -245,7 +330,9 @@ function ENT:AddPrey(prey)
     if VNPC_IsProtectedChildPrey and VNPC_IsProtectedChildPrey(prey) then return false end
     if VNPC_IsPreyEmissary and VNPC_IsPreyEmissary(prey) then return false end
     if prey.VNPC_PreyCampID and self.NPC and self.NPC.VNPC_PreyCampID and prey.VNPC_PreyCampID == self.NPC.VNPC_PreyCampID then return false end
-    if table.HasValue(self.Prey, prey) then return false end
+    for _, info in ipairs(self.Prey) do
+        if info and info.Entity == prey then return false end
+    end
     if prey.VNPC_IsDeadAndAbsorbed or prey.Vored or prey.VNPC_Vored then return false end
     if self.EatCondition then
         if not self:EatCondition(prey) then
@@ -497,17 +584,22 @@ function ENT:AbsorbPrey(dt)
 end
 
 function ENT:AbsorbSpecificPrey(index)
-    self.Prey[index].Absorbing = true 
-    local prey = self.Prey[index].Entity
+    local info = self.Prey[index]
+    if not info or info.Absorbing then return end
+    info.Absorbing = true 
+    local prey = info.Entity
 
     if IsValid(prey) then
         prey.Vored = true
         prey.VNPC_Vored = true
         prey.VNPC_IsDeadAndAbsorbed = true
+        prey.m_bRagdollCreated = true
+        prey.NoRagdoll = true
+        if prey.AddFlags then pcall(prey.AddFlags, prey, FL_DISSOLVING) end
         VNPC_RemoveAttachedEntities(self, prey)
         prey:Remove()
     end
-    self.Prey[index].Entity = nil
+    info.Entity = nil
     self:OnPreyKilled()
 
     if VNPC_ScheduleDigestedBoneSpit then
@@ -586,6 +678,10 @@ function ENT:DigestPrey(dt)
             prey:TakeDamageInfo(dmg_i)
 
             totalHeal = totalHeal + effectiveDmg
+            if not IsValid(prey) or prey:Health() <= 0 then
+                self:AbsorbSpecificPrey(i)
+                continue
+            end
             if oldHealth == prey:Health() and not prey_table.Alive then
                 prey:SetHealth(oldHealth - digestionPower)
             end
@@ -690,12 +786,10 @@ function ENT:WipeAllPrey()
                 preyEnt.VNPC_IsDeadAndAbsorbed = true
                 preyEnt.Vored = true
                 preyEnt.VNPC_Vored = true
-
-                local dmg_i = DamageInfo()
-                dmg_i:SetDamageType(DMG_REMOVENORAGDOLL)
-                dmg_i:SetDamage(9999999)
-
-                preyEnt:TakeDamageInfo(dmg_i)
+                preyEnt.m_bRagdollCreated = true
+                preyEnt.NoRagdoll = true
+                if preyEnt.AddFlags then pcall(preyEnt.AddFlags, preyEnt, FL_DISSOLVING) end
+                VNPC_RemoveAttachedEntities(self, preyEnt)
                 preyEnt:Remove()
             end
         end
