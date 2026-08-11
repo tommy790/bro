@@ -137,7 +137,7 @@ function VNPC_StartChildbirthAnimation(mother, child, camp)
             end
             child.VNPC_PreyCampID = camp.id
         end
-        if mother.VNPC_PreyCampBabyMother then
+        if mother.VNPC_PreyCampBabyMother or mother.VNPC_IsPermanentFortPredator then
             child.VNPC_BornSister = nil
             child.VNPC_AdoptedByPredator = nil
             child.VNPC_MotherRef = nil

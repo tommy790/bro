@@ -67,8 +67,11 @@ function VNPC_AssignPredatorToCamp(pred)
     if not camps_enabled:GetBool() then return nil end
     if not IsValid(pred) or pred:Health() <= 0 then return nil end
     if pred.VNPC_IsWildWanderer then return nil end
+    if pred.VNPC_IsPermanentFortPredator then return nil end
 
-    if VNPC_GetPredatorPersonality then
+    local cls = string.lower(pred:GetClass() or "")
+    local isCorePredClass = (cls == "npc_metropolice" or cls == "npc_combine_s" or cls == "npc_vortigaunt" or cls == "npc_citizen")
+    if not isCorePredClass and VNPC_GetPredatorPersonality then
         local pers, _ = VNPC_GetPredatorPersonality(pred)
         if string.lower(tostring(pers or "")) == "loving" then
             if math.random(1, 100) <= 75 then
@@ -98,7 +101,7 @@ function VNPC_AssignPredatorToCamp(pred)
     local maxCap = camp_cap:GetInt() or 4
     local predPos = pred:GetPos()
     local bestCamp = nil
-    local bestDistSqr = 1800 * 1800
+    local bestDistSqr = 3000 * 3000
 
     for _, camp in ipairs(VNPC_ActivePredatorCamps) do
         if #camp.members < maxCap and camp.faction == myFaction then
@@ -272,8 +275,12 @@ hook.Add("Think", "VNPC_PredatorCamps_AI_Loop", function()
     -- 1. Ensure all female V-NPC predators belong to a camp
     for _, pred in ipairs(ents.GetAll()) do
         if not IsValid(pred) or pred:Health() <= 0 then continue end
-        if not (pred.IsDrGNextbot or pred.VNPC_FemaleModelVore or pred.Predator) then continue end
-        if not pred.VNPC_CampID then
+        local isPred = (pred.IsDrGNextbot or pred.VNPC_FemaleModelVore or pred.Predator or (VNPC_IsFemaleModelNPC and VNPC_IsFemaleModelNPC(pred)))
+        if not isPred then continue end
+        if not pred.VNPC_FemaleModelVore and VNPC_GiveFemaleModelVore then
+            VNPC_GiveFemaleModelVore(pred)
+        end
+        if not pred.VNPC_CampID and not pred.VNPC_IsPermanentFortPredator then
             VNPC_AssignPredatorToCamp(pred)
         end
     end
@@ -473,4 +480,27 @@ concommand.Add("vnpcs_clear_camps", function(ply)
     if IsValid(ply) then
         ply:ChatPrint("[V-NPCs] Cleared " .. count .. " predator camps and all tents from the map.")
     end
+end)
+
+concommand.Add("vnpcs_test_force_pred_camps", function(ply)
+    local assigned = 0
+    for _, pred in ipairs(ents.GetAll()) do
+        if IsValid(pred) and pred:Health() > 0 and not pred.VNPC_IsPermanentFortPredator then
+            local isPred = (pred.IsDrGNextbot or pred.VNPC_FemaleModelVore or pred.Predator or (VNPC_IsFemaleModelNPC and VNPC_IsFemaleModelNPC(pred)))
+            if isPred then
+                if not pred.VNPC_FemaleModelVore and VNPC_GiveFemaleModelVore then
+                    VNPC_GiveFemaleModelVore(pred)
+                end
+                if not pred.VNPC_CampID then
+                    local camp = VNPC_AssignPredatorToCamp(pred)
+                    if camp then
+                        assigned = assigned + 1
+                    end
+                end
+            end
+        end
+    end
+    local msg = "[V-NPCs] Scanned predators and forced camp formation. Assigned predators: " .. assigned
+    print(msg)
+    if IsValid(ply) then ply:ChatPrint(msg) end
 end)

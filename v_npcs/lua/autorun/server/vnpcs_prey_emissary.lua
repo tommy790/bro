@@ -72,8 +72,86 @@ function VNPC_PredatorShyEmissaryHesitation(pred, emissary, camp, predCamp)
     return true
 end
 
+function VNPC_ShouldPredatorPermanentlyJoinPreyCamp(pred)
+    if not IsValid(pred) then return false end
+    local cls = string.lower(pred:GetClass() or "")
+    if cls == "npc_citizen" or cls == "npc_metropolice" or cls == "npc_combine_s" or cls == "npc_vortigaunt" then
+        return true
+    end
+    local faction = (VNPC_GetPredatorFaction and VNPC_GetPredatorFaction(pred)) or "metrocop"
+    if faction == "citizen" or faction == "metrocop" or faction == "alien" then
+        return true
+    end
+    return true
+end
+
+function VNPC_PredatorPermanentlyJoinPreyCamp(pred, emissary, camp, predCamp)
+    if not IsValid(pred) or not IsValid(emissary) or not camp then return false end
+
+    -- 1. Unenroll from old Predator Camp
+    local oldCamp = predCamp or (VNPC_GetPredatorCamp and VNPC_GetPredatorCamp(pred))
+    if oldCamp and oldCamp.members then
+        for i = #oldCamp.members, 1, -1 do
+            if oldCamp.members[i] == pred then
+                table.remove(oldCamp.members, i)
+            end
+        end
+    end
+    pred.VNPC_CampID = nil
+    pred.VNPC_CampRole = nil
+    pred.VNPC_IsVisitingPreyCamp = false
+    pred.VNPC_VisitedPreyCamp = nil
+
+    -- 2. Enroll permanently into the Citizen Prey Camp as Fort Defender & Mother
+    local inCamp = false
+    for _, mem in ipairs(camp.members) do
+        if mem == pred then inCamp = true break end
+    end
+    if not inCamp then
+        table.insert(camp.members, pred)
+    end
+    pred.VNPC_PreyCampID = camp.id
+    pred.VNPC_IsPermanentFortPredator = true
+    pred.VNPC_PreyRole = "defender"
+
+    -- 3. Form lifelong monogamous couple with Emissary mate
+    pred.VNPC_LovedPartner = emissary
+    emissary.VNPC_LovedPartner = pred
+
+    -- Reset emissary back to citizen role
+    emissary.VNPC_PreyRole = "citizen"
+    emissary.VNPC_IsPreyEmissary = nil
+    emissary.VNPC_EscortingPredator = nil
+
+    -- 4. Set friendly relationship D_LI with all camp members, while remaining D_HT to outside attackers
+    for _, mem in ipairs(camp.members) do
+        if IsValid(mem) and mem ~= pred then
+            if pred.AddEntityRelationship then
+                pcall(pred.AddEntityRelationship, pred, mem, D_LI, 99)
+            end
+            if mem.AddEntityRelationship then
+                pcall(mem.AddEntityRelationship, mem, pred, D_LI, 99)
+            end
+        end
+    end
+
+    -- 5. Return to Prey Fort with mate
+    if pred.SetEnemy then pcall(pred.SetEnemy, pred, nil) end
+    if pred.SetLastPosition then pcall(pred.SetLastPosition, pred, camp.pos) end
+    if pred.SetSchedule then pcall(pred.SetSchedule, pred, SCHED_FORCED_GO_RUN) end
+    if emissary.SetLastPosition then pcall(emissary.SetLastPosition, emissary, camp.pos) end
+    if emissary.SetSchedule then pcall(emissary.SetSchedule, emissary, SCHED_FORCED_GO_RUN) end
+
+    if pred.EmitSound then pred:EmitSound("npc/citizen/vo/nice.wav", 80, 108) end
+    return true
+end
+
 function VNPC_PredatorAgreeToEmissary(pred, emissary, camp, predCamp)
     if not IsValid(pred) or not IsValid(emissary) or not camp then return false end
+
+    if VNPC_ShouldPredatorPermanentlyJoinPreyCamp and VNPC_ShouldPredatorPermanentlyJoinPreyCamp(pred) then
+        return VNPC_PredatorPermanentlyJoinPreyCamp(pred, emissary, camp, predCamp)
+    end
 
     pred.VNPC_IsVisitingPreyCamp = true
     pred.VNPC_VisitedPreyCamp = camp
@@ -248,7 +326,7 @@ concommand.Add("vnpcs_emissary_status", function(ply)
     print("Predator Boredom Time: " .. tostring(boredom_time:GetFloat()) .. "s")
     print("Visiting Pregnancy Duration: " .. tostring(emissary_preg_time:GetFloat()) .. "s")
     print("-----------------------------------------")
-    local emissaryCount, visitCount = 0, 0
+    local emissaryCount, visitCount, permCount = 0, 0, 0
     for _, ent in ipairs(ents.GetAll()) do
         if IsValid(ent) then
             if VNPC_IsPreyEmissary(ent) then
@@ -261,12 +339,17 @@ concommand.Add("vnpcs_emissary_status", function(ply)
                 print(string.format(" -> Visiting Predator [%d] %s | Visiting Camp: #%s | Birth in: %.1fs",
                     ent:EntIndex(), ent:GetClass(), tostring(ent.VNPC_VisitedPreyCamp and ent.VNPC_VisitedPreyCamp.id or "N/A"), rem))
             end
+            if ent.VNPC_IsPermanentFortPredator then
+                permCount = permCount + 1
+                print(string.format(" -> Permanent Fort Predator [%d] %s | Prey Camp: #%s | Loved Mate: %s",
+                    ent:EntIndex(), ent:GetClass(), tostring(ent.VNPC_PreyCampID or "N/A"), tostring(ent.VNPC_LovedPartner or "N/A")))
+            end
         end
     end
-    print("Total active emissaries: " .. emissaryCount .. " | Visiting pregnant predators: " .. visitCount)
+    print("Total active emissaries: " .. emissaryCount .. " | Visiting pregnant predators: " .. visitCount .. " | Permanent fort predators: " .. permCount)
     print("=========================================")
     if IsValid(ply) then
-        ply:ChatPrint("[V-NPCs] Emissary status printed to console. Emissaries: " .. emissaryCount .. " | Visiting preds: " .. visitCount)
+        ply:ChatPrint("[V-NPCs] Emissary status printed to console. Emissaries: " .. emissaryCount .. " | Visiting preds: " .. visitCount .. " | Perm fort preds: " .. permCount)
     end
 end)
 
@@ -313,4 +396,49 @@ concommand.Add("vnpcs_test_visiting_mate", function(ply)
     target.VNPC_IsPregnantWithCitizen = CurTime() + 5.0 -- 5 second test pregnancy!
     target.VNPC_PreyCampBabyMother = true
     ply:ChatPrint("[V-NPCs] Set " .. tostring(target) .. " as a visiting predator pregnant with a citizen baby for Prey Camp #" .. bestCamp.id .. " (birth in 5 seconds)!")
+end)
+
+concommand.Add("vnpcs_test_pred_join_prey_camp", function(ply)
+    if not IsValid(ply) then return end
+    local tr = ply:GetEyeTrace()
+    local target = tr.Entity
+    if not IsValid(target) or not (target.IsDrGNextbot or target.VNPC_FemaleModelVore or target.Predator or (VNPC_IsFemaleModelNPC and VNPC_IsFemaleModelNPC(target))) then
+        ply:ChatPrint("[V-NPCs] Please aim at a female V-NPC predator to test permanent Citizen Prey Camp adoption!")
+        return
+    end
+    if not target.VNPC_FemaleModelVore and VNPC_GiveFemaleModelVore then
+        VNPC_GiveFemaleModelVore(target)
+    end
+    local bestCamp = nil
+    for _, camp in ipairs(VNPC_ActivePreyCamps or {}) do
+        bestCamp = camp
+        break
+    end
+    if not bestCamp and VNPC_CreatePreyCamp then
+        bestCamp = VNPC_CreatePreyCamp(target:GetPos(), target)
+    end
+    if not bestCamp then
+        ply:ChatPrint("[V-NPCs] Could not find or create a valid Citizen Prey Camp!")
+        return
+    end
+    local emissaryMate = nil
+    for _, mem in ipairs(bestCamp.members) do
+        if IsValid(mem) and mem ~= target and VNPC_IsMalePreyCitizen and VNPC_IsMalePreyCitizen(mem) then
+            emissaryMate = mem
+            break
+        end
+    end
+    if not IsValid(emissaryMate) then
+        emissaryMate = ents.Create("npc_citizen")
+        if IsValid(emissaryMate) then
+            emissaryMate:SetPos(bestCamp.pos + Vector(0, 0, 10))
+            emissaryMate:SetModel("models/Humans/Group01/Male_01.mdl")
+            emissaryMate:Spawn()
+            emissaryMate:Activate()
+            table.insert(bestCamp.members, emissaryMate)
+            emissaryMate.VNPC_PreyCampID = bestCamp.id
+        end
+    end
+    VNPC_PredatorPermanentlyJoinPreyCamp(target, emissaryMate, bestCamp, VNPC_GetPredatorCamp and VNPC_GetPredatorCamp(target))
+    ply:ChatPrint("[V-NPCs] " .. tostring(target) .. " has permanently joined Citizen Prey Camp #" .. bestCamp.id .. " as Fort Defender & Mother with mate " .. tostring(emissaryMate) .. "!")
 end)

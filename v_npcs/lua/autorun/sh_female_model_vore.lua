@@ -168,6 +168,9 @@ function VNPC_IsFemaleModelNPC(ent)
     if not IsValid(ent) or not ent:IsNPC() then return false end
     if ent.IsDrGNextbot or ent.Base == "npc_vore_base" then return false end
     if ent:GetClass():find("func_") or ent:IsWeapon() or ent:IsPlayer() then return false end
+    if ent.VNPC_ForceFemaleVore then return true end
+    local cls = string.lower(ent:GetClass() or "")
+    if cls == "npc_metropolice" or cls == "npc_combine_s" or cls == "npc_vortigaunt" then return true end
     if VNPC_HasFemaleModelBones(ent) then return true end
     local mdl = string.lower(ent:GetModel() or "")
     return (mdl:find("female") or mdl:find("alyx") or mdl:find("mossman")) ~= nil

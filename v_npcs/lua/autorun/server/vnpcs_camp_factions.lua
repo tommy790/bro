@@ -27,6 +27,10 @@ function VNPC_GetPredatorFaction(pred)
         pred.VNPC_PredatorFaction = "alien"
         return "alien"
     end
+    if cls:find("citizen") or cls:find("rebel") or cls:find("refugee") or cls:find("alyx") or cls:find("mossman") or mdl:find("citizen") or mdl:find("group0") then
+        pred.VNPC_PredatorFaction = "citizen"
+        return "citizen"
+    end
 
     -- Mostly Female Metrocops and Female Zombies as default predator factions
     local defaultFactions = { "metrocop", "metrocop", "zombie", "zombie", "citizen" }

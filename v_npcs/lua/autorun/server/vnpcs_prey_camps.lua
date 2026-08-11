@@ -38,6 +38,8 @@ function VNPC_IsEligiblePreyNPC(ent)
 end
 
 function VNPC_IsFemalePreyCitizen(ent)
+    if not IsValid(ent) or ent:Health() <= 0 then return false end
+    if ent.VNPC_IsPermanentFortPredator then return true end
     if not VNPC_IsEligiblePreyNPC(ent) then return false end
     local mdl = string.lower(ent:GetModel() or "")
     local cls = string.lower(ent:GetClass() or "")
@@ -100,6 +102,7 @@ end
 function VNPC_AssignPreyToCamp(npc)
     if not camps_enabled:GetBool() or not VNPC_IsEligiblePreyNPC(npc) then return nil end
     if npc.VNPC_IsWildWanderer then return nil end
+    if npc.VNPC_IsPermanentFortPredator then return nil end
 
     if not npc.VNPC_PreyPersonality and not npc.PreyPersonality then
         local preyPersList = { "fighter", "passive", "panicked", "stubborn", "willing" }
