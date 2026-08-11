@@ -133,63 +133,99 @@ function VNPC_AssignPreyToCamp(npc)
     end
 end
 
--- Advanced math & map geometry geometry calculator for perimeter wall coordinates
-function VNPC_CalculateCampWallPositions(camp)
-    if not camp or not camp.pos then return nil, nil end
-    local radius = 220 + math.min(#(camp.members or {}), 15) * 8
-    local numWalls = math.max(12, math.ceil((2 * math.pi * radius) / 105))
+function VNPC_PlanPreyCampLayout(camp)
+    if not camp or not camp.pos then return end
+    local SHAPES = { "square", "octagon", "hexagon" }
+    camp.layoutShape = camp.layoutShape or SHAPES[math.random(1, #SHAPES)]
+    local shape = camp.layoutShape
+
+    local numSides = (shape == "square" and 4) or ((shape == "hexagon" and 6) or 8)
+    local radius = 240 + math.min(#(camp.members or {}), 15) * 6
     local center = camp.pos + Vector(0, 0, 32)
+    local vertices = {}
 
-    for i = 0, numWalls - 1 do
-        local theta = (i / numWalls) * (2 * math.pi)
-        local candidatePos = center + Vector(math.cos(theta) * radius, math.sin(theta) * radius, 65)
+    for s = 1, numSides do
+        local rad = math.rad((s - 1) * (360 / numSides) + (shape == "square" and 45 or 0))
+        table.insert(vertices, center + Vector(math.cos(rad) * radius, math.sin(rad) * radius, 0))
+    end
 
-        -- Downward raycast against map geometry to find terrain floor normal
-        local tr = util.TraceLine({
-            start = candidatePos,
-            endpos = candidatePos - Vector(0, 0, 250),
-            mask = MASK_SOLID_BRUSHONLY
-        })
+    camp.plannedWalls = {}
+    local gatePlaced = false
 
-        if tr.Hit and tr.HitNormal.z > 0.6 then
-            -- Verify minimum spacing from existing wall props
-            local occupied = false
-            for _, w in ipairs(camp.walls) do
-                if IsValid(w) and w:GetPos():DistToSqr(tr.HitPos) < (75 * 75) then
-                    occupied = true
-                    break
-                end
+    for s = 1, numSides do
+        local next_s = (s % numSides) + 1
+        local pStart = vertices[s]
+        local pEnd = vertices[next_s]
+        local sideLen = pStart:Distance(pEnd)
+        local numSegs = math.max(2, math.ceil(sideLen / 112))
+
+        for seg = 1, numSegs do
+            local t1 = (seg - 1) / numSegs
+            local t2 = seg / numSegs
+            local P1 = LerpVector(t1, pStart, pEnd)
+            local P2 = LerpVector(t2, pStart, pEnd)
+            local midPos = (P1 + P2) * 0.5 + Vector(0, 0, 45)
+
+            local tr = util.TraceLine({
+                start = midPos,
+                endpos = midPos - Vector(0, 0, 220),
+                mask = MASK_SOLID_BRUSHONLY
+            })
+
+            local floorPos = tr.Hit and (tr.HitPos + Vector(0, 0, 2)) or (midPos - Vector(0, 0, 45))
+            local wallDir = (P2 - P1):GetNormalized()
+            local outwardNormal = Vector(-wallDir.y, wallDir.x, 0):GetNormalized()
+            local wallAng = Angle(0, wallDir:Angle().y, 0)
+            local isGate = false
+            if not gatePlaced and s == 1 and seg == math.floor(numSegs * 0.5) then
+                isGate = true
+                gatePlaced = true
             end
 
-            if not occupied then
-                local outwardDir = (tr.HitPos - center):GetNormalized()
-                local yaw = outwardDir:Angle().y + 90
-                local ang = Angle(0, yaw, 0)
-                return tr.HitPos + Vector(0, 0, 2), ang
-            end
+            table.insert(camp.plannedWalls, {
+                pos = floorPos,
+                ang = wallAng,
+                isGate = isGate,
+                built = false
+            })
         end
     end
-    return nil, nil
 end
 
 function VNPC_ConstructPreyCampWall(camp)
     if not camps_enabled:GetBool() or not camp then return false end
+    if not camp.plannedWalls or #camp.plannedWalls == 0 then
+        VNPC_PlanPreyCampLayout(camp)
+    end
 
-    local pos, ang = VNPC_CalculateCampWallPositions(camp)
-    if not pos or not ang then return false end
+    local targetPlan = nil
+    for _, plan in ipairs(camp.plannedWalls) do
+        if not plan.built then
+            targetPlan = plan
+            break
+        end
+    end
+    if not targetPlan then return false end
+    targetPlan.built = true
 
     local wall = ents.Create("prop_physics")
     if not IsValid(wall) then return false end
 
-    camp.wallModel = camp.wallModel or PREY_WALL_MODELS[math.random(1, #PREY_WALL_MODELS)]
-    local mdl = camp.wallModel
+    local mdl = nil
+    if targetPlan.isGate then
+        mdl = "models/props_wasteland/wood_fence01a.mdl"
+    else
+        camp.wallModel = camp.wallModel or PREY_WALL_MODELS[math.random(1, #PREY_WALL_MODELS)]
+        mdl = camp.wallModel
+    end
+
     if not util.IsValidModel(mdl) then
         mdl = "models/props_c17/fence01a.mdl"
     end
 
     wall:SetModel(mdl)
-    wall:SetPos(pos)
-    wall:SetAngles(ang)
+    wall:SetPos(targetPlan.pos)
+    wall:SetAngles(targetPlan.ang)
     wall:Spawn()
     wall:Activate()
 
@@ -197,6 +233,12 @@ function VNPC_ConstructPreyCampWall(camp)
     wall.VNPC_PreyCampID = camp.id
     wall.VNPC_CampRef = camp
     wall:SetHealth(180)
+
+    if targetPlan.isGate then
+        wall.VNPC_IsPreyCampGate = true
+        wall.VNPC_GateClosedAng = targetPlan.ang
+        wall.VNPC_GateOpenAng = Angle(0, targetPlan.ang.y + 90, 0)
+    end
 
     table.insert(camp.walls, wall)
 
