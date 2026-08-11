@@ -113,8 +113,31 @@ function VNPC_AssignPreyToCamp(npc, force)
     local current = VNPC_GetPreyCamp(npc)
     if current then return current end
 
-    local targetSize = camp_target_size:GetInt() or 10
     local npcPos = npc:GetPos()
+
+    -- 1. First priority: retake any abandoned Prey Camp (#camp.members == 0) within range
+    local bestAbandoned = nil
+    local bestAbandonedDistSqr = 6000 * 6000
+    for _, camp in ipairs(VNPC_ActivePreyCamps) do
+        if #camp.members == 0 then
+            local dSqr = camp.pos:DistToSqr(npcPos)
+            if dSqr <= bestAbandonedDistSqr then
+                bestAbandoned = camp
+                bestAbandonedDistSqr = dSqr
+            end
+        end
+    end
+
+    if bestAbandoned then
+        table.insert(bestAbandoned.members, npc)
+        npc.VNPC_PreyCampID = bestAbandoned.id
+        bestAbandoned.abandonedTime = nil
+        print("[V-NPCs] Citizen " .. tostring(npc) .. " retook abandoned Prey Camp #" .. bestAbandoned.id .. "!")
+        hook.Run("VNPC_OnPreyCampRetaken", npc, bestAbandoned)
+        return bestAbandoned
+    end
+
+    local targetSize = camp_target_size:GetInt() or 10
     local bestCamp = nil
     local bestDistSqr = 1e12
 
@@ -740,6 +763,35 @@ function VNPC_PreyCampLove_AI(camp, now)
     end
 end
 
+function VNPC_PreyCampReclamation_AI(now)
+    for _, abandoned in ipairs(VNPC_ActivePreyCamps) do
+        if #abandoned.members == 0 and (now - (abandoned.abandonedTime or now)) > 4.0 then
+            -- Find a surviving donor Prey Camp with at least 3 living citizens
+            for _, donor in ipairs(VNPC_ActivePreyCamps) do
+                if donor ~= abandoned and #donor.members >= 3 then
+                    -- Dispatch an able-bodied citizen to retake the abandoned fort
+                    for m = #donor.members, 1, -1 do
+                        local citizen = donor.members[m]
+                        if IsValid(citizen) and citizen:Health() > 0 and not citizen.Vored and not citizen.VNPC_Vored and not citizen.VNPC_IsPregnant then
+                            table.remove(donor.members, m)
+                            table.insert(abandoned.members, citizen)
+                            citizen.VNPC_PreyCampID = abandoned.id
+                            citizen.VNPC_PreyRole = "citizen"
+                            abandoned.abandonedTime = nil
+                            if citizen.SetLastPosition then pcall(citizen.SetLastPosition, citizen, abandoned.pos) end
+                            if citizen.SetSchedule then pcall(citizen.SetSchedule, citizen, SCHED_FORCED_GO_RUN) end
+                            print("[V-NPCs] Citizen " .. tostring(citizen) .. " from Prey Camp #" .. donor.id .. " was dispatched to RETAKE abandoned Prey Camp #" .. abandoned.id .. "!")
+                            hook.Run("VNPC_OnPreyCampRetaken", citizen, abandoned)
+                            break
+                        end
+                    end
+                    if #abandoned.members > 0 then break end
+                end
+            end
+        end
+    end
+end
+
 -- Main Prey Camps & Fortification AI Loop
 hook.Add("Think", "VNPC_PreyCamps_AI_Loop", function()
     if not camps_enabled:GetBool() then return end
@@ -752,6 +804,10 @@ hook.Add("Think", "VNPC_PreyCamps_AI_Loop", function()
             ent.VNPC_PreyCampID = nil
             VNPC_AssignPreyToCamp(ent)
         end
+    end
+
+    if VNPC_PreyCampReclamation_AI then
+        VNPC_PreyCampReclamation_AI(now)
     end
 
     -- 2. Update active prey camps and construct fortifications
@@ -800,8 +856,15 @@ hook.Add("Think", "VNPC_PreyCamps_AI_Loop", function()
         end
 
         if #camp.members == 0 then
-            table.remove(VNPC_ActivePreyCamps, i)
+            -- If camp has no surviving structures, remove it; otherwise keep it in VNPC_ActivePreyCamps so prey can retake it
+            if #camp.walls == 0 and #(camp.huts or {}) == 0 and #(camp.courtyardDefenses or {}) == 0 and not camp.fortified then
+                table.remove(VNPC_ActivePreyCamps, i)
+            else
+                camp.abandonedTime = camp.abandonedTime or now
+            end
             continue
+        else
+            camp.abandonedTime = nil
         end
 
         -- Accumulate resources based on camp member count and base rate
@@ -979,8 +1042,9 @@ concommand.Add("vnpcs_prey_camps_status", function(ply)
                 pregCount = pregCount + 1
             end
         end
-        print(string.format(" -> Prey Camp [#%d] | Members: %d (Pregnant: %d) | Territory Radius: %d | Walls: %d | Huts: %d | Courtyard Defenses: %d | Resources: %.1f | Fortified: %s",
-            camp.id, #camp.members, pregCount, math.floor(camp.territoryRadius or 450), #camp.walls, #(camp.huts or {}), #(camp.courtyardDefenses or {}), camp.resources or 0, tostring(camp.fortified or false)))
+        local stateStr = (#camp.members == 0) and " [ABANDONED - AVAILABLE FOR RETAKING]" or ""
+        print(string.format(" -> Prey Camp [#%d] | Members: %d%s (Pregnant: %d) | Territory Radius: %d | Walls: %d | Huts: %d | Courtyard Defenses: %d | Resources: %.1f | Fortified: %s",
+            camp.id, #camp.members, stateStr, pregCount, math.floor(camp.territoryRadius or 450), #camp.walls, #(camp.huts or {}), #(camp.courtyardDefenses or {}), camp.resources or 0, tostring(camp.fortified or false)))
     end
     print("Total active prey camps: " .. #VNPC_ActivePreyCamps)
     print("=========================================")
@@ -1035,6 +1099,68 @@ concommand.Add("vnpcs_test_create_prey_camp", function(ply)
     target.VNPC_SpawnedByPlayer = true
     local camp = VNPC_CreatePreyCamp(tr.HitPos, target)
     ply:ChatPrint("[V-NPCs] Established Prey Camp #" .. tostring(camp and camp.id or "N/A") .. " for " .. tostring(target) .. "!")
+end)
+
+concommand.Add("vnpcs_test_prey_retake_camp", function(ply)
+    if not IsValid(ply) then return end
+    local tr = ply:GetEyeTrace()
+    local target = tr.Entity
+    if not IsValid(target) or not VNPC_IsEligiblePreyNPC(target) then
+        ply:ChatPrint("[V-NPCs] Please aim at a valid citizen prey NPC to retake an abandoned Prey Camp!")
+        return
+    end
+
+    -- Find an abandoned camp, or if none is abandoned, find another camp and empty its members so target can retake it
+    local abandonedCamp = nil
+    for _, camp in ipairs(VNPC_ActivePreyCamps) do
+        if #camp.members == 0 and (#camp.walls > 0 or #(camp.huts or {}) > 0 or #(camp.courtyardDefenses or {}) > 0 or camp.fortified) then
+            abandonedCamp = camp
+            break
+        end
+    end
+
+    if not abandonedCamp then
+        for _, camp in ipairs(VNPC_ActivePreyCamps) do
+            if camp.id ~= target.VNPC_PreyCampID and (#camp.walls > 0 or #(camp.huts or {}) > 0 or #(camp.courtyardDefenses or {}) > 0 or camp.fortified) then
+                for _, m in ipairs(camp.members) do
+                    if IsValid(m) then m.VNPC_PreyCampID = nil end
+                end
+                table.Empty(camp.members)
+                abandonedCamp = camp
+                break
+            end
+        end
+    end
+
+    if not abandonedCamp then
+        ply:ChatPrint("[V-NPCs] No abandoned Prey Camp with structures found to retake! Establish and fortify a camp first.")
+        return
+    end
+
+    -- Remove target from their old camp
+    if target.VNPC_PreyCampID then
+        for _, c in ipairs(VNPC_ActivePreyCamps) do
+            if c.id == target.VNPC_PreyCampID then
+                for idx, m in ipairs(c.members) do
+                    if m == target then
+                        table.remove(c.members, idx)
+                        break
+                    end
+                end
+                break
+            end
+        end
+    end
+
+    table.insert(abandonedCamp.members, target)
+    target.VNPC_PreyCampID = abandonedCamp.id
+    target.VNPC_PreyRole = "citizen"
+    abandonedCamp.abandonedTime = nil
+
+    if target.SetLastPosition then pcall(target.SetLastPosition, target, abandonedCamp.pos) end
+    if target.SetSchedule then pcall(target.SetSchedule, target, SCHED_FORCED_GO_RUN) end
+
+    ply:ChatPrint("[V-NPCs] Citizen " .. tostring(target) .. " has successfully RETAKEN abandoned Prey Camp #" .. abandonedCamp.id .. " (" .. #abandonedCamp.walls .. " walls, " .. #(abandonedCamp.huts or {}) .. " huts)!")
 end)
 
 concommand.Add("vnpcs_test_build_wall", function(ply)
