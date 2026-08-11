@@ -369,7 +369,6 @@ end
 
 function VNPC_IsMaleWildWanderer(ent)
     if not IsValid(ent) or ent:Health() <= 0 or ent.Vored or ent.VNPC_Vored then return false end
-    if not ent.VNPC_IsWildWanderer then return false end
     if ent.VNPC_IsPregnant or ent.VNPC_WildMate then return false end
     if ent.VNPC_ChildGender == "male" then return true end
     local mdl = string.lower(ent:GetModel() or "")
@@ -402,7 +401,7 @@ function VNPC_WildPredPreyMate(female, male)
     if female.VNPC_IsPregnant or male.VNPC_IsPregnant then return false end
 
     female.VNPC_IsPregnant = true
-    female.VNPC_BabyGrowthValue = 40.0
+    female.VNPC_BabyGrowthValue = 10.0
     female.VNPC_LastGrowthTime = CurTime()
     female.VNPC_WildMate = male
     male.VNPC_WildMate = female
@@ -535,29 +534,54 @@ function VNPC_WildMating_AI(now)
         if w.VNPC_IsPregnant then
             if (now - (w.VNPC_LastGrowthTime or now)) >= 1.0 then
                 w.VNPC_LastGrowthTime = now
-                w.VNPC_BabyGrowthValue = (w.VNPC_BabyGrowthValue or 40.0) + 1.25
+                w.VNPC_BabyGrowthValue = (w.VNPC_BabyGrowthValue or 10.0) + 1.0
                 if w.VNPC_BabyGrowthValue >= 50.0 then
                     VNPC_WildGiveBirth(w)
                 end
             end
-        elseif (w.VNPC_NextWildMateCheck or 0) <= now and VNPC_IsFemaleWildWanderer(w) then
-            w.VNPC_NextWildMateCheck = now + 10.0
-            local bestMale = nil
-            local bestDistSqr = 800 * 800
-            local wPos = w:GetPos()
-
-            for _, m in ipairs(VNPC_ActiveWildWanderers) do
-                if VNPC_IsMaleWildWanderer(m) then
-                    local dSqr = m:GetPos():DistToSqr(wPos)
-                    if dSqr <= bestDistSqr then
-                        bestMale = m
-                        bestDistSqr = dSqr
+        elseif VNPC_IsFemaleWildWanderer(w) then
+            -- 1. Check if we already have a mate/partner in close physical contact to start pregnancy
+            if IsValid(w.VNPC_SeekingMate) and w.VNPC_SeekingMate:Health() > 0 and not w.VNPC_SeekingMate.Vored then
+                local dSqr = w:GetPos():DistToSqr(w.VNPC_SeekingMate:GetPos())
+                if dSqr <= (135 * 135) then
+                    -- CLOSE PHYSICAL CONTACT REACHED: mate and become pregnant!
+                    VNPC_WildPredPreyMate(w, w.VNPC_SeekingMate)
+                    w.VNPC_SeekingMate = nil
+                else
+                    -- Still traveling towards our male prey partner to mate
+                    if (w.VNPC_NextMateMoveTime or 0) <= now then
+                        w.VNPC_NextMateMoveTime = now + 1.5
+                        if w.SetLastPosition then pcall(w.SetLastPosition, w, w.VNPC_SeekingMate:GetPos()) end
+                        if w.SetSchedule then pcall(w.SetSchedule, w, SCHED_FORCED_GO_RUN) end
+                        if w.VNPC_SeekingMate.SetLastPosition then pcall(w.VNPC_SeekingMate.SetLastPosition, w.VNPC_SeekingMate, w:GetPos()) end
+                        if w.VNPC_SeekingMate.SetSchedule then pcall(w.VNPC_SeekingMate.SetSchedule, w.VNPC_SeekingMate, SCHED_TARGET_FACE) end
                     end
                 end
-            end
+            elseif (w.VNPC_NextWildMateCheck or 0) <= now then
+                w.VNPC_NextWildMateCheck = now + 6.0
+                local bestMale = nil
+                local bestDistSqr = 2000 * 2000
+                local wPos = w:GetPos()
 
-            if IsValid(bestMale) then
-                VNPC_WildPredPreyMate(w, bestMale)
+                -- Scan all NPCs on the map for an eligible male citizen prey
+                for _, m in ipairs(ents.FindByClass("npc_*")) do
+                    if VNPC_IsMaleWildWanderer(m) and m ~= w then
+                        local dSqr = m:GetPos():DistToSqr(wPos)
+                        if dSqr <= bestDistSqr then
+                            bestMale = m
+                            bestDistSqr = dSqr
+                        end
+                    end
+                end
+
+                if IsValid(bestMale) then
+                    -- Check distance: if already in close contact, mate immediately! Otherwise start seeking him.
+                    if bestDistSqr <= (135 * 135) then
+                        VNPC_WildPredPreyMate(w, bestMale)
+                    else
+                        w.VNPC_SeekingMate = bestMale
+                    end
+                end
             end
         end
     end
