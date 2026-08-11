@@ -351,42 +351,86 @@ function VNPC_ConstructPreyCampHut(camp)
     local site = camp.activeHutSite
     if not site then return false end
 
+    -- Check if an actual saved workshop dupe file is installed in data/dupes/ or data/advdupe2/
+    if site.stage == 0 and file and file.Exists and duplicator then
+        local dupePath = nil
+        if file.Exists("dupes/slum_hut.dupe", "DATA") then
+            dupePath = "dupes/slum_hut.dupe"
+        elseif file.Exists("advdupe2/slum_hut.txt", "DATA") then
+            dupePath = "advdupe2/slum_hut.txt"
+        end
+        if dupePath then
+            local dupeData = file.Read(dupePath, "DATA")
+            if dupeData and duplicator.Paste then
+                local success, pastedEnts = pcall(duplicator.Paste, nil, dupeData, site.pos)
+                if success and istable(pastedEnts) and #pastedEnts > 0 then
+                    for _, prop in ipairs(pastedEnts) do
+                        if IsValid(prop) then
+                            prop.VNPC_IsPreyCampHutPiece = true
+                            prop.VNPC_PreyCampID = camp.id
+                            table.insert(site.props, prop)
+                        end
+                    end
+                    local hut = {
+                        id = #(camp.huts or {}) + 1,
+                        pos = site.pos,
+                        ang = site.ang,
+                        props = site.props,
+                        VNPC_IsPreyCampHut = true,
+                        VNPC_PreyCampID = camp.id
+                    }
+                    camp.huts = camp.huts or {}
+                    table.insert(camp.huts, hut)
+                    camp.activeHutSite = nil
+                    return true
+                end
+            end
+        end
+    end
+
     site.stage = (site.stage or 0) + 1
     local fwd = site.ang:Forward()
     local right = site.ang:Right()
 
-    local pModel = "models/props_junk/wood_pallet001a.mdl"
+    local pModel = "models/props_wasteland/wood_fence01a.mdl"
     local pPos = site.pos
     local pAng = site.ang
 
     if site.stage == 1 then
-        pModel = "models/props_junk/wood_pallet001a.mdl"
-        pPos = site.pos + Vector(0, 0, 2)
-        pAng = site.ang
-    elseif site.stage == 2 then
+        -- Stage 1: Full 96x96 wooden plank floor platform
         pModel = "models/props_wasteland/wood_fence01a.mdl"
-        pPos = site.pos + fwd * 40 + Vector(0, 0, 32)
+        pPos = site.pos + Vector(0, 0, 2)
+        pAng = Angle(90, site.ang.y, 0)
+    elseif site.stage == 2 then
+        -- Stage 2: Back wall (96 units wide, flush at rear perimeter fwd * +46)
+        pModel = "models/props_wasteland/wood_fence01a.mdl"
+        pPos = site.pos + fwd * 46 + Vector(0, 0, 32)
         pAng = site.ang
     elseif site.stage == 3 then
+        -- Stage 3: Left side wall (96 units long, flush at left perimeter right * +46)
         pModel = "models/props_wasteland/wood_fence01a.mdl"
-        pPos = site.pos + right * 40 + Vector(0, 0, 32)
+        pPos = site.pos + right * 46 + Vector(0, 0, 32)
         pAng = Angle(0, site.ang.y + 90, 0)
     elseif site.stage == 4 then
+        -- Stage 4: Right side wall (96 units long, flush at right perimeter right * -46)
         pModel = "models/props_wasteland/wood_fence01a.mdl"
-        pPos = site.pos - right * 40 + Vector(0, 0, 32)
+        pPos = site.pos - right * 46 + Vector(0, 0, 32)
         pAng = Angle(0, site.ang.y - 90, 0)
     elseif site.stage == 5 then
-        pModel = "models/props_debris/wood_board04a.mdl"
-        pPos = site.pos - fwd * 40 + right * 20 + Vector(0, 0, 32)
-        pAng = Angle(0, site.ang.y + 180, 0)
-    elseif site.stage == 6 then
-        pModel = "models/props_debris/wood_board04a.mdl"
-        pPos = site.pos - fwd * 40 - right * 20 + Vector(0, 0, 32)
-        pAng = Angle(0, site.ang.y + 180, 0)
-    else
+        -- Stage 5: Front left upright pallet framing the doorway
         pModel = "models/props_junk/wood_pallet001a.mdl"
-        pPos = site.pos + Vector(0, 0, 62)
-        pAng = site.ang
+        pPos = site.pos - fwd * 46 + right * 24 + Vector(0, 0, 24)
+        pAng = Angle(90, site.ang.y, 0)
+    elseif site.stage == 6 then
+        -- Stage 6: Front right upright pallet framing the doorway
+        pModel = "models/props_junk/wood_pallet001a.mdl"
+        pPos = site.pos - fwd * 46 - right * 24 + Vector(0, 0, 24)
+        pAng = Angle(90, site.ang.y, 0)
+    else
+        -- Stage 7: Slanted wooden/corrugated roof covering the 96x96 shack
+        pModel = "models/props_wasteland/wood_fence01a.mdl"
+        pPos = site.pos + Vector(0, 0, 64)
+        pAng = Angle(8, site.ang.y, 0)
     end
 
     if not util.IsValidModel(pModel) then
