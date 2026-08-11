@@ -6,6 +6,99 @@ CreateConVar("vnpcs_hunger_rate", "1.5", {FCVAR_REPLICATED, FCVAR_ARCHIVE}, "How
 CreateConVar("vnpcs_hunger_max_mult", "3.0", {FCVAR_REPLICATED, FCVAR_ARCHIVE}, "Maximum multiplier applied to sight range and swallowing desire when starving")
 CreateConVar("vnpcs_thirst_enabled", "1", {FCVAR_REPLICATED, FCVAR_ARCHIVE}, "Enable dynamic thirst and water drinking for predators")
 CreateConVar("vnpcs_thirst_rate", "0.6", {FCVAR_REPLICATED, FCVAR_ARCHIVE}, "How fast thirst increases per second (0 to 100 scale)")
+CreateConVar("vnpcs_stormfox2_enabled", "1", {FCVAR_REPLICATED, FCVAR_ARCHIVE}, "Enable StormFox 2 weather, time-of-day, and temperature compatibility")
+
+VNPC_SimulatedStormFox2Weather = VNPC_SimulatedStormFox2Weather or "clear"
+VNPC_SimulatedStormFox2Time = VNPC_SimulatedStormFox2Time or "day"
+VNPC_SimulatedStormFox2Temp = VNPC_SimulatedStormFox2Temp or 20.0
+
+function VNPC_IsStormFox2Present()
+    return (StormFox2 ~= nil) or (StormFox ~= nil)
+end
+
+function VNPC_IsStormFox2Raining()
+    local enabled = GetConVar("vnpcs_stormfox2_enabled")
+    if enabled and not enabled:GetBool() then return false end
+    if VNPC_SimulatedStormFox2Weather == "rain" or VNPC_SimulatedStormFox2Weather == "storm" then
+        return true
+    end
+    if StormFox2 then
+        if StormFox2.Weather and StormFox2.Weather.IsRaining and StormFox2.Weather.IsRaining() then
+            return true
+        end
+        if StormFox2.Weather and StormFox2.Weather.GetCurrent then
+            local w = StormFox2.Weather.GetCurrent()
+            if w and (string.lower(w.Name or ""):find("rain") or string.lower(w.Name or ""):find("storm") or string.lower(w.Name or ""):find("thunder")) then
+                return true
+            end
+        end
+    elseif StormFox and StormFox.IsRaining and StormFox.IsRaining() then
+        return true
+    end
+    return false
+end
+
+function VNPC_IsStormFox2Night()
+    local enabled = GetConVar("vnpcs_stormfox2_enabled")
+    if enabled and not enabled:GetBool() then return false end
+    if VNPC_SimulatedStormFox2Time == "night" then
+        return true
+    end
+    if StormFox2 and StormFox2.Time then
+        if StormFox2.Time.IsNight and StormFox2.Time.IsNight() then
+            return true
+        end
+        if StormFox2.Time.Get then
+            local t = StormFox2.Time.Get()
+            if t and (t >= 1200 or t < 360) then -- 20:00 to 06:00
+                return true
+            end
+        end
+    elseif StormFox and StormFox.IsNight and StormFox.IsNight() then
+        return true
+    end
+    return false
+end
+
+function VNPC_GetStormFox2Temperature()
+    local enabled = GetConVar("vnpcs_stormfox2_enabled")
+    if enabled and not enabled:GetBool() then return 20.0 end
+    if VNPC_SimulatedStormFox2Temp ~= 20.0 then
+        return VNPC_SimulatedStormFox2Temp
+    end
+    if StormFox2 and StormFox2.Temperature and StormFox2.Temperature.Get then
+        return StormFox2.Temperature.Get() or 20.0
+    elseif StormFox and StormFox.GetTemperature then
+        return StormFox.GetTemperature() or 20.0
+    end
+    return 20.0
+end
+
+function VNPC_GetStormFox2ThirstMultiplier()
+    local temp = VNPC_GetStormFox2Temperature()
+    if temp > 28.0 then
+        return 1.5 -- Hot weather increases thirst by 50%
+    end
+    return 1.0
+end
+
+function VNPC_GetStormFox2HungerMultiplier()
+    local temp = VNPC_GetStormFox2Temperature()
+    if temp < 5.0 then
+        return 1.35 -- Freezing/cold weather increases hunger by 35%
+    end
+    return 1.0
+end
+
+function VNPC_GetStormFox2EcologyMultiplier()
+    if VNPC_IsStormFox2Raining() then
+        return 0.75 -- Heavy rain/storm reduces active wilderness wanderer spawn rate
+    end
+    if VNPC_IsStormFox2Night() then
+        return 0.85 -- Clear night slightly reduces active wanderer spawn rate
+    end
+    return 1.0
+end
 
 function VNPC_GetThirst(ent)
     if not IsValid(ent) then return 0 end
@@ -399,7 +492,7 @@ concommand.Add("vnpcs_stormfox2_status", function(ply)
     print("===============================================================")
     print(" - StormFox 2 Integration Enabled: " .. tostring(GetConVar("vnpcs_stormfox2_enabled"):GetBool()))
     print(" - StormFox 2 Addon Installed: " .. tostring(VNPC_IsStormFox2Present()))
-    print(" - Currently Raining / Storming: " .. tostring(VNPC_IsStormFox2Raining()) .. " (Rain = Outdoor Ground is Water Source)")
+    print(" - Currently Raining / Storming: " .. tostring(VNPC_IsStormFox2Raining()) .. " (Rain = Citizens Seek Storm Shelter in Forts)")
     print(" - Currently Nighttime: " .. tostring(VNPC_IsStormFox2Night()) .. " (Night = 2x Sleepiness Growth, 60% Sleep Thresh)")
     print(" - Current Outdoor Temperature: " .. string.format("%.1f C", VNPC_GetStormFox2Temperature()))
     print(" - Dynamic Thirst Growth Multiplier: " .. string.format("%.2fx", VNPC_GetStormFox2ThirstMultiplier()) .. " (Hot Weather > 28C = 1.50x)")
@@ -418,7 +511,7 @@ concommand.Add("vnpcs_test_stormfox2_rain", function(ply, cmd, args)
         ply:ChatPrint("[V-NPCs] Set simulated StormFox 2 weather to: CLEAR")
     else
         VNPC_SimulatedStormFox2Weather = "rain"
-        ply:ChatPrint("[V-NPCs] Set simulated StormFox 2 weather to: RAIN (All outdoor ground is now a water source for thirsty predators!)")
+        ply:ChatPrint("[V-NPCs] Set simulated StormFox 2 weather to: RAIN (Citizens now seek storm shelter inside fort huts/houses!)")
     end
 end)
 
