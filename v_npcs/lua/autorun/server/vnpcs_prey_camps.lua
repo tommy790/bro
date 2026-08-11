@@ -357,6 +357,14 @@ function VNPC_PredatorBreachPreyCampWall(pred, wall, camp)
     if not IsValid(pred) or not IsValid(wall) or not camp then return end
     if not wall.VNPC_IsPreyCampWall then return end
 
+    if pred.VNPC_IsInfiltratingFort and pred.VNPC_IsInfiltratingFort.id == camp.id then
+        wall:SetNoDraw(true)
+        wall:SetSolid(SOLID_NONE)
+        pred.VNPC_InfiltrationBreachedWalls = pred.VNPC_InfiltrationBreachedWalls or {}
+        table.insert(pred.VNPC_InfiltrationBreachedWalls, wall)
+        return
+    end
+
     for idx, w in ipairs(camp.walls) do
         if w == wall then
             table.remove(camp.walls, idx)
@@ -610,6 +618,14 @@ function VNPC_PredatorBreachPreyCampHut(pred, hutOrPiece, camp)
 
     if not IsValid(targetProp) then return end
 
+    if pred.VNPC_IsInfiltratingFort and pred.VNPC_IsInfiltratingFort.id == camp.id then
+        targetProp:SetNoDraw(true)
+        targetProp:SetSolid(SOLID_NONE)
+        pred.VNPC_InfiltrationBreachedWalls = pred.VNPC_InfiltrationBreachedWalls or {}
+        table.insert(pred.VNPC_InfiltrationBreachedWalls, targetProp)
+        return
+    end
+
     local belly = pred.VNPC_Belly or pred.Belly
     if IsValid(belly) and belly.AddPrey then
         pcall(belly.AddPrey, belly, targetProp)
@@ -827,6 +843,111 @@ function VNPC_PreyCampReclamation_AI(now)
     end
 end
 
+function VNPC_PreyCampInfiltration_AI(now)
+    for _, camp in ipairs(VNPC_ActivePreyCamps or {}) do
+        if not camp.fortified and #(camp.walls or {}) == 0 then continue end
+        if IsValid(camp.infiltrator) and camp.infiltrator:Health() > 0 then
+            local pred = camp.infiltrator
+            local victim = pred.VNPC_InfiltrationTarget
+            if IsValid(victim) and (victim.Vored or victim.VNPC_Vored or victim:Health() <= 0) then
+                -- INFILTRATION SWALLOW COMPLETE: Repair the wall damage to leave zero suspicion!
+                if pred.VNPC_InfiltrationBreachedWalls then
+                    for _, wall in ipairs(pred.VNPC_InfiltrationBreachedWalls) do
+                        if IsValid(wall) then
+                            wall:SetNoDraw(false)
+                            wall:SetSolid(SOLID_VPHYSICS)
+                            wall:SetHealth(350)
+                        end
+                    end
+                    pred.VNPC_InfiltrationBreachedWalls = nil
+                end
+                camp.breachAlertTime = nil
+                camp.suspicionLevel = 0
+                camp.infiltrator = nil
+
+                pred:RemoveFlags(FL_NOTARGET)
+                pred.VNPC_IsInfiltratingFort = nil
+                pred.VNPC_InfiltrationTarget = nil
+                if pred.SetLastPosition then
+                    local escapePos = pred:GetPos() + (pred:GetPos() - camp.pos):GetNormalized() * 900
+                    pcall(pred.SetLastPosition, pred, escapePos)
+                end
+                if pred.SetSchedule then pcall(pred.SetSchedule, pred, SCHED_FORCED_GO_RUN) end
+                print("[V-NPCs] Fort Infiltration Complete: Predator " .. tostring(pred) .. " swallowed sleeping prey " .. tostring(victim) .. " and REPAIRED all wall damage! Zero suspicion raised.")
+                hook.Run("VNPC_OnFortInfiltrationComplete", pred, victim, camp)
+            elseif IsValid(victim) then
+                local dSqr = pred:GetPos():DistToSqr(victim:GetPos())
+                if dSqr <= (150 * 150) and not pred.Swallowing then
+                    if pred.EatEntity then
+                        pred:EatEntity(victim)
+                    elseif pred.VNPC_Belly and pred.VNPC_Belly.AddPrey then
+                        pred.VNPC_Belly:AddPrey(victim)
+                    end
+                else
+                    if (pred.VNPC_NextInfiltrateMoveTime or 0) <= now then
+                        pred.VNPC_NextInfiltrateMoveTime = now + 1.5
+                        if pred.SetLastPosition then pcall(pred.SetLastPosition, pred, victim:GetPos()) end
+                        if pred.SetSchedule then pcall(pred.SetSchedule, pred, SCHED_FORCED_GO) end
+                    end
+                end
+            else
+                camp.infiltrator = nil
+                pred:RemoveFlags(FL_NOTARGET)
+                pred.VNPC_IsInfiltratingFort = nil
+                pred.VNPC_InfiltrationTarget = nil
+            end
+            continue
+        end
+
+        -- Check if fort is unguarded (all members sleeping or out collecting scrap)
+        local awakeSentries = 0
+        local sleepingPrey = {}
+        for _, mem in ipairs(camp.members or {}) do
+            if IsValid(mem) and mem:Health() > 0 and not mem.Vored and not mem.VNPC_Vored then
+                if mem.VNPC_IsSleeping then
+                    table.insert(sleepingPrey, mem)
+                elseif mem.VNPC_IsCollectingScrap then
+                    -- Out collecting scrap away from fort
+                else
+                    awakeSentries = awakeSentries + 1
+                end
+            end
+        end
+
+        -- If zero awake sentries and sleeping prey present, fort is vulnerable to stealth infiltration!
+        if awakeSentries == 0 and #sleepingPrey > 0 and (camp.nextInfiltrationCheckTime or 0) <= now then
+            camp.nextInfiltrationCheckTime = now + 12.0
+            local victim = sleepingPrey[math.random(1, #sleepingPrey)]
+            local bestPred = nil
+            local bestDistSqr = 2400 * 2400
+
+            for _, pred in ipairs(ents.FindByClass("npc_*")) do
+                if IsValid(pred) and pred:Health() > 0 and not pred.Vored and (pred.IsDrGNextbot or pred.VNPC_FemaleModelVore or pred.Predator) then
+                    if pred.VNPC_IsPermanentFortPredator or pred.VNPC_IsSleeping or pred.Swallowing or IsValid(pred:GetEnemy()) then continue end
+                    local dSqr = pred:GetPos():DistToSqr(camp.pos)
+                    if dSqr <= bestDistSqr then
+                        bestPred = pred
+                        bestDistSqr = dSqr
+                    end
+                end
+            end
+
+            if IsValid(bestPred) then
+                bestPred.VNPC_IsInfiltratingFort = camp
+                bestPred.VNPC_InfiltrationTarget = victim
+                bestPred.VNPC_InfiltrationBreachedWalls = {}
+                bestPred:AddFlags(FL_NOTARGET)
+                camp.infiltrator = bestPred
+                camp.suspicionLevel = 0
+                if bestPred.SetLastPosition then pcall(bestPred.SetLastPosition, bestPred, victim:GetPos()) end
+                if bestPred.SetSchedule then pcall(bestPred.SetSchedule, bestPred, SCHED_FORCED_GO) end
+                print("[V-NPCs] Fort Vulnerable: Zero awake sentries at Prey Camp #" .. camp.id .. "! Predator " .. tostring(bestPred) .. " is sneaking in to swallow sleeping prey " .. tostring(victim) .. " alive!")
+                hook.Run("VNPC_OnFortInfiltrationStart", bestPred, victim, camp)
+            end
+        end
+    end
+end
+
 -- Main Prey Camps & Fortification AI Loop
 hook.Add("Think", "VNPC_PreyCamps_AI_Loop", function()
     if not camps_enabled:GetBool() then return end
@@ -843,6 +964,9 @@ hook.Add("Think", "VNPC_PreyCamps_AI_Loop", function()
 
     if VNPC_PreyCampReclamation_AI then
         VNPC_PreyCampReclamation_AI(now)
+    end
+    if VNPC_PreyCampInfiltration_AI then
+        VNPC_PreyCampInfiltration_AI(now)
     end
 
     -- 2. Update active prey camps and construct fortifications
@@ -1098,10 +1222,18 @@ concommand.Add("vnpcs_prey_camps_status", function(ply)
                 pregCount = pregCount + 1
             end
         end
+        local awakeSentries = 0
+        for _, m in ipairs(camp.members) do
+            if IsValid(m) and m:Health() > 0 and not m.Vored and not m.VNPC_Vored and not m.VNPC_IsSleeping and not m.VNPC_IsCollectingScrap then
+                awakeSentries = awakeSentries + 1
+            end
+        end
         local stateStr = (#camp.members == 0) and " [ABANDONED - AVAILABLE FOR RETAKING]" or ""
+        local guardStr = (awakeSentries == 0 and #camp.members > 0) and " [UNGUARDED - VULNERABLE TO INFILTRATION]" or string.format(" | Sentries: %d awake", awakeSentries)
+        local infStr = IsValid(camp.infiltrator) and string.format(" | INFILTRATION IN PROGRESS: Pred [%d]", camp.infiltrator:EntIndex()) or ""
         local indoorStr = camp.isIndoors and " | Indoors: YES (House Fort)" or " | Indoors: NO"
-        print(string.format(" -> Prey Camp [#%d] | Members: %d%s (Pregnant: %d)%s | Territory Radius: %d | Walls: %d | Huts: %d | Courtyard Defenses: %d | Resources: %.1f | Fortified: %s",
-            camp.id, #camp.members, stateStr, pregCount, indoorStr, math.floor(camp.territoryRadius or 450), #camp.walls, #(camp.huts or {}), #(camp.courtyardDefenses or {}), camp.resources or 0, tostring(camp.fortified or false)))
+        print(string.format(" -> Prey Camp [#%d] | Members: %d%s (Pregnant: %d)%s%s%s | Territory Radius: %d | Walls: %d | Huts: %d | Courtyard Defenses: %d | Resources: %.1f | Fortified: %s",
+            camp.id, #camp.members, stateStr, pregCount, indoorStr, guardStr, infStr, math.floor(camp.territoryRadius or 450), #camp.walls, #(camp.huts or {}), #(camp.courtyardDefenses or {}), camp.resources or 0, tostring(camp.fortified or false)))
     end
     print("Total active prey camps: " .. #VNPC_ActivePreyCamps)
     print("=========================================")
@@ -1315,4 +1447,78 @@ concommand.Add("vnpcs_clear_prey_camps", function(ply)
     if IsValid(ply) then
         ply:ChatPrint("[V-NPCs] Cleared " .. count .. " prey camps, defensive walls, and huts from the map.")
     end
+end)
+
+concommand.Add("vnpcs_test_fort_infiltration", function(ply)
+    if not IsValid(ply) then return end
+    local tr = ply:GetEyeTrace()
+    local target = tr.Entity
+    if not IsValid(target) or not (target:IsNPC() or target:IsNextBot()) then
+        ply:ChatPrint("[V-NPCs] Please aim at a predator or prey NPC to test fort infiltration!")
+        return
+    end
+
+    local camp = nil
+    local pred = nil
+    local victim = nil
+
+    if target.VNPC_PreyCampID and VNPC_GetPreyCamp then
+        camp = VNPC_GetPreyCamp(target)
+        victim = target
+    elseif target.IsDrGNextbot or target.VNPC_FemaleModelVore or target.Predator then
+        pred = target
+        for _, c in ipairs(VNPC_ActivePreyCamps or {}) do
+            if #(c.members or {}) > 0 then
+                camp = c
+                victim = c.members[1]
+                break
+            end
+        end
+    end
+
+    if not camp or not IsValid(victim) then
+        ply:ChatPrint("[V-NPCs] Could not find an active Prey Camp with a victim! Establish a fort first.")
+        return
+    end
+
+    if not IsValid(pred) then
+        for _, ent in ipairs(ents.FindByClass("npc_*")) do
+            if IsValid(ent) and ent ~= victim and (ent.IsDrGNextbot or ent.VNPC_FemaleModelVore or ent.Predator) and not ent.VNPC_IsPermanentFortPredator then
+                pred = ent
+                break
+            end
+        end
+    end
+
+    if not IsValid(pred) then
+        pred = VNPC_SpawnWildNPC(true, camp.pos + Vector(450, 0, 0))
+    end
+
+    -- 1. Put victim to sleep
+    victim.VNPC_IsSleeping = true
+    victim.VNPC_Sleepiness = 95.0
+    if victim.SetSchedule then pcall(victim.SetSchedule, victim, SCHED_NPC_FREEZE) end
+
+    -- 2. Initiate Predator Stealth Infiltration
+    pred.VNPC_IsInfiltratingFort = camp
+    pred.VNPC_InfiltrationTarget = victim
+    pred.VNPC_InfiltrationBreachedWalls = {}
+    pred:AddFlags(FL_NOTARGET)
+    camp.infiltrator = pred
+    camp.suspicionLevel = 0
+
+    -- 3. Quietly breach a wall to demonstrate stealth entry and repair!
+    if camp.walls and #camp.walls > 0 then
+        local wall = camp.walls[1]
+        if IsValid(wall) then
+            wall:SetNoDraw(true)
+            wall:SetSolid(SOLID_NONE)
+            table.insert(pred.VNPC_InfiltrationBreachedWalls, wall)
+        end
+    end
+
+    if pred.SetLastPosition then pcall(pred.SetLastPosition, pred, victim:GetPos()) end
+    if pred.SetSchedule then pcall(pred.SetSchedule, pred, SCHED_FORCED_GO_RUN) end
+
+    ply:ChatPrint("[V-NPCs] Initiated Fort Infiltration! Predator " .. tostring(pred) .. " sneaking into Prey Camp #" .. camp.id .. " to swallow sleeping prey " .. tostring(victim) .. " and repair wall damage!")
 end)

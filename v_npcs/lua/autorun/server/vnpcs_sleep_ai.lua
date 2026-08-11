@@ -82,10 +82,14 @@ end)
 
 hook.Add("EntityTakeDamage", "VNPCS_SleepSystem_WakeOnDamage", function(ent, dmginfo)
     if IsValid(ent) and ent.VNPC_IsSleeping then
+        local attacker = dmginfo:GetAttacker()
+        if IsValid(attacker) and attacker.VNPC_IsInfiltratingFort then
+            -- Infiltrating predator quietly swallowing sleeping prey! Do not wake the victim!
+            return
+        end
         ent.VNPC_IsSleeping = false
         ent.VNPC_Sleepiness = 0.0
         ent.VNPC_IsReturningToCampToSleep = nil
-        local attacker = dmginfo:GetAttacker()
         if IsValid(attacker) and ent.SetEnemy then
             pcall(ent.SetEnemy, ent, attacker)
         end
