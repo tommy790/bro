@@ -245,7 +245,7 @@ function ENT:AddPrey(prey)
     if VNPC_IsProtectedChildPrey and VNPC_IsProtectedChildPrey(prey) then return false end
     if VNPC_IsPreyEmissary and VNPC_IsPreyEmissary(prey) then return false end
     if table.HasValue(self.Prey, prey) then return false end
-    if prey.Vored then return false end
+    if prey.VNPC_IsDeadAndAbsorbed or prey.Vored or prey.VNPC_Vored then return false end
     if self.EatCondition then
         if not self:EatCondition(prey) then
             return false
@@ -500,8 +500,9 @@ function ENT:AbsorbSpecificPrey(index)
     local prey = self.Prey[index].Entity
 
     if IsValid(prey) then
-        --prey:SetParent(nil)
-        prey.Vored = false
+        prey.Vored = true
+        prey.VNPC_Vored = true
+        prey.VNPC_IsDeadAndAbsorbed = true
         VNPC_RemoveAttachedEntities(self, prey)
         prey:Remove()
     end
@@ -617,6 +618,8 @@ function ENT:Regurgitate(index)
     table.remove(self.Prey, index)
 
     prey.Vored = false
+    prey.VNPC_Vored = false
+    prey.VNPC_IsDeadAndAbsorbed = nil
 
     
 
@@ -683,7 +686,9 @@ function ENT:WipeAllPrey()
         if preyEnt then
             if IsValid(preyEnt) then
                 preyEnt:SetParent(nil)
-                preyEnt.Vored = false 
+                preyEnt.VNPC_IsDeadAndAbsorbed = true
+                preyEnt.Vored = true
+                preyEnt.VNPC_Vored = true
 
                 local dmg_i = DamageInfo()
                 dmg_i:SetDamageType(DMG_REMOVENORAGDOLL)
