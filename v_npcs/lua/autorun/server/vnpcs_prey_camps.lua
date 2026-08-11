@@ -15,10 +15,8 @@ local camp_max_members = CreateConVar("vnpcs_prey_camp_max_members", "25", {FCVA
 VNPC_ActivePreyCamps = VNPC_ActivePreyCamps or {}
 
 local PREY_WALL_MODELS = {
-    "models/props_wasteland/wood_fence01a.mdl",       -- Large 128-unit wooden fence barrier
-    "models/props_c17/fence01a.mdl",                  -- Large chainlink fence barrier
-    "models/props_c17/fence03a.mdl",                  -- Industrial fence barrier
-    "models/props_fortifications/barricade01a.mdl"    -- Sturdy fortification barricade
+    "models/props_wasteland/wood_fence01a.mdl",       -- Wide wooden fence barrier
+    "models/props_fortifications/barricade01a.mdl"    -- Sturdy military fortification barricade
 }
 
 local PREY_HUT_MODELS = {
@@ -157,7 +155,7 @@ function VNPC_PlanPreyCampLayout(camp)
         local pStart = vertices[s]
         local pEnd = vertices[next_s]
         local sideLen = pStart:Distance(pEnd)
-        local numSegs = math.max(2, math.ceil(sideLen / 112))
+        local numSegs = math.max(2, math.ceil(sideLen / 86))
 
         for seg = 1, numSegs do
             local t1 = (seg - 1) / numSegs
@@ -224,7 +222,9 @@ function VNPC_ConstructPreyCampWall(camp)
     end
 
     wall:SetModel(mdl)
-    wall:SetPos(targetPlan.pos)
+    local minZ = wall:OBBMins().z
+    local zOffset = (minZ < 0) and math.abs(minZ) or 0
+    wall:SetPos(targetPlan.pos + Vector(0, 0, zOffset))
     wall:SetAngles(targetPlan.ang)
     wall:Spawn()
     wall:Activate()
