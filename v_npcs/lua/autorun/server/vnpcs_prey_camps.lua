@@ -1149,6 +1149,21 @@ hook.Add("Think", "VNPC_PreyCamps_AI_Loop", function()
             end
         end
 
+        -- StormFox 2 Weather Compatibility: During rainstorms or freezing weather, citizens not on patrol seek shelter inside fort huts/house
+        if (VNPC_IsStormFox2Raining and VNPC_IsStormFox2Raining()) or (VNPC_GetStormFox2Temperature and VNPC_GetStormFox2Temperature() < 8.0) then
+            for _, mem in ipairs(camp.members) do
+                if IsValid(mem) and mem:Health() > 0 and not mem.Vored and not mem.VNPC_IsSleeping and not mem.VNPC_IsCollectingScrap and not IsValid(mem:GetEnemy()) then
+                    if camp.huts and #camp.huts > 0 then
+                        local hut = camp.huts[math.random(1, #camp.huts)]
+                        if hut and hut.pos and mem:GetPos():DistToSqr(hut.pos) > (150 * 150) then
+                            if mem.SetLastPosition then pcall(mem.SetLastPosition, mem, hut.pos) end
+                            if mem.SetSchedule then pcall(mem.SetSchedule, mem, SCHED_FORCED_GO_RUN) end
+                        end
+                    end
+                end
+            end
+        end
+
         -- Build wall fortifications when resources permit
         local cost = camp_wall_cost:GetFloat()
         local maxWalls = camp_max_walls:GetInt()

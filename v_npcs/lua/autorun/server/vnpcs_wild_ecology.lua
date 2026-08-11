@@ -933,8 +933,9 @@ hook.Add("Think", "VNPC_WildEcology_AI_Loop", function()
                 if w.VNPC_WildType == "predator" then wPreds = wPreds + 1 else wPrey = wPrey + 1 end
             end
         end
-        local maxDynPrey = VNPC_GetDynamicWildCap(false)
-        local maxDynPreds = VNPC_GetDynamicWildCap(true)
+        local sf2Mult = (VNPC_GetStormFox2EcologyMultiplier and VNPC_GetStormFox2EcologyMultiplier()) or 1.0
+        local maxDynPrey = math.floor(VNPC_GetDynamicWildCap(false) * sf2Mult)
+        local maxDynPreds = math.floor(VNPC_GetDynamicWildCap(true) * sf2Mult)
         if wPrey < maxDynPrey then
             VNPC_SpawnWildNPC(false, nil)
         end
@@ -952,6 +953,8 @@ concommand.Add("vnpcs_wild_ecology_status", function(ply)
     print("Wild Predator Danger Scale: " .. tostring(pred_danger:GetFloat()) .. "x HP/Resistance")
     print("Agent Recon Range: " .. tostring(recon_range:GetFloat()) .. " units")
     print("Wild Mating Enabled: " .. tostring(wild_mating_enabled:GetBool()))
+    local sf2Present = (VNPC_IsStormFox2Present and VNPC_IsStormFox2Present()) and "YES (Active)" or "NO (Using simulated weather)"
+    print("StormFox 2 Environment: " .. sf2Present)
     local scale = VNPC_CalculateMapScale()
     print("Map Size Dynamic Scale: " .. string.format("%.2fx", scale))
     print("Dynamic Wild Max Prey Cap: " .. VNPC_GetDynamicWildCap(false) .. " (Base: " .. max_wild_prey:GetInt() .. ")")

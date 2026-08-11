@@ -392,3 +392,49 @@ concommand.Add("vnpcs_test_set_level", function(ply, cmd, args)
     VNPC_PredatorLevelUp(target)
     ply:ChatPrint("[V-NPCs] Set predator " .. tostring(target) .. " to Level " .. targetLevel .. "!")
 end)
+
+concommand.Add("vnpcs_stormfox2_status", function(ply)
+    print("===============================================================")
+    print("        V-NPCs STORMFOX 2 ENVIRONMENTAL INTEGRATION STATUS     ")
+    print("===============================================================")
+    print(" - StormFox 2 Integration Enabled: " .. tostring(GetConVar("vnpcs_stormfox2_enabled"):GetBool()))
+    print(" - StormFox 2 Addon Installed: " .. tostring(VNPC_IsStormFox2Present()))
+    print(" - Currently Raining / Storming: " .. tostring(VNPC_IsStormFox2Raining()) .. " (Rain = Outdoor Ground is Water Source)")
+    print(" - Currently Nighttime: " .. tostring(VNPC_IsStormFox2Night()) .. " (Night = 2x Sleepiness Growth, 60% Sleep Thresh)")
+    print(" - Current Outdoor Temperature: " .. string.format("%.1f C", VNPC_GetStormFox2Temperature()))
+    print(" - Dynamic Thirst Growth Multiplier: " .. string.format("%.2fx", VNPC_GetStormFox2ThirstMultiplier()) .. " (Hot Weather > 28C = 1.50x)")
+    print(" - Dynamic Hunger Growth Multiplier: " .. string.format("%.2fx", VNPC_GetStormFox2HungerMultiplier()) .. " (Freezing Weather < 5C = 1.35x)")
+    print(" - Wild Ecology Spawn Capacity Multiplier: " .. string.format("%.2fx", VNPC_GetStormFox2EcologyMultiplier()) .. " (Rain = 0.75x, Night = 0.85x)")
+    print("===============================================================")
+    if IsValid(ply) then
+        ply:ChatPrint("[V-NPCs] StormFox 2 environmental integration status printed to console.")
+    end
+end)
+
+concommand.Add("vnpcs_test_stormfox2_rain", function(ply, cmd, args)
+    local state = string.lower(args[1] or "rain")
+    if state == "off" or state == "0" or state == "clear" then
+        VNPC_SimulatedStormFox2Weather = "clear"
+        ply:ChatPrint("[V-NPCs] Set simulated StormFox 2 weather to: CLEAR")
+    else
+        VNPC_SimulatedStormFox2Weather = "rain"
+        ply:ChatPrint("[V-NPCs] Set simulated StormFox 2 weather to: RAIN (All outdoor ground is now a water source for thirsty predators!)")
+    end
+end)
+
+concommand.Add("vnpcs_test_stormfox2_night", function(ply, cmd, args)
+    local state = string.lower(args[1] or "night")
+    if state == "off" or state == "0" or state == "day" then
+        VNPC_SimulatedStormFox2Time = "day"
+        ply:ChatPrint("[V-NPCs] Set simulated StormFox 2 time of day to: DAY")
+    else
+        VNPC_SimulatedStormFox2Time = "night"
+        ply:ChatPrint("[V-NPCs] Set simulated StormFox 2 time of day to: NIGHT (Predators & citizens get sleepy faster and sleep through the night!)")
+    end
+end)
+
+concommand.Add("vnpcs_test_stormfox2_temp", function(ply, cmd, args)
+    local temp = tonumber(args[1]) or 20.0
+    VNPC_SimulatedStormFox2Temp = temp
+    ply:ChatPrint("[V-NPCs] Set simulated StormFox 2 outdoor temperature to: " .. temp .. " C")
+end)

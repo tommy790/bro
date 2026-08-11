@@ -44,8 +44,9 @@ hook.Add("Think", "VNPCS_SleepSystem_Loop", function()
                 if ent.SetSchedule then pcall(ent.SetSchedule, ent, SCHED_IDLE_STAND) end
             end
         else
-            -- Increase sleepiness bar over time when awake
-            ent.VNPC_Sleepiness = math.Clamp((ent.VNPC_Sleepiness or 0.0) + 0.35, 0, 100)
+            -- Increase sleepiness bar over time when awake (2x faster during StormFox 2 nighttime!)
+            local sleepRate = (VNPC_IsStormFox2Night and VNPC_IsStormFox2Night()) and 0.70 or 0.35
+            ent.VNPC_Sleepiness = math.Clamp((ent.VNPC_Sleepiness or 0.0) + sleepRate, 0, 100)
 
             if ent.VNPC_Sleepiness >= 75.0 and (ent.VNPC_NextSleepYawnTime or 0) <= now then
                 ent.VNPC_NextSleepYawnTime = now + 15.0
@@ -54,7 +55,8 @@ hook.Add("Think", "VNPCS_SleepSystem_Loop", function()
                 end
             end
 
-            if ent.VNPC_Sleepiness >= thresh and not inCombat then
+            local effectiveThresh = (VNPC_IsStormFox2Night and VNPC_IsStormFox2Night()) and math.min(60.0, thresh) or thresh
+            if ent.VNPC_Sleepiness >= effectiveThresh and not inCombat then
                 -- Seek safe shelter at camp before falling asleep
                 local campPos = nil
                 if role == "predator" and ent.VNPC_CampID and VNPC_GetPredatorCamp then

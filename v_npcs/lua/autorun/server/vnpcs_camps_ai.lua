@@ -531,11 +531,13 @@ hook.Add("Think", "VNPC_PredatorCamps_AI_Loop", function()
                     end
                 end
             else
-                -- Stayer: keep within camp perimeter
-                if not IsValid(member:GetEnemy()) then
-                    local distSqr = member:GetPos():DistToSqr(camp.pos)
-                    if distSqr > (450 * 450) then
-                        if member.SetLastPosition then pcall(member.SetLastPosition, member, camp.pos) end
+                -- Stayer: keep within camp perimeter (StormFox 2: gather by warm campfire at night or in freezing weather)
+                if not IsValid(member:GetEnemy()) and not member.VNPC_IsSleeping then
+                    local coldOrNight = (VNPC_IsStormFox2Night and VNPC_IsStormFox2Night()) or (VNPC_GetStormFox2Temperature and VNPC_GetStormFox2Temperature() < 8.0)
+                    local targetPos = (coldOrNight and IsValid(camp.campfire)) and camp.campfire:GetPos() or camp.pos
+                    local maxD = coldOrNight and (140 * 140) or (450 * 450)
+                    if member:GetPos():DistToSqr(targetPos) > maxD then
+                        if member.SetLastPosition then pcall(member.SetLastPosition, member, targetPos) end
                         if member.SetSchedule then pcall(member.SetSchedule, member, SCHED_FORCED_GO) end
                     end
                 end
