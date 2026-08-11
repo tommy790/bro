@@ -785,6 +785,7 @@ function VNPC_GetClumpedPreyGroup(pred, target)
     for _, ent in ipairs(ents.FindInSphere(target:GetPos(), radius)) do
         if #group >= max_count then break end
         if IsValid(ent) and ent ~= pred and ent ~= target and not ent.Vored and not ent.VNPC_Vored and not ent.VNPC_IsDeadAndAbsorbed then
+            if ent.VNPC_DigestedBone or ent.VNPC_BoneOwner or ent.VNPC_NoVore then continue end
             if ent.IsDrGNextbot or ent.VNPC_FemaleModelVore or ent.Predator then continue end
             local is_valid_prey = (ent:IsPlayer() or ent:IsNPC() or (ent:GetClass() == "prop_ragdoll" or ent.VNPC_IsCorpse))
             if is_valid_prey then

@@ -92,6 +92,7 @@ function VNPC_SpitDigestedBones(pred, countOverride)
         bone.VNPC_DigestedBone = true
         bone.VNPC_BoneOwner = pred
         bone.VNPC_BoneSpawnTime = CurTime()
+        bone.VNPC_NoVore = true
         bone:SetCollisionGroup(COLLISION_GROUP_DEBRIS)
 
         table.insert(VNPC_ActiveDigestedBones, bone)

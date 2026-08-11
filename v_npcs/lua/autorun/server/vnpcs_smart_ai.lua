@@ -20,6 +20,7 @@ function VNPC_SelectSmartPreyTarget(pred, search_radius)
         if not IsValid(ent) or ent == pred or ent.Vored or ent.VNPC_Vored or ent.VNPC_Surrendered then continue end
         if VNPC_IsProtectedChildPrey and VNPC_IsProtectedChildPrey(ent) then continue end
         if VNPC_IsPreyEmissary and VNPC_IsPreyEmissary(ent) then continue end
+        if ent.VNPC_DigestedBone or ent.VNPC_BoneOwner or ent.VNPC_NoVore then continue end
         if ent.VNPC_PreyCampID and pred.VNPC_PreyCampID and ent.VNPC_PreyCampID == pred.VNPC_PreyCampID then continue end
         if not (ent:IsPlayer() or ent:IsNPC() or ent.IsDrGNextbot or ent:GetClass() == "prop_ragdoll" or ent.VNPC_IsCorpse) then continue end
 
@@ -115,6 +116,8 @@ hook.Add("Think", "VNPCS_SmartAI_TacticalLoop", function()
         -- OBSTACLE CLEARING: If stuck in or blocked by a prop, swallow the prop to clear the path!
         for _, prop in ipairs(ents.FindInSphere(pred:GetPos(), 95)) do
             if not IsValid(prop) or prop == pred or prop.Vored or prop.VNPC_Vored then continue end
+            if prop.VNPC_DigestedBone or prop.VNPC_BoneOwner or prop.VNPC_NoVore then continue end
+            if prop.VNPC_IsPreyCampWall or prop.VNPC_IsPreyCampHutPiece or prop.VNPC_IsPredatorTent then continue end
             local cls = prop:GetClass()
             if cls == "prop_physics" or cls == "prop_dynamic" or cls == "prop_ragdoll" or cls == "func_breakable" then
                 local dist = pred:GetPos():Distance(prop:GetPos())

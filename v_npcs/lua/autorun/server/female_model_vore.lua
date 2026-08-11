@@ -142,6 +142,7 @@ function VNPC_GiveFemaleModelVore(ent)
     -- Add EatEntity method
     function ent:EatEntity(target)
         if not IsValid(target) or (self.Swallowing and not self._InClumpVore) or target.Vored or self.Vored then return false end
+        if target.VNPC_DigestedBone or target.VNPC_BoneOwner or target.VNPC_NoVore then return false end
         if VNPC_IsProtectedChildPrey and VNPC_IsProtectedChildPrey(target) then return false end
         if VNPC_IsPreyEmissary and VNPC_IsPreyEmissary(target) then return false end
         if target.VNPC_PreyCampID and self.VNPC_PreyCampID and target.VNPC_PreyCampID == self.VNPC_PreyCampID then return false end
@@ -387,10 +388,12 @@ function VNPC_GiveFemaleModelVore(ent)
     end
 
     function ent:EatCondition(prey)
+        if not IsValid(prey) or prey.VNPC_DigestedBone or prey.VNPC_BoneOwner or prey.VNPC_NoVore then return false end
         return true
     end
 
     function ent:CanEat(prey)
+        if not IsValid(prey) or prey.VNPC_DigestedBone or prey.VNPC_BoneOwner or prey.VNPC_NoVore then return false end
         return true
     end
 
@@ -634,6 +637,7 @@ hook.Add("Think", "VNPC_FemaleModelVore_AI", function()
             -- Search for nearby hostile target or corpses
             for _, ent in ipairs(ents.FindInSphere(npc:GetPos(), eff_detect)) do
                 if IsValid(ent) and ent ~= npc and not ent.Vored and (ent:IsPlayer() or ent:IsNPC()) then
+                    if ent.VNPC_DigestedBone or ent.VNPC_BoneOwner or ent.VNPC_NoVore then continue end
                     if VNPC_IsProtectedChildPrey and VNPC_IsProtectedChildPrey(ent) then continue end
                     if VNPC_IsPreyEmissary and VNPC_IsPreyEmissary(ent) then continue end
                     if npc.GetRelationship and npc:GetRelationship(ent) == D_HT then
@@ -653,6 +657,7 @@ hook.Add("Think", "VNPC_FemaleModelVore_AI", function()
                         end
                     end
                 elseif IsValid(ent) and (ent:GetClass() == "prop_ragdoll" or ent.VNPC_IsCorpse) and npc.CanEatCorpse and npc:CanEatCorpse(ent) then
+                    if ent.VNPC_DigestedBone or ent.VNPC_BoneOwner or ent.VNPC_NoVore then continue end
                     local rag_dist = GetConVar("vnpcs_female_model_vore_ragdoll_range"):GetFloat() or 150
                     if npc:GetPos():Distance(ent:GetPos()) <= math.min(eff_grab, rag_dist) then
                         npc:EatEntity(ent)

@@ -76,6 +76,7 @@ concommand.Add("vnpcs_player_swallow", function(ply)
         -- Try a small sphere trace if thin line trace missed
         for _, ent in ipairs(ents.FindInSphere(ply:GetShootPos() + ply:GetAimVector() * (range * 0.5), range * 0.5)) do
             if IsValid(ent) and ent ~= ply and ent ~= belly and not ent.Vored and not ent.VNPC_Vored then
+                if ent.VNPC_DigestedBone or ent.VNPC_BoneOwner or ent.VNPC_NoVore then continue end
                 if ent:IsNPC() or ent:IsPlayer() or ent.IsDrGNextbot or ent:GetClass() == "prop_ragdoll" or ent.VNPC_IsCorpse then
                     target = ent
                     break
