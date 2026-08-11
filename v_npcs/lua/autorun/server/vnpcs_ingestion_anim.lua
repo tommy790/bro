@@ -311,6 +311,11 @@ function VNPC_StartIngestionAnimation(pred, prey, belly)
         if pred.SetNWBool then pred:SetNWBool("VNPC_IsMountingHeavyPrey", true) end
         prey:SetParent(nil)
         print("[V-NPCs] Heavy Ground Ingestion: Predator " .. tostring(pred) .. " leaped onto grounded " .. tostring(prey) .. " (" .. string.upper(species) .. ") and is slowly swallowing it alive over " .. duration .. "s!")
+    elseif species == "antlion" then
+        duration = math.max(duration, 6.0)
+        prey.VNPC_IsAntlionPrey = true
+        prey:SetParent(nil)
+        print("[V-NPCs] Antlion Lift & Slow Swallow: Predator " .. tostring(pred) .. " lifted " .. tostring(prey) .. " (Antlion) off the ground and is slowly forcing it into her mouth over " .. duration .. "s!")
     else
         -- Position prey at predator's mouth / head area
         local headBone = pred:LookupBone("ValveBiped.Bip01_Head1") or pred:LookupBone("Head") or pred:LookupBone("head")
@@ -438,6 +443,25 @@ hook.Add("Think", "VNPCS_IngestionAnimation_Loop", function()
             prey:SetPos(prey.VNPC_GroundIngestStartPos or prey:GetPos())
         elseif isUnbirth and VNPC_ApplyUnbirthIngestionPositioning then
             VNPC_ApplyUnbirthIngestionPositioning(pred, prey, tNorm)
+        elseif prey.VNPC_IsAntlionPrey then
+            -- ANTLION LIFT & SLOW SWALLOW: Predator lifts Antlion off the ground, holds it in front of her face, and forces it into her mouth slowly!
+            local headBone = pred:LookupBone("ValveBiped.Bip01_Head1") or pred:LookupBone("Head") or pred:LookupBone("head")
+            local mouthPos = headBone and pred:GetBonePosition(headBone) or (pred:GetPos() + Vector(0, 0, 64))
+            local startPos = pred:GetPos() + pred:GetForward() * 32 + Vector(0, 0, 10)
+
+            if tNorm < 0.40 then
+                -- Lifting Phase: lift Antlion up in front of open mouth
+                local lNorm = tNorm / 0.40
+                local curP = LerpVector(lNorm, startPos, mouthPos + pred:GetForward() * 22 - pred:GetUp() * 4)
+                prey:SetPos(curP)
+                if pred.SetFacialExpression then pcall(pred.SetFacialExpression, pred, 1) end
+            else
+                -- Forcing into mouth & slow swallow phase
+                local sNorm = (tNorm - 0.40) / 0.60
+                local curP = LerpVector(sNorm, mouthPos + pred:GetForward() * 22 - pred:GetUp() * 4, mouthPos - pred:GetForward() * 6 - pred:GetUp() * 16)
+                prey:SetPos(curP)
+                if pred.SetFacialExpression then pcall(pred.SetFacialExpression, pred, 1) end
+            end
         else
             -- Keep prey positioned at predator's mouth as she swallows
             local headBone = pred:LookupBone("ValveBiped.Bip01_Head1") or pred:LookupBone("Head") or pred:LookupBone("head")
@@ -486,6 +510,7 @@ hook.Add("Think", "VNPCS_IngestionAnimation_Loop", function()
                 pred.VNPC_MountStartPos = nil
                 if pred.SetNWBool then pred:SetNWBool("VNPC_IsMountingHeavyPrey", false) end
             end
+            prey.VNPC_IsAntlionPrey = nil
             if VNPC_HideSwallowedPrey then
                 VNPC_HideSwallowedPrey(prey, belly)
             else
