@@ -54,6 +54,7 @@ function VNPC_ForagerSeekWillingMate(pred, camp)
     for _, ent in ipairs(ents.GetAll()) do
         if not IsValid(ent) or ent:Health() <= 0 or ent.Vored or ent.VNPC_Vored then continue end
         if not VNPC_IsMalePreyCitizen or not VNPC_IsMalePreyCitizen(ent) then continue end
+        if VNPC_IsAdultPreyCitizen and not VNPC_IsAdultPreyCitizen(ent) then continue end
 
         -- Check personality: must be "willing" (or "desire"/"desirous")
         local pers, _ = VNPC_GetPreyPersonality(ent)

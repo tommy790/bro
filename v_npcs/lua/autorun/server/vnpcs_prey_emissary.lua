@@ -159,6 +159,7 @@ hook.Add("Think", "VNPC_PreyEmissary_AI_Loop", function()
 
             if femaleCount == 0 and #camp.members >= 2 and activeEmissaries == 0 then
                 for _, mem in ipairs(camp.members) do
+                    if VNPC_IsAdultPreyCitizen and not VNPC_IsAdultPreyCitizen(mem) then continue end
                     if IsValid(mem) and VNPC_IsMalePreyCitizen and VNPC_IsMalePreyCitizen(mem) then
                         mem.VNPC_PreyRole = "emissary"
                         mem.VNPC_IsPreyEmissary = true

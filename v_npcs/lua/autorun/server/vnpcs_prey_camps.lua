@@ -363,7 +363,7 @@ function VNPC_PreyCampLove_AI(camp, now)
     local females = {}
     local males = {}
     for _, mem in ipairs(camp.members) do
-        if IsValid(mem) and mem:Health() > 0 then
+        if IsValid(mem) and mem:Health() > 0 and (not VNPC_IsAdultPreyCitizen or VNPC_IsAdultPreyCitizen(mem)) then
             if VNPC_IsFemalePreyCitizen(mem) then
                 table.insert(females, mem)
             elseif VNPC_IsMalePreyCitizen(mem) then

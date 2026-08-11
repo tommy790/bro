@@ -12,6 +12,13 @@ function VNPC_IsProtectedChildPrey(ent)
     return false
 end
 
+function VNPC_IsAdultPreyCitizen(ent)
+    if not IsValid(ent) or ent:Health() <= 0 then return false end
+    if ent.VNPC_IsUnbornBaby or ent.VNPC_IsGrowingBaby or ent.VNPC_ProtectedChild then return false end
+    if (ent:GetModelScale() or 1) < 0.95 then return false end
+    return true
+end
+
 VNPC_ChildbirthSittingPoseKeyframe = {
     ["ValveBiped.Bip01_Head1"] = { pos = Vector(0, 0, 0), ang = Angle(15, 0, 0) },
     ["ValveBiped.Bip01_Spine"] = { pos = Vector(0, 0, 0), ang = Angle(-12, 0, 0) },
