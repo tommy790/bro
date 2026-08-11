@@ -83,9 +83,17 @@ function VNPC_CreatePreyCamp(pos, founder)
         end
     end
 
+    local trUp = util.TraceLine({
+        start = origin + Vector(0, 0, 10),
+        endpos = origin + Vector(0, 0, 600),
+        mask = MASK_SOLID_BRUSHONLY
+    })
+    local indoors = (trUp.Hit and not trUp.HitSky)
+
     local camp = {
         id = math.random(100000, 999999),
         pos = origin,
+        isIndoors = indoors,
         members = { founder },
         walls = {},
         huts = {},
@@ -188,8 +196,10 @@ function VNPC_PlanPreyCampLayout(camp)
     end
 
     -- Dynamic perimeter radius adapts to living area size, member count, & territory expansion
-    local targetRadius = math.Clamp(math.max(camp.territoryRadius or 450.0, maxMemberDist + 150), 260, 3000)
-    local numAngles = math.Clamp(8 + math.floor((targetRadius - 260) / 75), 8, 28)
+    local minRad = camp.isIndoors and 130 or 260
+    local maxRad = camp.isIndoors and 360 or 3000
+    local targetRadius = math.Clamp(math.max(camp.territoryRadius or 450.0, maxMemberDist + (camp.isIndoors and 80 or 150)), minRad, maxRad)
+    local numAngles = camp.isIndoors and math.Clamp(8 + math.floor((targetRadius - 130) / 45), 8, 16) or math.Clamp(8 + math.floor((targetRadius - 260) / 75), 8, 28)
     local anchorPoints = {}
 
     -- 2. Cast radial 3D terrain raycasts to find natural world walls, buildings, or slopes
@@ -205,8 +215,8 @@ function VNPC_PlanPreyCampLayout(camp)
         })
 
         local anchorPos = nil
-        if wallTrace.Hit and wallTrace.Fraction > 0.35 and wallTrace.Fraction < 0.95 then
-            anchorPos = wallTrace.HitPos - dir * 16
+        if wallTrace.Hit and wallTrace.Fraction > 0.15 and wallTrace.Fraction < 0.98 then
+            anchorPos = wallTrace.HitPos - dir * (camp.isIndoors and 14 or 16)
         else
             local groundCandidate = center + dir * targetRadius
             local groundTrace = util.TraceLine({
@@ -382,7 +392,7 @@ end
 function VNPC_CalculateCampHutPosition(camp)
     if not camp or not camp.pos then return nil, nil end
     local numHuts = math.Clamp(math.ceil(#(camp.members or {}) / 3), 1, camp_max_huts:GetInt() or 6)
-    local radius = 85 + ((#(camp.huts or {})) * 50)
+    local radius = camp.isIndoors and math.Clamp(45 + ((#(camp.huts or {})) * 35), 45, 140) or (85 + ((#(camp.huts or {})) * 50))
     local center = (camp.center or camp.pos) + Vector(0, 0, 32)
 
     for i = 0, numHuts - 1 do
@@ -511,7 +521,28 @@ function VNPC_ConstructPreyCampHut(camp)
         pPos = site.pos - fwd * 46 - right * 24 + Vector(0, 0, 24)
         pAng = Angle(90, site.ang.y, 0)
     else
-        -- Stage 7: Slanted wooden/corrugated roof covering the 96x96 shack
+        -- Stage 7: Slanted wooden/corrugated roof covering the 96x96 shack (skip if indoors under low ceiling!)
+        if camp.isIndoors then
+            local trCeil = util.TraceLine({
+                start = site.pos + Vector(0, 0, 10),
+                endpos = site.pos + Vector(0, 0, 100),
+                mask = MASK_SOLID_BRUSHONLY
+            })
+            if trCeil.Hit and (trCeil.Fraction * 90) < 75 then
+                site.stage = 7
+                local hut = {
+                    pos = site.pos,
+                    ang = site.ang,
+                    props = site.props,
+                    VNPC_IsPreyCampHut = true,
+                    VNPC_PreyCampID = camp.id
+                }
+                camp.huts = camp.huts or {}
+                table.insert(camp.huts, hut)
+                camp.activeHutSite = nil
+                return true
+            end
+        end
         pModel = "models/props_wasteland/wood_fence01a.mdl"
         pPos = site.pos + Vector(0, 0, 64)
         pAng = Angle(8, site.ang.y, 0)
@@ -1043,8 +1074,9 @@ concommand.Add("vnpcs_prey_camps_status", function(ply)
             end
         end
         local stateStr = (#camp.members == 0) and " [ABANDONED - AVAILABLE FOR RETAKING]" or ""
-        print(string.format(" -> Prey Camp [#%d] | Members: %d%s (Pregnant: %d) | Territory Radius: %d | Walls: %d | Huts: %d | Courtyard Defenses: %d | Resources: %.1f | Fortified: %s",
-            camp.id, #camp.members, stateStr, pregCount, math.floor(camp.territoryRadius or 450), #camp.walls, #(camp.huts or {}), #(camp.courtyardDefenses or {}), camp.resources or 0, tostring(camp.fortified or false)))
+        local indoorStr = camp.isIndoors and " | Indoors: YES (House Fort)" or " | Indoors: NO"
+        print(string.format(" -> Prey Camp [#%d] | Members: %d%s (Pregnant: %d)%s | Territory Radius: %d | Walls: %d | Huts: %d | Courtyard Defenses: %d | Resources: %.1f | Fortified: %s",
+            camp.id, #camp.members, stateStr, pregCount, indoorStr, math.floor(camp.territoryRadius or 450), #camp.walls, #(camp.huts or {}), #(camp.courtyardDefenses or {}), camp.resources or 0, tostring(camp.fortified or false)))
     end
     print("Total active prey camps: " .. #VNPC_ActivePreyCamps)
     print("=========================================")
@@ -1099,6 +1131,23 @@ concommand.Add("vnpcs_test_create_prey_camp", function(ply)
     target.VNPC_SpawnedByPlayer = true
     local camp = VNPC_CreatePreyCamp(tr.HitPos, target)
     ply:ChatPrint("[V-NPCs] Established Prey Camp #" .. tostring(camp and camp.id or "N/A") .. " for " .. tostring(target) .. "!")
+end)
+
+concommand.Add("vnpcs_test_prey_indoor_fort", function(ply)
+    if not IsValid(ply) then return end
+    local tr = ply:GetEyeTrace()
+    local target = tr.Entity
+    if not IsValid(target) or not VNPC_IsEligiblePreyNPC(target) then
+        ply:ChatPrint("[V-NPCs] Please aim at an eligible citizen prey NPC inside a building to create an Indoor House Fort!")
+        return
+    end
+    target.VNPC_SpawnedByPlayer = true
+    local camp = VNPC_CreatePreyCamp(tr.HitPos, target)
+    if camp then
+        camp.isIndoors = true
+        VNPC_PlanPreyCampLayout(camp)
+        ply:ChatPrint("[V-NPCs] Established Indoor Prey Fort #" .. camp.id .. " inside house/building for " .. tostring(target) .. "! Barricading interior walls & doors.")
+    end
 end)
 
 concommand.Add("vnpcs_test_prey_retake_camp", function(ply)

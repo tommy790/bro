@@ -71,6 +71,64 @@ function VNPC_MakeWildWanderer(ent)
     return true
 end
 
+function VNPC_IsValidGroundSpawnPos(pos)
+    if not pos or not isvector(pos) then return false end
+
+    local tr = util.TraceLine({
+        start = pos + Vector(0, 0, 40),
+        endpos = pos - Vector(0, 0, 100),
+        mask = MASK_SOLID_BRUSHONLY
+    })
+    if not tr.Hit or tr.StartSolid or tr.HitNormal.z < 0.75 then
+        return false
+    end
+
+    local groundPos = tr.HitPos
+
+    -- 1. Check vertical clearance (no low ceilings / getting stuck inside brush)
+    local trUp = util.TraceLine({
+        start = groundPos + Vector(0, 0, 5),
+        endpos = groundPos + Vector(0, 0, 75),
+        mask = MASK_SOLID_BRUSHONLY
+    })
+    if trUp.Hit and not trUp.HitSky then
+        return false
+    end
+
+    -- 2. Check NavMesh navigability & connectivity (rejects roofs and isolated ledges!)
+    if navmesh and navmesh.IsLoaded and navmesh.IsLoaded() then
+        local area = navmesh.GetNavArea(groundPos, 80)
+        if not IsValid(area) then
+            return false
+        end
+        if (area.GetSizeX and area:GetSizeX() < 48) or (area.GetSizeY and area:GetSizeY() < 48) then
+            return false
+        end
+        if area.GetAdjacentAreas and #area:GetAdjacentAreas() == 0 then
+            return false
+        end
+    end
+
+    -- 3. Check 4-direction horizontal freedom (not trapped in a hole or cage)
+    local blockedCount = 0
+    local dirs = { Vector(1, 0, 0), Vector(-1, 0, 0), Vector(0, 1, 0), Vector(0, -1, 0) }
+    for _, dir in ipairs(dirs) do
+        local trWall = util.TraceLine({
+            start = groundPos + Vector(0, 0, 32),
+            endpos = groundPos + Vector(0, 0, 32) + dir * 45,
+            mask = MASK_SOLID_BRUSHONLY
+        })
+        if trWall.Hit then
+            blockedCount = blockedCount + 1
+        end
+    end
+    if blockedCount >= 3 then
+        return false
+    end
+
+    return true, groundPos + Vector(0, 0, 10)
+end
+
 function VNPC_FindWildernessSpawnPos()
     local candidates = {}
 
@@ -78,7 +136,11 @@ function VNPC_FindWildernessSpawnPos()
     if navmesh and navmesh.GetAllNavAreas then
         for _, area in ipairs(navmesh.GetAllNavAreas() or {}) do
             if IsValid(area) and area.GetCenter then
-                table.insert(candidates, area:GetCenter() + Vector(0, 0, 15))
+                if (area.GetSizeX and area:GetSizeX() >= 48) and (area.GetSizeY and area:GetSizeY() >= 48) then
+                    if area.GetAdjacentAreas and #area:GetAdjacentAreas() > 0 then
+                        table.insert(candidates, area:GetCenter() + Vector(0, 0, 15))
+                    end
+                end
             end
         end
     end
@@ -98,10 +160,10 @@ function VNPC_FindWildernessSpawnPos()
 
     -- 3. If candidates exist, try to pick a valid map-wide position from them
     local players = player.GetAll()
-    for attempt = 1, 20 do
+    for attempt = 1, 30 do
         local candidatePos = nil
         if #candidates > 0 and math.random(1, 100) <= 85 then
-            candidatePos = candidates[math.random(1, #candidates)] + Vector(math.random(-150, 150), math.random(-150, 150), 20)
+            candidatePos = candidates[math.random(1, #candidates)] + Vector(math.random(-40, 40), math.random(-40, 40), 10)
         else
             -- Map-wide fallback: sample across the entire world bounding box
             local world = game.GetWorld()
@@ -147,13 +209,9 @@ function VNPC_FindWildernessSpawnPos()
         end
 
         if not tooClose then
-            local tr = util.TraceLine({
-                start = candidatePos + Vector(0, 0, 300),
-                endpos = candidatePos - Vector(0, 0, 1000),
-                mask = MASK_SOLID_BRUSHONLY
-            })
-            if tr.Hit and tr.HitNormal.z > 0.6 and not tr.StartSolid then
-                return tr.HitPos + Vector(0, 0, 10)
+            local valid, goodPos = VNPC_IsValidGroundSpawnPos(candidatePos)
+            if valid and goodPos then
+                return goodPos
             end
         end
     end
