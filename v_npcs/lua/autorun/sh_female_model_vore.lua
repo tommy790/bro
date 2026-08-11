@@ -2058,6 +2058,21 @@ VNPC_SleepingFullBellyKeyframes = {
     }
 }
 
+VNPC_HeavyGroundMountBonePose = {
+    ["ValveBiped.Bip01_Head1"] = { pos = Vector(0, 0, 0), ang = Angle(30, 0, 0) },
+    ["ValveBiped.Bip01_Spine"] = { pos = Vector(0, 0, -18), ang = Angle(35, 0, 0) },
+    ["ValveBiped.Bip01_Spine1"] = { pos = Vector(0, 0, 0), ang = Angle(20, 0, 0) },
+    ["ValveBiped.Bip01_Pelvis"] = { pos = Vector(0, 0, -24), ang = Angle(-25, 0, 0) },
+    ["ValveBiped.Bip01_R_Thigh"] = { pos = Vector(0, 0, 0), ang = Angle(-65, -50, 0) },
+    ["ValveBiped.Bip01_L_Thigh"] = { pos = Vector(0, 0, 0), ang = Angle(-65, 50, 0) },
+    ["ValveBiped.Bip01_R_Calf"] = { pos = Vector(0, 0, 0), ang = Angle(115, 0, 0) },
+    ["ValveBiped.Bip01_L_Calf"] = { pos = Vector(0, 0, 0), ang = Angle(115, 0, 0) },
+    ["ValveBiped.Bip01_R_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(60, -35, 30) },
+    ["ValveBiped.Bip01_L_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(60, 35, -30) },
+    ["ValveBiped.Bip01_R_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(-85, 25, 0) },
+    ["ValveBiped.Bip01_L_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(-85, -25, 0) }
+}
+
 VNPC_SleepingCrawlReceiveKeyframes = {
     length = 7.5,
     keyframes = {
@@ -2116,7 +2131,9 @@ function VNPC_AnimatedBoneOffsets(ent)
     local phase = ent:GetNWInt("FacialPhase", -1)
     local animList = VNPC_GetAnimatedBoneList(ent)
     local data = animList[phase] or animList[0]
-    if (ent.VNPC_IsDrinkingWater or (ent.GetNWBool and ent:GetNWBool("VNPC_IsDrinkingWater"))) and VNPC_WaterDrinkingBonePose then
+    if (ent.VNPC_IsMountingHeavyPrey or (ent.GetNWBool and ent:GetNWBool("VNPC_IsMountingHeavyPrey"))) and VNPC_HeavyGroundMountBonePose then
+        data = VNPC_HeavyGroundMountBonePose
+    elseif (ent.VNPC_IsDrinkingWater or (ent.GetNWBool and ent:GetNWBool("VNPC_IsDrinkingWater"))) and VNPC_WaterDrinkingBonePose then
         data = VNPC_WaterDrinkingBonePose
     elseif ent.VNPC_IsSleepCrawled and VNPC_SleepingCrawlReceiveKeyframes then
         data = VNPC_SleepingCrawlReceiveKeyframes

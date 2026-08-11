@@ -300,15 +300,28 @@ function VNPC_StartIngestionAnimation(pred, prey, belly)
     prey:SetNoDraw(false)
     prey.VNPC_IsBeingSwallowed = true
 
-    -- Position prey at predator's mouth / head area
-    local headBone = pred:LookupBone("ValveBiped.Bip01_Head1") or pred:LookupBone("Head") or pred:LookupBone("head")
-    if headBone then
-        local headPos = pred:GetBonePosition(headBone)
-        if headPos then
-            prey:SetPos(headPos + pred:GetForward() * 15 - pred:GetUp() * 5)
+    local species = VNPC_GetPreySpecies(prey)
+    local isHeavyGround = (species == "antlionguard" or prey.VNPC_IsHeavyGroundPrey or (prey.GetMaxHealth and prey:GetMaxHealth() >= 250))
+    if isHeavyGround then
+        duration = math.max(duration, 7.5)
+        prey.VNPC_IsHeavyGroundPrey = true
+        prey.VNPC_GroundIngestStartPos = prey:GetPos()
+        pred.VNPC_IsMountingHeavyPrey = true
+        pred.VNPC_MountStartPos = pred:GetPos()
+        if pred.SetNWBool then pred:SetNWBool("VNPC_IsMountingHeavyPrey", true) end
+        prey:SetParent(nil)
+        print("[V-NPCs] Heavy Ground Ingestion: Predator " .. tostring(pred) .. " leaped onto grounded " .. tostring(prey) .. " (" .. string.upper(species) .. ") and is slowly swallowing it alive over " .. duration .. "s!")
+    else
+        -- Position prey at predator's mouth / head area
+        local headBone = pred:LookupBone("ValveBiped.Bip01_Head1") or pred:LookupBone("Head") or pred:LookupBone("head")
+        if headBone then
+            local headPos = pred:GetBonePosition(headBone)
+            if headPos then
+                prey:SetPos(headPos + pred:GetForward() * 15 - pred:GetUp() * 5)
+            end
         end
+        prey:SetParent(pred)
     end
-    prey:SetParent(pred)
 
     -- Ensure predator opens mouth wide for swallowing
     if pred.SetFacialExpression then
@@ -398,7 +411,32 @@ hook.Add("Think", "VNPCS_IngestionAnimation_Loop", function()
         end
 
         local isUnbirth = (pred.VNPC_AssignedMoveset == "unbirth")
-        if isUnbirth and VNPC_ApplyUnbirthIngestionPositioning then
+        if prey.VNPC_IsHeavyGroundPrey then
+            -- HEAVY GROUND INGESTION: Heavy prey stays grounded while predator leaps onto it and swallows it slowly!
+            local startP = pred.VNPC_MountStartPos or pred:GetPos()
+            local targetP = (prey.VNPC_GroundIngestStartPos or prey:GetPos()) + Vector(0, 0, 8)
+            local fwd = (targetP - startP):GetNormalized()
+            fwd.z = 0
+            if fwd:Length2DSqr() > 0.01 then
+                pred:SetAngles(fwd:Angle())
+            end
+
+            if tNorm < 0.35 then
+                -- Leap/jump onto the heavy ground prey with mouth wide open!
+                local pNorm = tNorm / 0.35
+                local arcZ = math.sin(pNorm * math.pi) * 35
+                local curP = LerpVector(pNorm, startP, targetP - fwd * 25) + Vector(0, 0, arcZ)
+                pred:SetPos(curP)
+                if pred.SetFacialExpression then pcall(pred.SetFacialExpression, pred, 1) end
+            else
+                -- Slow grounded swallowing: envelope prey from head to tail while prey stays on ground!
+                local sNorm = (tNorm - 0.35) / 0.65
+                local curP = LerpVector(sNorm, targetP - fwd * 25, targetP + fwd * 10)
+                pred:SetPos(curP)
+                if pred.SetFacialExpression then pcall(pred.SetFacialExpression, pred, 1) end
+            end
+            prey:SetPos(prey.VNPC_GroundIngestStartPos or prey:GetPos())
+        elseif isUnbirth and VNPC_ApplyUnbirthIngestionPositioning then
             VNPC_ApplyUnbirthIngestionPositioning(pred, prey, tNorm)
         else
             -- Keep prey positioned at predator's mouth as she swallows
@@ -442,6 +480,12 @@ hook.Add("Think", "VNPCS_IngestionAnimation_Loop", function()
         -- STAGE 4 (tNorm >= 1.00): Ingestion complete! Store prey inside belly and reset bone manipulations!
         if tNorm >= 1.00 then
             resetAllBoneManipulations(prey)
+            if prey.VNPC_IsHeavyGroundPrey then
+                prey.VNPC_IsHeavyGroundPrey = nil
+                pred.VNPC_IsMountingHeavyPrey = nil
+                pred.VNPC_MountStartPos = nil
+                if pred.SetNWBool then pred:SetNWBool("VNPC_IsMountingHeavyPrey", false) end
+            end
             if VNPC_HideSwallowedPrey then
                 VNPC_HideSwallowedPrey(prey, belly)
             else
@@ -511,4 +555,43 @@ concommand.Add("vnpcs_test_prey_struggle", function(ply)
     local species = VNPC_GetPreySpecies(target)
     VNPC_AnimateSpeciesStruggling(target, species, 1, 0.5, "default")
     ply:ChatPrint("[V-NPCs] Tested species swallowed struggling animation for species: [" .. string.upper(species) .. "] on target " .. tostring(target) .. "!")
+end)
+
+concommand.Add("vnpcs_test_heavy_ground_ingestion", function(ply)
+    if not IsValid(ply) then return end
+    local tr = ply:GetEyeTrace()
+    local prey = tr.Entity
+    if not IsValid(prey) or not (prey:IsNPC() or prey:IsPlayer() or prey:IsNextBot()) then
+        ply:ChatPrint("[V-NPCs] Please aim at an NPC to test heavy ground ingestion!")
+        return
+    end
+
+    local pred = nil
+    local bestDistSqr = 1200 * 1200
+    for _, ent in ipairs(ents.FindByClass("npc_*")) do
+        if IsValid(ent) and ent ~= prey and (ent.IsDrGNextbot or ent.VNPC_FemaleModelVore or ent.Predator) then
+            local dSqr = ent:GetPos():DistToSqr(prey:GetPos())
+            if dSqr <= bestDistSqr then
+                pred = ent
+                bestDistSqr = dSqr
+            end
+        end
+    end
+
+    if not IsValid(pred) then
+        ply:ChatPrint("[V-NPCs] No active V-NPC predator found near target to test heavy ground ingestion!")
+        return
+    end
+
+    local belly = pred.VNPC_Belly or pred.Belly
+    if not IsValid(belly) and VNPC_AttachFemaleModelVore then
+        VNPC_AttachFemaleModelVore(pred)
+        belly = pred.VNPC_Belly or pred.Belly
+    end
+
+    if IsValid(belly) then
+        prey.VNPC_IsHeavyGroundPrey = true
+        VNPC_StartIngestionAnimation(pred, prey, belly)
+        ply:ChatPrint("[V-NPCs] Started Heavy Ground Ingestion: Predator " .. tostring(pred) .. " leaping onto grounded " .. tostring(prey) .. "!")
+    end
 end)
