@@ -94,11 +94,14 @@ function VNPC_CreatePreyCamp(pos, founder)
         id = math.random(100000, 999999),
         pos = origin,
         isIndoors = indoors,
+        isPreyCamp = true,
+        leader = founder,
         members = { founder },
         walls = {},
         huts = {},
         fortified = false,
         resources = 15.0,
+        createTime = CurTime(),
         lastUpdateTime = CurTime()
     }
 
@@ -319,6 +322,190 @@ function VNPC_ConstructPreyCampFire(camp)
 
     camp.campfire = fire
     return true
+end
+
+function VNPC_EnsurePreyCampLeader(camp)
+    if not camp or not camp.members or #camp.members == 0 then return nil end
+    if IsValid(camp.leader) and camp.leader:Health() > 0 and not camp.leader.Vored and not camp.leader.VNPC_Vored then
+        return camp.leader
+    end
+
+    local candidate = nil
+    for _, mem in ipairs(camp.members) do
+        if IsValid(mem) and mem:Health() > 0 and not mem.Vored and not mem.VNPC_Vored and not mem.VNPC_IsSleeping then
+            candidate = mem
+            break
+        end
+    end
+    if not candidate then
+        candidate = camp.members[1]
+    end
+
+    if IsValid(candidate) then
+        camp.leader = candidate
+        candidate.VNPC_IsCampLeader = true
+        candidate.VNPC_PreyCampLeader = camp.id
+        print(string.format("[V-NPCs] Prey Camp #%d elected Leader: #%d [%s]!", camp.id, candidate:EntIndex(), candidate.PrintName or candidate:GetClass()))
+    end
+    return camp.leader
+end
+
+function VNPC_ConstructPreyCampLeaderHut(camp)
+    if not camps_enabled:GetBool() or not camp or not camp.pos then return false end
+    if IsValid(camp.leaderTable) then return false end
+
+    local angle = math.rad(math.random(0, 360))
+    local candidatePos = camp.pos + Vector(math.cos(angle) * 190, math.sin(angle) * 190, 0)
+    local tr = util.TraceLine({
+        start = candidatePos + Vector(0, 0, 40),
+        endpos = candidatePos - Vector(0, 0, 150),
+        mask = MASK_SOLID_BRUSHONLY
+    })
+    if not tr.Hit or tr.HitNormal.z < 0.65 then return false end
+
+    -- 1. Spawn the Leader's Table centerpiece
+    local tbl = ents.Create("prop_physics")
+    if not IsValid(tbl) then return false end
+
+    local tableMdl = "models/props_c17/FurnitureTable001a.mdl"
+    if not util.IsValidModel(tableMdl) then
+        tableMdl = "models/props_wasteland/wood_fence01a.mdl"
+    end
+    tbl:SetModel(tableMdl)
+    tbl:SetPos(tr.HitPos + Vector(0, 0, 2))
+    tbl:SetAngles(Angle(0, math.deg(angle), 0))
+    tbl:Spawn()
+    tbl:Activate()
+    tbl.VNPC_IsLeaderTable = true
+    tbl.VNPC_CampID = camp.id
+    tbl.VNPC_NoVore = true
+    tbl:SetHealth(9999)
+
+    local phys = tbl:GetPhysicsObject()
+    if IsValid(phys) then
+        phys:EnableMotion(false)
+        phys:Sleep()
+    end
+
+    camp.leaderTable = tbl
+
+    -- 2. Build Hut Walls around the Table
+    local walls = {}
+    local offsets = {
+        { ang = 180, dist = 55 },
+        { ang = 90,  dist = 55 },
+        { ang = -90, dist = 55 }
+    }
+    for _, off in ipairs(offsets) do
+        local wRad = math.rad(math.deg(angle) + off.ang)
+        local wPos = tr.HitPos + Vector(math.cos(wRad) * off.dist, math.sin(wRad) * off.dist, 0)
+        local wTr = util.TraceLine({
+            start = wPos + Vector(0, 0, 40),
+            endpos = wPos - Vector(0, 0, 150),
+            mask = MASK_SOLID_BRUSHONLY
+        })
+        if wTr.Hit then
+            local wall = ents.Create("prop_physics")
+            if IsValid(wall) then
+                wall:SetModel("models/props_wasteland/wood_fence01a.mdl")
+                wall:SetPos(wTr.HitPos)
+                wall:SetAngles(Angle(0, math.deg(wRad), 0))
+                wall:Spawn()
+                wall:Activate()
+                wall.VNPC_IsLeaderHutWall = true
+                wall.VNPC_CampID = camp.id
+                wall.VNPC_NoVore = true
+                wall:SetHealth(350)
+                local wPhys = wall:GetPhysicsObject()
+                if IsValid(wPhys) then wPhys:EnableMotion(false) wPhys:Sleep() end
+                table.insert(walls, wall)
+            end
+        end
+    end
+
+    -- 3. Roof over the Table
+    if not camp.isIndoors then
+        local roof = ents.Create("prop_physics")
+        if IsValid(roof) then
+            roof:SetModel("models/props_junk/wood_pallet001a.mdl")
+            roof:SetPos(tr.HitPos + Vector(0, 0, 75))
+            roof:SetAngles(Angle(0, math.deg(angle), 0))
+            roof:Spawn()
+            roof:Activate()
+            roof.VNPC_IsLeaderHutWall = true
+            roof.VNPC_CampID = camp.id
+            roof.VNPC_NoVore = true
+            roof:SetHealth(350)
+            local rPhys = roof:GetPhysicsObject()
+            if IsValid(rPhys) then rPhys:EnableMotion(false) rPhys:Sleep() end
+            table.insert(walls, roof)
+        end
+    end
+
+    camp.leaderHut = {
+        tableProp = tbl,
+        walls = walls,
+        pos = tr.HitPos
+    }
+
+    print(string.format("[V-NPCs] Built Leader Hut and Table for Prey Camp #%s at (%.1f, %.1f, %.1f)!", tostring(camp.id), tr.HitPos.x, tr.HitPos.y, tr.HitPos.z))
+    return true
+end
+
+function VNPC_PreyCampLeaderDecision_AI(camp, now)
+    if not camp or not camp.members or #camp.members == 0 then return end
+    local leader = VNPC_EnsurePreyCampLeader(camp)
+    if not IsValid(leader) or leader:Health() <= 0 or leader.Vored or leader.VNPC_Vored or leader.VNPC_IsSleeping then return end
+
+    if (camp.nextLeaderDecisionTime or 0) > now then return end
+    camp.nextLeaderDecisionTime = now + math.random(7, 12)
+
+    local decision = "TERRITORY_PATROL"
+    if (camp.breachAlertTime or 0) > (now - 20.0) then
+        decision = "DEFENSIVE_ALERT"
+    elseif not camp.fortified or #(camp.walls or {}) < 10 then
+        decision = "FORTIFY_PERIMETER"
+    elseif (camp.resources or 0) < 40.0 then
+        decision = "GATHER_RESOURCES"
+    else
+        local hungryCount = 0
+        for _, mem in ipairs(camp.members) do
+            if IsValid(mem) and ( (VNPC_GetHunger and VNPC_GetHunger(mem) >= 45) or (VNPC_GetThirst and VNPC_GetThirst(mem) >= 45) ) then
+                hungryCount = hungryCount + 1
+            end
+        end
+        if hungryCount >= 2 or (camp.resources or 0) >= 80.0 then
+            decision = "COOK_MEAL_FEAST"
+        end
+    end
+
+    camp.leaderDecision = decision
+
+    -- Command Leader to visit their Leader Hut & Table
+    if IsValid(camp.leaderTable) and not IsValid(leader:GetEnemy()) and not leader.VNPC_IsCookingMeal and not leader.VNPC_IsEatingMeal then
+        local tblPos = camp.leaderTable:GetPos()
+        local dSqr = leader:GetPos():DistToSqr(tblPos)
+        if dSqr > (120 * 120) then
+            if leader.SetLastPosition then pcall(leader.SetLastPosition, leader, tblPos) end
+            if leader.SetSchedule then pcall(leader.SetSchedule, leader, SCHED_FORCED_GO_RUN) end
+        else
+            if leader.SetSchedule then pcall(leader.SetSchedule, leader, SCHED_IDLE_STAND) end
+            if leader.EmitSound then
+                leader:EmitSound("npc/alyx/sigh01.wav", 75, math.random(95, 105))
+            end
+        end
+    end
+
+    if decision == "COOK_MEAL_FEAST" then
+        for _, mem in ipairs(camp.members) do
+            if IsValid(mem) and VNPC_IsFemalePreyCitizen and VNPC_IsFemalePreyCitizen(mem) and not mem.VNPC_IsCookingMeal and not mem.VNPC_IsEatingMeal then
+                mem.VNPC_ForceCookMeal = (math.random(1, 2) == 1 and "burger" or "hotdog")
+                break
+            end
+        end
+    end
+
+    print(string.format("[V-NPCs] Prey Camp #%d Leader #%d [%s] at Leader Hut Table decided strategy: [%s]!", camp.id, leader:EntIndex(), leader.PrintName or leader:GetClass(), decision))
 end
 
 function VNPC_PreyCampCooking_AI(camp, now)
@@ -1340,6 +1527,14 @@ hook.Add("Think", "VNPC_PreyCamps_AI_Loop", function()
             VNPC_ConstructPreyCampFire(camp)
         end
 
+        VNPC_EnsurePreyCampLeader(camp)
+        if not IsValid(camp.leaderTable) and (now - (camp.createTime or now)) > 4.0 then
+            VNPC_ConstructPreyCampLeaderHut(camp)
+        end
+        if VNPC_PreyCampLeaderDecision_AI then
+            VNPC_PreyCampLeaderDecision_AI(camp, now)
+        end
+
         if VNPC_PreyCampCooking_AI then
             VNPC_PreyCampCooking_AI(camp, now)
         end
@@ -1584,14 +1779,72 @@ concommand.Add("vnpcs_prey_camps_status", function(ply)
         local guardStr = (awakeSentries == 0 and #camp.members > 0) and " [UNGUARDED - VULNERABLE TO INFILTRATION]" or string.format(" | Sentries: %d awake", awakeSentries)
         local infStr = IsValid(camp.infiltrator) and string.format(" | INFILTRATION IN PROGRESS: Pred [%d]", camp.infiltrator:EntIndex()) or ""
         local indoorStr = camp.isIndoors and " | Indoors: YES (House Fort)" or " | Indoors: NO"
-        print(string.format(" -> Prey Camp [#%d] | Members: %d%s (Pregnant: %d)%s%s%s | Territory Radius: %d | Walls: %d | Huts: %d | Courtyard Defenses: %d | Resources: %.1f | Fortified: %s",
-            camp.id, #camp.members, stateStr, pregCount, indoorStr, guardStr, infStr, math.floor(camp.territoryRadius or 450), #camp.walls, #(camp.huts or {}), #(camp.courtyardDefenses or {}), camp.resources or 0, tostring(camp.fortified or false)))
+        local leaderStr = IsValid(camp.leader) and string.format(" | Leader: #%d [%s]", camp.leader:EntIndex(), camp.leader.PrintName or camp.leader:GetClass()) or " | Leader: NONE"
+        local hutStr = IsValid(camp.leaderTable) and " | Leader Hut & Table: BUILT" or " | Leader Hut & Table: NONE"
+        local decStr = camp.leaderDecision and string.format(" | Strategy Decision: %s", camp.leaderDecision) or ""
+        print(string.format(" -> Prey Camp [#%d] | Members: %d%s (Pregnant: %d)%s%s%s%s%s%s | Territory Radius: %d | Walls: %d | Huts: %d | Courtyard Defenses: %d | Resources: %.1f | Fortified: %s",
+            camp.id, #camp.members, stateStr, pregCount, indoorStr, guardStr, infStr, leaderStr, hutStr, decStr, math.floor(camp.territoryRadius or 450), #camp.walls, #(camp.huts or {}), #(camp.courtyardDefenses or {}), camp.resources or 0, tostring(camp.fortified or false)))
     end
     print("Total active prey camps: " .. #VNPC_ActivePreyCamps)
     print("=========================================")
     if IsValid(ply) then
         ply:ChatPrint("[V-NPCs] Prey camp status printed to console. Active prey camps: " .. #VNPC_ActivePreyCamps)
     end
+end)
+
+concommand.Add("vnpcs_test_camp_leader", function(ply)
+    print("=========================================")
+    print("[V-NPCs] Testing Camp Leaders & Elections")
+    for _, camp in ipairs(VNPC_ActivePreyCamps or {}) do
+        local leader = VNPC_EnsurePreyCampLeader(camp)
+        print(string.format(" - Prey Camp #%d -> Leader: %s | Decision: %s", camp.id, IsValid(leader) and string.format("#%d [%s]", leader:EntIndex(), leader.PrintName or leader:GetClass()) or "NONE", tostring(camp.leaderDecision or "N/A")))
+    end
+    for _, camp in ipairs(VNPC_ActivePredatorCamps or {}) do
+        local leader = VNPC_EnsurePredatorCampLeader and VNPC_EnsurePredatorCampLeader(camp)
+        print(string.format(" - Predator Camp #%d -> Leader: %s | Decision: %s", camp.id, IsValid(leader) and string.format("#%d [%s]", leader:EntIndex(), leader.PrintName or leader:GetClass()) or "NONE", tostring(camp.leaderDecision or "N/A")))
+    end
+    print("=========================================")
+end)
+
+concommand.Add("vnpcs_test_leader_hut", function(ply)
+    local builtPrey = 0
+    for _, camp in ipairs(VNPC_ActivePreyCamps or {}) do
+        if not IsValid(camp.leaderTable) then
+            if VNPC_ConstructPreyCampLeaderHut(camp) then
+                builtPrey = builtPrey + 1
+            end
+        end
+    end
+    local builtPred = 0
+    for _, camp in ipairs(VNPC_ActivePredatorCamps or {}) do
+        if not IsValid(camp.leaderTable) then
+            if VNPC_ConstructPredatorCampLeaderHut and VNPC_ConstructPredatorCampLeaderHut(camp) then
+                builtPred = builtPred + 1
+            end
+        end
+    end
+    print(string.format("[V-NPCs] Test: Built Leader Huts & Tables for %d Prey Camp(s) and %d Predator Camp(s)!", builtPrey, builtPred))
+end)
+
+concommand.Add("vnpcs_test_leader_decision", function(ply, cmd, args)
+    local targetDec = string.upper(args[1] or "COOK_MEAL_FEAST")
+    for _, camp in ipairs(VNPC_ActivePreyCamps or {}) do
+        camp.leaderDecision = targetDec
+        local leader = camp.leader
+        if IsValid(leader) and IsValid(camp.leaderTable) then
+            if leader.SetLastPosition then pcall(leader.SetLastPosition, leader, camp.leaderTable:GetPos()) end
+            if leader.SetSchedule then pcall(leader.SetSchedule, leader, SCHED_FORCED_GO_RUN) end
+        end
+    end
+    for _, camp in ipairs(VNPC_ActivePredatorCamps or {}) do
+        camp.leaderDecision = targetDec
+        local leader = camp.leader
+        if IsValid(leader) and IsValid(camp.leaderTable) then
+            if leader.SetLastPosition then pcall(leader.SetLastPosition, leader, camp.leaderTable:GetPos()) end
+            if leader.SetSchedule then pcall(leader.SetSchedule, leader, SCHED_FORCED_GO_RUN) end
+        end
+    end
+    print(string.format("[V-NPCs] Test: Forced all Camp Leaders to order decision [%s] and assemble at their Leader Hut Table!", targetDec))
 end)
 
 concommand.Add("vnpcs_test_prey_love", function(ply)
