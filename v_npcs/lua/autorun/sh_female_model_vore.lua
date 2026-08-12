@@ -2192,6 +2192,7 @@ function VNPC_AnimatedBoneOffsets(ent)
     end
 
     local is_in_battle = is_hunting_or_moving or is_armed
+    local is_special_stationary_pose = (ent.VNPC_IsMatingBonePose or ent.VNPC_IsWillingUnbirthCrawl or ent.VNPC_IsMountingHeavyPrey or ent.VNPC_IsDrinkingWater or ent.VNPC_IsSleepCrawled or ent.VNPC_IsSleeping or ((ent.VNPC_InChildbirthPose or 0) > CurTime()))
 
     for i = 0, boneCount - 1 do
         local boneName = ent:GetBoneName(i)
@@ -2216,12 +2217,13 @@ function VNPC_AnimatedBoneOffsets(ent)
             end
         end
 
-        local is_leg_or_pelvis = boneName:find("Pelvis") or boneName:find("Thigh") or boneName:find("Calf") or boneName:find("Foot") or boneName:find("Leg") or boneName:find("leg") or boneName:find("thigh") or boneName:find("calf") or boneName:find("foot") or boneName:find("pelvis")
+        local is_leg_or_pelvis = boneName:find("Pelvis") or boneName:find("Thigh") or boneName:find("Calf") or boneName:find("Foot") or boneName:find("Toe") or boneName:find("Leg") or boneName:find("leg") or boneName:find("thigh") or boneName:find("calf") or boneName:find("foot") or boneName:find("pelvis") or boneName:find("toe")
         local is_torso_or_arm = boneName:find("Spine") or boneName:find("Clavicle") or boneName:find("UpperArm") or boneName:find("Forearm") or boneName:find("Hand") or boneName:find("spine") or boneName:find("clavicle") or boneName:find("arm") or boneName:find("hand")
 
         if phase == 0 then
             tgtPos, tgtAng = vector_origin, angle_zero
-        elseif is_leg_or_pelvis and is_hunting_or_moving then
+        elseif is_leg_or_pelvis and not is_special_stationary_pose then
+            -- Never apply static moveset posing to leg or pelvis bones during normal movesets so legs can walk and run freely
             tgtPos, tgtAng = vector_origin, angle_zero
         end
 
