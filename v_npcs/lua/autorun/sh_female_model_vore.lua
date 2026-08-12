@@ -2260,4 +2260,7 @@ function VNPC_AnimatedBoneOffsets(ent)
         ent:ManipulateBonePosition(i, cur.pos)
         ent:ManipulateBoneAngles(i, cur.ang)
     end
+    if VNPC_DetectBonePoseNoclip then
+        VNPC_DetectBonePoseNoclip(ent)
+    end
 end
