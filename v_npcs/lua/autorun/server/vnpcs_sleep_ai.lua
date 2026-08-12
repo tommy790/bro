@@ -61,13 +61,26 @@ hook.Add("Think", "VNPCS_SleepSystem_Loop", function()
                 local campPos = nil
                 if role == "predator" and ent.VNPC_CampID and VNPC_GetPredatorCamp then
                     local pCamp = VNPC_GetPredatorCamp(ent)
-                    if pCamp and pCamp.pos then campPos = pCamp.pos end
+                    if pCamp then
+                        local hutList = pCamp.huts or pCamp.tents or {}
+                        if #hutList > 0 then
+                            campPos = (VNPC_GetHutInteriorPos and VNPC_GetHutInteriorPos(hutList[1])) or hutList[1].pos or pCamp.pos
+                        else
+                            campPos = pCamp.pos
+                        end
+                    end
                 elseif role == "prey_female" and ent.VNPC_PreyCampID and VNPC_GetPreyCamp then
                     local rCamp = VNPC_GetPreyCamp(ent)
-                    if rCamp and rCamp.pos then campPos = rCamp.pos end
+                    if rCamp then
+                        if rCamp.huts and #rCamp.huts > 0 then
+                            campPos = (VNPC_GetHutInteriorPos and VNPC_GetHutInteriorPos(rCamp.huts[1])) or rCamp.huts[1].pos or rCamp.pos
+                        else
+                            campPos = rCamp.pos
+                        end
+                    end
                 end
 
-                if campPos and ent:GetPos():DistToSqr(campPos) > (260 * 260) then
+                if campPos and ent:GetPos():DistToSqr(campPos) > (90 * 90) then
                     ent.VNPC_IsReturningToCampToSleep = true
                     if ent.SetLastPosition then pcall(ent.SetLastPosition, ent, campPos) end
                     if ent.SetSchedule then pcall(ent.SetSchedule, ent, SCHED_FORCED_GO_RUN) end

@@ -51,6 +51,9 @@ function VNPC_CreatePredatorCamp(pos, founder)
         leader = founder,
         members = { founder },
         tents = {},
+        huts = {},
+        founder = founder,
+        layoutSeed = math.random(100000, 999999),
         faction = myFaction,
         createTime = CurTime(),
         state = "idle",
@@ -58,7 +61,12 @@ function VNPC_CreatePredatorCamp(pos, founder)
     }
 
     founder.VNPC_CampID = camp.id
-    founder.VNPC_CampRole = "stayer"
+    if VNPC_AssignFounderAllRoles then
+        VNPC_AssignFounderAllRoles(founder)
+    else
+        founder.VNPC_CampRole = "founder"
+        founder.VNPC_IsCampFounder = true
+    end
 
     table.insert(VNPC_ActivePredatorCamps, camp)
     return camp
@@ -114,56 +122,58 @@ function VNPC_ConstructPredatorCampTent(camp)
     if not camps_enabled:GetBool() or not camp or not camp.pos then return false end
     local maxTents = camp_max_tents:GetInt()
     camp.tents = camp.tents or {}
+    camp.huts = camp.huts or {}
     if #camp.tents >= maxTents then return false end
 
-    local angle = math.rad(math.random(0, 360))
-    local dist = 60 + (#camp.tents * 55)
-    local candidatePos = camp.pos + Vector(math.cos(angle) * dist, math.sin(angle) * dist, 50)
-
-    local tr = util.TraceLine({
-        start = candidatePos,
-        endpos = candidatePos - Vector(0, 0, 200),
-        mask = MASK_SOLID_BRUSHONLY
-    })
-
-    if not tr.Hit or tr.HitNormal.z < 0.6 then return false end
-
-    local tent = ents.Create("prop_physics")
-    if not IsValid(tent) then return false end
-
-    local mdl = PRED_TENT_MODELS[math.random(1, #PRED_TENT_MODELS)]
-    if not util.IsValidModel(mdl) then
-        mdl = "models/props_wasteland/wood_fence01a.mdl"
+    if not camp.activeTentSite and VNPC_FindClearHutSite then
+        local pos, ang = VNPC_FindClearHutSite(camp, 21 + #camp.tents)
+        if pos and ang then
+            camp.activeTentSite = {
+                pos = pos,
+                ang = ang,
+                stage = 0,
+                props = {},
+                plan = VNPC_GetHutBuildPlan and VNPC_GetHutBuildPlan(pos, ang, true) or nil
+            }
+        end
     end
 
-    tent:SetModel(mdl)
-    tent:SetPos(tr.HitPos)
-    tent:SetAngles(Angle(0, math.random(0, 360), 0))
-    tent:Spawn()
-    tent:Activate()
+    local site = camp.activeTentSite
+    if not site then return false end
 
-    local minZ = tent:OBBMins().z
-    local zOffset = (minZ < 0) and math.abs(minZ) or 0
-    tent:SetPos(tr.HitPos + Vector(0, 0, zOffset + 2))
-
-    tent.VNPC_IsPredatorTent = true
-    tent.VNPC_PredatorCampID = camp.id
-    tent:SetHealth(400)
-
-    table.insert(camp.tents, tent)
-
-    local phys = tent:GetPhysicsObject()
-    if IsValid(phys) then
-        phys:SetVelocity(Vector(0,0,0))
-        phys:EnableMotion(false)
-        phys:Sleep()
+    if VNPC_ConstructWalkableHutPiece then
+        local placed = VNPC_ConstructWalkableHutPiece(camp, site)
+        if (not placed) and site.plan and site.stage and site.stage >= #site.plan then
+            local hut = VNPC_FinalizeHutSite and VNPC_FinalizeHutSite(camp, site) or {
+                pos = site.pos,
+                ang = site.ang,
+                props = site.props,
+                VNPC_IsPredatorTent = true
+            }
+            table.insert(camp.tents, hut)
+            table.insert(camp.huts, hut)
+            camp.activeTentSite = nil
+            return true
+        end
+        if not placed then
+            camp.activeTentSite = nil
+            return false
+        end
+        if site.plan and site.stage >= #site.plan then
+            local hut = VNPC_FinalizeHutSite and VNPC_FinalizeHutSite(camp, site) or {
+                pos = site.pos,
+                ang = site.ang,
+                props = site.props,
+                VNPC_IsPredatorTent = true
+            }
+            table.insert(camp.tents, hut)
+            table.insert(camp.huts, hut)
+            camp.activeTentSite = nil
+        end
+        return true
     end
 
-    if tent.EmitSound then
-        tent:EmitSound("physics/wood/wood_box_impact_hard1.wav", 80, math.random(90, 105))
-    end
-
-    return true
+    return false
 end
 
 function VNPC_ConstructPredatorCampFire(camp)
@@ -331,99 +341,52 @@ function VNPC_ConstructPredatorCampLeaderHut(camp)
     if not camps_enabled:GetBool() or not camp or not camp.pos then return false end
     if IsValid(camp.leaderTable) then return false end
 
-    local angle = math.rad(math.random(0, 360))
-    local candidatePos = camp.pos + Vector(math.cos(angle) * 180, math.sin(angle) * 180, 0)
-    local tr = util.TraceLine({
-        start = candidatePos + Vector(0, 0, 40),
-        endpos = candidatePos - Vector(0, 0, 150),
-        mask = MASK_SOLID_BRUSHONLY
-    })
-    if not tr.Hit or tr.HitNormal.z < 0.65 then return false end
+    local pos, ang
+    if VNPC_FindClearHutSite then
+        pos, ang = VNPC_FindClearHutSite(camp, 17)
+    end
+    if not pos or not ang then
+        local yaw = math.random(0, 359)
+        local candidatePos = camp.pos + Vector(math.cos(math.rad(yaw)) * 115, math.sin(math.rad(yaw)) * 115, 0)
+        pos = (VNPC_SnapCampPosToGround and VNPC_SnapCampPosToGround(candidatePos, 180)) or candidatePos
+        ang = Angle(0, yaw + 180, 0)
+    end
+    if not pos then return false end
 
-    -- 1. Spawn the Leader's Table centerpiece
-    local tbl = ents.Create("prop_physics")
-    if not IsValid(tbl) then return false end
+    local site = { pos = pos, ang = ang, stage = 0, props = {} }
+    local hut = VNPC_ConstructCompleteWalkableHut and VNPC_ConstructCompleteWalkableHut(camp, site)
+    if not hut then return false end
 
     local tableMdl = "models/props_c17/FurnitureTable001a.mdl"
     if not util.IsValidModel(tableMdl) then
         tableMdl = "models/props_wasteland/wood_fence01a.mdl"
     end
-    tbl:SetModel(tableMdl)
-    tbl:SetPos(tr.HitPos + Vector(0, 0, 2))
-    tbl:SetAngles(Angle(0, math.deg(angle), 0))
-    tbl:Spawn()
-    tbl:Activate()
-    tbl.VNPC_IsLeaderTable = true
-    tbl.VNPC_CampID = camp.id
-    tbl.VNPC_NoVore = true
-    tbl:SetHealth(9999)
-
-    local phys = tbl:GetPhysicsObject()
-    if IsValid(phys) then
-        phys:EnableMotion(false)
-        phys:Sleep()
+    local tablePos = pos + ang:Forward() * 26 + Vector(0, 0, 2)
+    local tbl = VNPC_SpawnFrozenCampProp and VNPC_SpawnFrozenCampProp(tableMdl, tablePos, ang, {
+        VNPC_IsLeaderTable = true,
+        VNPC_CampID = camp.id,
+        VNPC_NoVore = true
+    }) or nil
+    if IsValid(tbl) then
+        tbl:SetHealth(9999)
+        table.insert(hut.props, tbl)
     end
 
-    camp.leaderTable = tbl
-
-    -- 2. Build Leader Hut walls around the Table
-    local walls = {}
-    local offsets = {
-        { ang = 180, dist = 55 },
-        { ang = 90,  dist = 55 },
-        { ang = -90, dist = 55 }
-    }
-    for _, off in ipairs(offsets) do
-        local wRad = math.rad(math.deg(angle) + off.ang)
-        local wPos = tr.HitPos + Vector(math.cos(wRad) * off.dist, math.sin(wRad) * off.dist, 0)
-        local wTr = util.TraceLine({
-            start = wPos + Vector(0, 0, 40),
-            endpos = wPos - Vector(0, 0, 150),
-            mask = MASK_SOLID_BRUSHONLY
-        })
-        if wTr.Hit then
-            local wall = ents.Create("prop_physics")
-            if IsValid(wall) then
-                wall:SetModel("models/props_wasteland/wood_fence01a.mdl")
-                wall:SetPos(wTr.HitPos)
-                wall:SetAngles(Angle(0, math.deg(wRad), 0))
-                wall:Spawn()
-                wall:Activate()
-                wall.VNPC_IsLeaderHutWall = true
-                wall.VNPC_CampID = camp.id
-                wall.VNPC_NoVore = true
-                wall:SetHealth(400)
-                local wPhys = wall:GetPhysicsObject()
-                if IsValid(wPhys) then wPhys:EnableMotion(false) wPhys:Sleep() end
-                table.insert(walls, wall)
-            end
+    for _, prop in ipairs(hut.props or {}) do
+        if IsValid(prop) then
+            prop.VNPC_IsLeaderHutWall = not prop.VNPC_IsLeaderTable
+            prop.VNPC_NoVore = true
         end
     end
 
-    -- 3. Roof over the Table
-    local roof = ents.Create("prop_physics")
-    if IsValid(roof) then
-        roof:SetModel("models/props_junk/wood_pallet001a.mdl")
-        roof:SetPos(tr.HitPos + Vector(0, 0, 75))
-        roof:SetAngles(Angle(0, math.deg(angle), 0))
-        roof:Spawn()
-        roof:Activate()
-        roof.VNPC_IsLeaderHutWall = true
-        roof.VNPC_CampID = camp.id
-        roof.VNPC_NoVore = true
-        roof:SetHealth(400)
-        local rPhys = roof:GetPhysicsObject()
-        if IsValid(rPhys) then rPhys:EnableMotion(false) rPhys:Sleep() end
-        table.insert(walls, roof)
-    end
+    camp.leaderTable = tbl
+    camp.leaderHut = hut
+    camp.huts = camp.huts or {}
+    table.insert(camp.huts, hut)
+    camp.tents = camp.tents or {}
+    table.insert(camp.tents, hut)
 
-    camp.leaderHut = {
-        tableProp = tbl,
-        walls = walls,
-        pos = tr.HitPos
-    }
-
-    print(string.format("[V-NPCs] Built Leader Hut and Table for Predator Camp #%s at (%.1f, %.1f, %.1f)!", tostring(camp.id), tr.HitPos.x, tr.HitPos.y, tr.HitPos.z))
+    print(string.format("[V-NPCs] Built walkable roofed Leader Hut for Predator Camp #%s at (%.1f, %.1f, %.1f)!", tostring(camp.id), pos.x, pos.y, pos.z))
     return true
 end
 
@@ -570,7 +533,7 @@ hook.Add("VNPC_OnPreySwallowed", "VNPC_CampForagerPreyCapture", function(pred, p
     if not IsValid(pred) or not IsValid(belly) then return end
 
     local camp = VNPC_GetPredatorCamp(pred)
-    if camp and camp.state == "foraging" and pred.VNPC_CampRole == "forager" then
+    if camp and camp.state == "foraging" and (pred.VNPC_CampRole == "forager" or pred.VNPC_IsCampFounder) then
         pred.VNPC_IsCarryingPreyForCamp = true
         belly.VNPC_NoDigestion = true
         belly.DigestionStrength = 0
@@ -620,7 +583,11 @@ hook.Add("Think", "VNPC_PredatorCamps_AI_Loop", function()
         camp.tents = camp.tents or {}
         for t = #camp.tents, 1, -1 do
             local tent = camp.tents[t]
-            if not IsValid(tent) then
+            if VNPC_IsHutAlive then
+                if not VNPC_IsHutAlive(tent) then
+                    table.remove(camp.tents, t)
+                end
+            elseif not IsValid(tent) then
                 table.remove(camp.tents, t)
             end
         end
@@ -641,7 +608,7 @@ hook.Add("Think", "VNPC_PredatorCamps_AI_Loop", function()
                 VNPC_ConstructPredatorCampWater(camp)
             end
             camp.barricades = camp.barricades or {}
-            if #camp.barricades < 6 and (now - (camp.createTime or now)) > 8.0 and (camp.lastBarricadeBuildTime or 0) <= now then
+            if #camp.barricades < 10 and (now - (camp.createTime or now)) > 8.0 and (camp.lastBarricadeBuildTime or 0) <= now then
                 if VNPC_ConstructPredatorCampBarricades(camp) then
                     camp.lastBarricadeBuildTime = now + 12.0
                 end
@@ -678,7 +645,12 @@ hook.Add("Think", "VNPC_PredatorCamps_AI_Loop", function()
             for _, member in ipairs(camp.members) do
                 local belly = member.VNPC_Belly or member.Belly
                 local isEmpty = IsValid(belly) and ((not belly.Prey) or #belly.Prey == 0) and (belly.DigestionPhase or 0) == 0
-                if isEmpty and foragerCount < math.max(1, math.floor(#camp.members * 0.5)) then
+                if member.VNPC_IsCampFounder then
+                    member.VNPC_CampRole = "founder"
+                    if isEmpty and foragerCount < math.max(1, math.floor(#camp.members * 0.5)) then
+                        foragerCount = foragerCount + 1
+                    end
+                elseif isEmpty and foragerCount < math.max(1, math.floor(#camp.members * 0.5)) then
                     member.VNPC_CampRole = "forager"
                     foragerCount = foragerCount + 1
                 else
@@ -690,7 +662,11 @@ hook.Add("Think", "VNPC_PredatorCamps_AI_Loop", function()
         else
             camp.state = "idle"
             for _, member in ipairs(camp.members) do
-                member.VNPC_CampRole = "stayer"
+                if member.VNPC_IsCampFounder then
+                    member.VNPC_CampRole = "founder"
+                else
+                    member.VNPC_CampRole = "stayer"
+                end
             end
         end
 
@@ -699,7 +675,7 @@ hook.Add("Think", "VNPC_PredatorCamps_AI_Loop", function()
             if not IsValid(member) or member:Health() <= 0 then continue end
             local belly = member.VNPC_Belly or member.Belly
 
-            if member.VNPC_CampRole == "forager" and camp.state == "foraging" then
+            if (member.VNPC_CampRole == "forager" or member.VNPC_IsCampFounder) and camp.state == "foraging" then
                 if member.VNPC_IsCarryingPreyForCamp and IsValid(belly) and belly.Prey and #belly.Prey > 0 then
                     -- Carrying captured prey: abort hunting and sprint back to camp
                     if member.SetEnemy then pcall(member.SetEnemy, member, nil) end
@@ -770,8 +746,8 @@ concommand.Add("vnpcs_camps_status", function(ply)
         local leaderStr = IsValid(camp.leader) and string.format(" | Leader: #%d [%s]", camp.leader:EntIndex(), camp.leader.PrintName or camp.leader:GetClass()) or " | Leader: NONE"
         local hutStr = IsValid(camp.leaderTable) and " | Leader Hut & Table: BUILT" or " | Leader Hut & Table: NONE"
         local decStr = camp.leaderDecision and string.format(" | Strategy Decision: %s", camp.leaderDecision) or ""
-        print(string.format(" -> Camp [#%d] | Faction: %s | State: %s | Members: %d | Campfire: %s | Barricades: %d%s%s%s | Pos: (%d, %d, %d)",
-            camp.id, string.upper(camp.faction or "METROCOP"), string.upper(camp.state), #camp.members, cfStr, #(camp.barricades or {}), leaderStr, hutStr, decStr, camp.pos.x, camp.pos.y, camp.pos.z))
+        print(string.format(" -> Camp [#%d] | Faction: %s | State: %s | Members: %d | Campfire: %s | Barricades: %d | Layout: %s%s%s%s | Pos: (%d, %d, %d)",
+            camp.id, string.upper(camp.faction or "METROCOP"), string.upper(camp.state), #camp.members, cfStr, #(camp.barricades or {}), tostring(camp.layoutType or "pending"), leaderStr, hutStr, decStr, camp.pos.x, camp.pos.y, camp.pos.z))
         for mIdx, mem in ipairs(camp.members) do
             if IsValid(mem) then
                 print(string.format("      -> Member [%d] %s | Role: %s | Carrying Prey: %s",
@@ -840,7 +816,22 @@ concommand.Add("vnpcs_clear_camps", function(ply)
     local count = #VNPC_ActivePredatorCamps
     for _, camp in ipairs(VNPC_ActivePredatorCamps) do
         for _, t in ipairs(camp.tents or {}) do
-            if IsValid(t) then t:Remove() end
+            if VNPC_RemoveHutStructure then
+                VNPC_RemoveHutStructure(t)
+            elseif IsValid(t) then
+                t:Remove()
+            end
+        end
+        for _, h in ipairs(camp.huts or {}) do
+            if VNPC_RemoveHutStructure then
+                VNPC_RemoveHutStructure(h)
+            end
+        end
+        for _, b in ipairs(camp.barricades or {}) do
+            if IsValid(b) then b:Remove() end
+        end
+        if camp.leaderHut and VNPC_RemoveHutStructure then
+            VNPC_RemoveHutStructure(camp.leaderHut)
         end
     end
     for _, pred in ipairs(ents.GetAll()) do

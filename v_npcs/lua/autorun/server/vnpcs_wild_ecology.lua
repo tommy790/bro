@@ -462,8 +462,9 @@ function VNPC_FindPrivateMatingSpot(pred, mate, camp)
     if camp then
         if camp.tents and #camp.tents > 0 then
             for _, tent in ipairs(camp.tents) do
-                if IsValid(tent) then
-                    return tent:GetPos() + Vector(0, 0, 8)
+                local tentPos = (VNPC_GetHutInteriorPos and VNPC_GetHutInteriorPos(tent)) or (IsValid(tent) and tent:GetPos()) or nil
+                if tentPos then
+                    return tentPos
                 end
             end
         end

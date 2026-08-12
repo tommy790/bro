@@ -116,7 +116,7 @@ function VNPC_ConstructTownInfrastructure(camp, stage)
             local rad = math.rad(angDeg)
             local pos = center + Vector(math.cos(rad) * (radius * 0.45), math.sin(rad) * (radius * 0.45), 0)
             local tr = util.TraceLine({ start = pos + Vector(0,0,40), endpos = pos - Vector(0,0,150), mask = MASK_SOLID_BRUSHONLY })
-            if tr.Hit and tr.HitNormal.z >= 0.70 then
+            if tr.Hit and tr.HitNormal.z >= 0.70 and (not VNPC_IsCampBuildSpotClear or VNPC_IsCampBuildSpotClear(tr.HitPos, 80, camp, nil)) then
                 local lamp = ents.Create("prop_physics")
                 if IsValid(lamp) then
                     local mdl = "models/props_c17/lamppost03a_off.mdl"
@@ -361,6 +361,7 @@ function VNPC_CreatePreyCamp(pos, founder)
         isIndoors = indoors,
         isPreyCamp = true,
         leader = founder,
+        founder = founder,
         members = { founder },
         walls = {},
         huts = {},
@@ -369,6 +370,7 @@ function VNPC_CreatePreyCamp(pos, founder)
         townDevPoints = 0,
         territoryRadius = 350,
         townInfrastructure = {},
+        layoutSeed = math.random(100000, 999999),
         fortified = false,
         resources = 15.0,
         createTime = CurTime(),
@@ -376,6 +378,9 @@ function VNPC_CreatePreyCamp(pos, founder)
     }
 
     founder.VNPC_PreyCampID = camp.id
+    if VNPC_AssignFounderAllRoles then
+        VNPC_AssignFounderAllRoles(founder)
+    end
     table.insert(VNPC_ActivePreyCamps, camp)
     return camp
 end
@@ -432,8 +437,8 @@ function VNPC_AssignPreyToCamp(npc, force)
         end
     end
 
-    if not npc.VNPC_TownRole then
-        local roles = { "builder", "sentry", "forager", "cook" }
+    if not npc.VNPC_IsCampFounder and not npc.VNPC_TownRole then
+        local roles = { "builder", "sentry", "forager", "cook", "mate" }
         npc.VNPC_TownRole = roles[math.random(1, #roles)]
     end
 
@@ -524,111 +529,12 @@ end)
 
 function VNPC_PlanPreyCampLayout(camp)
     if not camp or not camp.pos then return end
-
-    -- 1. Dynamically calculate center of mass and bounding radius of all living camp members & structures
-    local center = camp.pos
-    local validMembers = 0
-    local sumPos = Vector(0, 0, 0)
-    for _, mem in ipairs(camp.members or {}) do
-        if IsValid(mem) and mem:Health() > 0 then
-            sumPos = sumPos + mem:GetPos()
-            validMembers = validMembers + 1
-        end
-    end
-    if validMembers > 0 then
-        center = (sumPos / validMembers)
-    end
-    center = center + Vector(0, 0, 32)
-    camp.center = center
-
-    local maxMemberDist = 0
-    for _, mem in ipairs(camp.members or {}) do
-        if IsValid(mem) and mem:Health() > 0 then
-            local d = mem:GetPos():Distance(center)
-            if d > maxMemberDist then maxMemberDist = d end
-        end
+    if VNPC_PlanProceduralCampWalls then
+        VNPC_PlanProceduralCampWalls(camp)
+        return
     end
 
-    -- Dynamic perimeter radius adapts to living area size, member count, & territory expansion
-    local minRad = camp.isIndoors and 130 or 260
-    local maxRad = camp.isIndoors and 360 or 3000
-    local targetRadius = math.Clamp(math.max(camp.territoryRadius or 450.0, maxMemberDist + (camp.isIndoors and 80 or 150)), minRad, maxRad)
-    local numAngles = camp.isIndoors and math.Clamp(8 + math.floor((targetRadius - 130) / 45), 8, 16) or math.Clamp(8 + math.floor((targetRadius - 260) / 75), 8, 28)
-    local anchorPoints = {}
-
-    -- 2. Cast radial 3D terrain raycasts to find natural world walls, buildings, or slopes
-    for s = 1, numAngles do
-        local rad = math.rad((s - 1) * (360 / numAngles))
-        local dir = Vector(math.cos(rad), math.sin(rad), 0)
-        local endPos = center + dir * (targetRadius * 1.25)
-
-        local wallTrace = util.TraceLine({
-            start = center,
-            endpos = endPos,
-            mask = MASK_SOLID_BRUSHONLY
-        })
-
-        local anchorPos = nil
-        if wallTrace.Hit and wallTrace.Fraction > 0.15 and wallTrace.Fraction < 0.98 then
-            anchorPos = wallTrace.HitPos - dir * (camp.isIndoors and 14 or 16)
-        else
-            local groundCandidate = center + dir * targetRadius
-            local groundTrace = util.TraceLine({
-                start = groundCandidate + Vector(0, 0, 100),
-                endpos = groundCandidate - Vector(0, 0, 250),
-                mask = MASK_SOLID_BRUSHONLY
-            })
-            anchorPos = groundTrace.Hit and (groundTrace.HitPos + Vector(0, 0, 2)) or (groundCandidate - Vector(0, 0, 30))
-        end
-        table.insert(anchorPoints, anchorPos)
-    end
-
-    -- 3. Connect adjacent perimeter anchors and subdivide open spans into dynamic barrier segments
-    camp.plannedWalls = {}
-    local gatePlaced = false
-
-    for s = 1, #anchorPoints do
-        local next_s = (s % #anchorPoints) + 1
-        local P1 = anchorPoints[s]
-        local P2 = anchorPoints[next_s]
-        local sideLen = P1:Distance(P2)
-        local numSegs = math.max(1, math.ceil(sideLen / 86))
-
-        for seg = 1, numSegs do
-            local t1 = (seg - 1) / numSegs
-            local t2 = seg / numSegs
-            local pStart = LerpVector(t1, P1, P2)
-            local pEnd = LerpVector(t2, P1, P2)
-            local midPos = (pStart + pEnd) * 0.5 + Vector(0, 0, 45)
-
-            local floorTrace = util.TraceLine({
-                start = midPos,
-                endpos = midPos - Vector(0, 0, 240),
-                mask = MASK_SOLID_BRUSHONLY
-            })
-
-            local floorPos = floorTrace.Hit and (floorTrace.HitPos + Vector(0, 0, 2)) or (midPos - Vector(0, 0, 45))
-            local wallDir = (pEnd - pStart):GetNormalized()
-            local yaw = wallDir:Angle().y
-            local dz = pEnd.z - pStart.z
-            local pitch = math.deg(math.atan2(-dz, sideLen / numSegs))
-            local wallAng = Angle(pitch, yaw, 0)
-
-            local isGate = false
-            if not gatePlaced and s == 1 and seg == math.floor(numSegs * 0.5) then
-                isGate = true
-                gatePlaced = true
-            end
-
-            table.insert(camp.plannedWalls, {
-                pos = floorPos,
-                ang = wallAng,
-                isGate = isGate,
-                built = false,
-                isUpgrade = (camp.breachAlertTime and (CurTime() - camp.breachAlertTime) < 180)
-            })
-        end
-    end
+    camp.plannedWalls = camp.plannedWalls or {}
 end
 
 function VNPC_ConstructPreyCampFire(camp)
@@ -694,10 +600,14 @@ function VNPC_EnsurePreyCampLeader(camp)
 
     if IsValid(candidate) then
         camp.leader = candidate
-        candidate.VNPC_IsCampLeader = true
-        candidate.VNPC_TownRole = "leader"
         candidate.VNPC_PreyCampLeader = camp.id
-        print(string.format("[V-NPCs] Prey Camp #%d elected Leader: #%d [%s]!", camp.id, candidate:EntIndex(), candidate.PrintName or candidate:GetClass()))
+        if VNPC_AssignFounderAllRoles then
+            VNPC_AssignFounderAllRoles(candidate)
+        else
+            candidate.VNPC_IsCampLeader = true
+            candidate.VNPC_TownRole = "founder"
+        end
+        print(string.format("[V-NPCs] Prey Camp #%d elected Founder/Leader: #%d [%s] with all town roles!", camp.id, candidate:EntIndex(), candidate.PrintName or candidate:GetClass()))
     end
     return camp.leader
 end
@@ -706,101 +616,51 @@ function VNPC_ConstructPreyCampLeaderHut(camp)
     if not camps_enabled:GetBool() or not camp or not camp.pos then return false end
     if IsValid(camp.leaderTable) then return false end
 
-    local angle = math.rad(math.random(0, 360))
-    local candidatePos = camp.pos + Vector(math.cos(angle) * 190, math.sin(angle) * 190, 0)
-    local tr = util.TraceLine({
-        start = candidatePos + Vector(0, 0, 40),
-        endpos = candidatePos - Vector(0, 0, 150),
-        mask = MASK_SOLID_BRUSHONLY
-    })
-    if not tr.Hit or tr.HitNormal.z < 0.65 then return false end
+    local pos, ang
+    if VNPC_FindClearHutSite then
+        pos, ang = VNPC_FindClearHutSite(camp, 11)
+    end
+    if not pos or not ang then
+        local seed = camp.layoutSeed or camp.id or 1
+        local yaw = (VNPC_CampHashInt and VNPC_CampHashInt(seed, 8, 0, 359)) or math.random(0, 360)
+        local candidatePos = camp.pos + Vector(math.cos(math.rad(yaw)) * 120, math.sin(math.rad(yaw)) * 120, 0)
+        pos = (VNPC_SnapCampPosToGround and VNPC_SnapCampPosToGround(candidatePos, 180)) or candidatePos
+        ang = Angle(0, yaw + 180, 0)
+    end
+    if not pos then return false end
 
-    -- 1. Spawn the Leader's Table centerpiece
-    local tbl = ents.Create("prop_physics")
-    if not IsValid(tbl) then return false end
+    local site = { pos = pos, ang = ang, stage = 0, props = {} }
+    local hut = VNPC_ConstructCompleteWalkableHut and VNPC_ConstructCompleteWalkableHut(camp, site)
+    if not hut then return false end
 
     local tableMdl = "models/props_c17/FurnitureTable001a.mdl"
     if not util.IsValidModel(tableMdl) then
         tableMdl = "models/props_wasteland/wood_fence01a.mdl"
     end
-    tbl:SetModel(tableMdl)
-    tbl:SetPos(tr.HitPos + Vector(0, 0, 2))
-    tbl:SetAngles(Angle(0, math.deg(angle), 0))
-    tbl:Spawn()
-    tbl:Activate()
-    tbl.VNPC_IsLeaderTable = true
-    tbl.VNPC_CampID = camp.id
-    tbl.VNPC_NoVore = true
-    tbl:SetHealth(9999)
+    local tablePos = pos + ang:Forward() * 26 + Vector(0, 0, 2)
+    local tbl = VNPC_SpawnFrozenCampProp and VNPC_SpawnFrozenCampProp(tableMdl, tablePos, ang, {
+        VNPC_IsLeaderTable = true,
+        VNPC_CampID = camp.id,
+        VNPC_NoVore = true
+    }) or nil
+    if IsValid(tbl) then
+        tbl:SetHealth(9999)
+        table.insert(hut.props, tbl)
+    end
 
-    local phys = tbl:GetPhysicsObject()
-    if IsValid(phys) then
-        phys:EnableMotion(false)
-        phys:Sleep()
+    for _, prop in ipairs(hut.props or {}) do
+        if IsValid(prop) then
+            prop.VNPC_IsLeaderHutWall = not prop.VNPC_IsLeaderTable
+            prop.VNPC_NoVore = true
+        end
     end
 
     camp.leaderTable = tbl
+    camp.leaderHut = hut
+    camp.huts = camp.huts or {}
+    table.insert(camp.huts, hut)
 
-    -- 2. Build Hut Walls around the Table
-    local walls = {}
-    local offsets = {
-        { ang = 180, dist = 55 },
-        { ang = 90,  dist = 55 },
-        { ang = -90, dist = 55 }
-    }
-    for _, off in ipairs(offsets) do
-        local wRad = math.rad(math.deg(angle) + off.ang)
-        local wPos = tr.HitPos + Vector(math.cos(wRad) * off.dist, math.sin(wRad) * off.dist, 0)
-        local wTr = util.TraceLine({
-            start = wPos + Vector(0, 0, 40),
-            endpos = wPos - Vector(0, 0, 150),
-            mask = MASK_SOLID_BRUSHONLY
-        })
-        if wTr.Hit then
-            local wall = ents.Create("prop_physics")
-            if IsValid(wall) then
-                wall:SetModel("models/props_wasteland/wood_fence01a.mdl")
-                wall:SetPos(wTr.HitPos)
-                wall:SetAngles(Angle(0, math.deg(wRad), 0))
-                wall:Spawn()
-                wall:Activate()
-                wall.VNPC_IsLeaderHutWall = true
-                wall.VNPC_CampID = camp.id
-                wall.VNPC_NoVore = true
-                wall:SetHealth(350)
-                local wPhys = wall:GetPhysicsObject()
-                if IsValid(wPhys) then wPhys:EnableMotion(false) wPhys:Sleep() end
-                table.insert(walls, wall)
-            end
-        end
-    end
-
-    -- 3. Roof over the Table
-    if not camp.isIndoors then
-        local roof = ents.Create("prop_physics")
-        if IsValid(roof) then
-            roof:SetModel("models/props_junk/wood_pallet001a.mdl")
-            roof:SetPos(tr.HitPos + Vector(0, 0, 75))
-            roof:SetAngles(Angle(0, math.deg(angle), 0))
-            roof:Spawn()
-            roof:Activate()
-            roof.VNPC_IsLeaderHutWall = true
-            roof.VNPC_CampID = camp.id
-            roof.VNPC_NoVore = true
-            roof:SetHealth(350)
-            local rPhys = roof:GetPhysicsObject()
-            if IsValid(rPhys) then rPhys:EnableMotion(false) rPhys:Sleep() end
-            table.insert(walls, roof)
-        end
-    end
-
-    camp.leaderHut = {
-        tableProp = tbl,
-        walls = walls,
-        pos = tr.HitPos
-    }
-
-    print(string.format("[V-NPCs] Built Leader Hut and Table for Prey Camp #%s at (%.1f, %.1f, %.1f)!", tostring(camp.id), tr.HitPos.x, tr.HitPos.y, tr.HitPos.z))
+    print(string.format("[V-NPCs] Built walkable roofed Leader Hut for Prey Camp #%s at (%.1f, %.1f, %.1f)!", tostring(camp.id), pos.x, pos.y, pos.z))
     return true
 end
 
@@ -850,7 +710,8 @@ function VNPC_PreyCampLeaderDecision_AI(camp, now)
 
     if decision == "COOK_MEAL_FEAST" then
         for _, mem in ipairs(camp.members) do
-            if IsValid(mem) and VNPC_IsFemalePreyCitizen and VNPC_IsFemalePreyCitizen(mem) and not mem.VNPC_IsCookingMeal and not mem.VNPC_IsEatingMeal then
+            local canCook = (VNPC_IsFemalePreyCitizen and VNPC_IsFemalePreyCitizen(mem)) or (VNPC_HasTownRole and VNPC_HasTownRole(mem, "cook"))
+            if IsValid(mem) and canCook and not mem.VNPC_IsCookingMeal and not mem.VNPC_IsEatingMeal then
                 mem.VNPC_ForceCookMeal = (math.random(1, 2) == 1 and "burger" or "hotdog")
                 break
             end
@@ -867,7 +728,7 @@ function VNPC_PreyTownBuilderRepair_AI(camp, now)
 
     for _, mem in ipairs(camp.members) do
         if not IsValid(mem) or mem:Health() <= 0 or mem.Vored or mem.VNPC_IsSleeping or mem:IsPlayer() then continue end
-        if mem.VNPC_TownRole == "builder" and not IsValid(mem:GetEnemy()) and not mem.VNPC_IsCookingMeal and not mem.VNPC_IsEatingMeal then
+        if (VNPC_HasTownRole and VNPC_HasTownRole(mem, "builder") or mem.VNPC_TownRole == "builder") and not IsValid(mem:GetEnemy()) and not mem.VNPC_IsCookingMeal and not mem.VNPC_IsEatingMeal then
             local bestTarget = nil
             local bestDistSqr = 1200 * 1200
             for _, wall in ipairs(camp.walls or {}) do
@@ -916,7 +777,8 @@ function VNPC_PreyCampCooking_AI(camp, now)
     for _, mem in ipairs(camp.members) do
         if not IsValid(mem) or mem:Health() <= 0 or mem.Vored or mem.VNPC_IsSleeping then continue end
         if IsValid(mem:GetEnemy()) or mem.VNPC_IsEatingMeal or mem.VNPC_IsCollectingScrap then continue end
-        if not VNPC_IsFemalePreyCitizen(mem) then continue end
+        local canCook = VNPC_IsFemalePreyCitizen(mem) or (VNPC_HasTownRole and (VNPC_HasTownRole(mem, "cook") or VNPC_HasTownRole(mem, "founder")))
+        if not canCook then continue end
 
         local hunger = VNPC_GetHunger and VNPC_GetHunger(mem) or 0
         local thirst = VNPC_GetThirst and VNPC_GetThirst(mem) or 0
@@ -1090,13 +952,18 @@ function VNPC_ConstructPreyCampWall(camp)
     if not targetPlan then return false end
     targetPlan.built = true
 
-    local wall = ents.Create("prop_physics")
-    if not IsValid(wall) then return false end
+    if targetPlan.isGate or targetPlan.skipProp then
+        camp.townDevPoints = (camp.townDevPoints or 0) + 8.0
+        return true
+    end
+
+    local groundPos = (VNPC_SnapCampPosToGround and VNPC_SnapCampPosToGround(targetPlan.pos, 220)) or targetPlan.pos
+    if VNPC_IsCampBuildSpotClear and not VNPC_IsCampBuildSpotClear(groundPos, 70, camp, nil) then
+        return true
+    end
 
     local mdl = nil
-    if targetPlan.isGate then
-        mdl = "models/props_wasteland/wood_fence01a.mdl"
-    elseif targetPlan.isUpgrade then
+    if targetPlan.isUpgrade then
         mdl = "models/props_c17/fence01a.mdl"
     else
         camp.wallModel = camp.wallModel or PREY_WALL_MODELS[math.random(1, #PREY_WALL_MODELS)]
@@ -1108,40 +975,21 @@ function VNPC_ConstructPreyCampWall(camp)
     end
 
     local isMetalFence = string.find(string.lower(mdl), "barricade") or (string.find(string.lower(mdl), "fence") and not string.find(string.lower(mdl), "wood_fence01a"))
-    local wallAng = Angle(targetPlan.ang.p, targetPlan.ang.y, targetPlan.ang.r)
+    local wallAng = Angle(0, targetPlan.ang.y, 0)
     if isMetalFence then
-        wallAng = Angle(targetPlan.ang.p, targetPlan.ang.y + 90, targetPlan.ang.r)
+        wallAng = Angle(0, targetPlan.ang.y + 90, 0)
     end
 
-    wall:SetModel(mdl)
-    wall:SetPos(targetPlan.pos)
-    wall:SetAngles(wallAng)
-    wall:Spawn()
-    wall:Activate()
+    local wall = VNPC_SpawnFrozenCampProp and VNPC_SpawnFrozenCampProp(mdl, groundPos, wallAng, {
+        VNPC_IsPreyCampWall = true,
+        VNPC_PreyCampID = camp.id,
+        VNPC_CampRef = camp
+    }) or nil
+    if not IsValid(wall) then return false end
 
-    local minZ = wall:OBBMins().z
-    local zOffset = (minZ < 0) and math.abs(minZ) or 0
-    wall:SetPos(targetPlan.pos + Vector(0, 0, zOffset + 2))
-
-    wall.VNPC_IsPreyCampWall = true
-    wall.VNPC_PreyCampID = camp.id
-    wall.VNPC_CampRef = camp
     wall:SetHealth(targetPlan.isUpgrade and 350 or 180)
 
-    if targetPlan.isGate then
-        wall.VNPC_IsPreyCampGate = true
-        wall.VNPC_GateClosedAng = wallAng
-        wall.VNPC_GateOpenAng = Angle(0, wallAng.y + 90, 0)
-    end
-
     table.insert(camp.walls, wall)
-
-    local phys = wall:GetPhysicsObject()
-    if IsValid(phys) then
-        phys:SetVelocity(Vector(0,0,0))
-        phys:EnableMotion(false)
-        phys:Sleep()
-    end
 
     if wall.EmitSound then
         wall:EmitSound("physics/wood/wood_box_impact_hard1.wav", 75, math.random(95, 105))
@@ -1227,37 +1075,8 @@ function VNPC_PredatorBreachPreyCampWall(pred, wall, camp)
 end
 
 function VNPC_CalculateCampHutPosition(camp)
-    if not camp or not camp.pos then return nil, nil end
-    local numHuts = math.Clamp(math.ceil(#(camp.members or {}) / 3), 1, camp_max_huts:GetInt() or 6)
-    local radius = camp.isIndoors and math.Clamp(45 + ((#(camp.huts or {})) * 35), 45, 140) or (85 + ((#(camp.huts or {})) * 50))
-    local center = (camp.center or camp.pos) + Vector(0, 0, 32)
-
-    for i = 0, numHuts - 1 do
-        local theta = (i / numHuts) * (2 * math.pi) + math.rad(math.random(0, 360))
-        local candidatePos = center + Vector(math.cos(theta) * radius, math.sin(theta) * radius, 65)
-
-        local tr = util.TraceLine({
-            start = candidatePos,
-            endpos = candidatePos - Vector(0, 0, 220),
-            mask = MASK_SOLID_BRUSHONLY
-        })
-
-        if tr.Hit and tr.HitNormal.z > 0.65 then
-            local occupied = false
-            for _, h in ipairs(camp.huts or {}) do
-                if IsValid(h) and h:GetPos():DistToSqr(tr.HitPos) < (120 * 120) then
-                    occupied = true
-                    break
-                end
-            end
-
-            if not occupied then
-                local outwardDir = (tr.HitPos - center):GetNormalized()
-                local yaw = outwardDir:Angle().y
-                local ang = Angle(0, yaw, 0)
-                return tr.HitPos + Vector(0, 0, 10), ang
-            end
-        end
+    if VNPC_FindClearHutSite then
+        return VNPC_FindClearHutSite(camp, 0)
     end
     return nil, nil
 end
@@ -1270,7 +1089,8 @@ function VNPC_CreateHutSite(camp)
         pos = pos,
         ang = ang,
         stage = 0,
-        props = {}
+        props = {},
+        plan = VNPC_GetHutBuildPlan and VNPC_GetHutBuildPlan(pos, ang, true) or nil
     }
 end
 
@@ -1282,141 +1102,28 @@ function VNPC_ConstructPreyCampHut(camp)
     local site = camp.activeHutSite
     if not site then return false end
 
-    -- Check if an actual saved workshop dupe file is installed in data/dupes/ or data/advdupe2/
-    if site.stage == 0 and file and file.Exists and duplicator then
-        local dupePath = nil
-        if file.Exists("dupes/slum_hut.dupe", "DATA") then
-            dupePath = "dupes/slum_hut.dupe"
-        elseif file.Exists("advdupe2/slum_hut.txt", "DATA") then
-            dupePath = "advdupe2/slum_hut.txt"
+    if not VNPC_ConstructWalkableHutPiece or not VNPC_ConstructWalkableHutPiece(camp, site) then
+        if site.plan and site.stage and site.stage >= #site.plan then
+            local hut = VNPC_FinalizeHutSite and VNPC_FinalizeHutSite(camp, site) or {
+                id = #(camp.huts or {}) + 1,
+                pos = site.pos,
+                ang = site.ang,
+                props = site.props,
+                VNPC_IsPreyCampHut = true,
+                VNPC_PreyCampID = camp.id
+            }
+            camp.huts = camp.huts or {}
+            table.insert(camp.huts, hut)
+            camp.townDevPoints = (camp.townDevPoints or 0) + 35.0
+            camp.activeHutSite = nil
+            return true
         end
-        if dupePath then
-            local dupeData = file.Read(dupePath, "DATA")
-            if dupeData and duplicator.Paste then
-                local success, pastedEnts = pcall(duplicator.Paste, nil, dupeData, site.pos)
-                if success and istable(pastedEnts) and #pastedEnts > 0 then
-                    for _, prop in ipairs(pastedEnts) do
-                        if IsValid(prop) then
-                            prop.VNPC_IsPreyCampHutPiece = true
-                            prop.VNPC_PreyCampID = camp.id
-                            table.insert(site.props, prop)
-                        end
-                    end
-                    local hut = {
-                        id = #(camp.huts or {}) + 1,
-                        pos = site.pos,
-                        ang = site.ang,
-                        props = site.props,
-                        VNPC_IsPreyCampHut = true,
-                        VNPC_PreyCampID = camp.id
-                    }
-                    camp.huts = camp.huts or {}
-                    table.insert(camp.huts, hut)
-                    camp.activeHutSite = nil
-                    return true
-                end
-            end
-        end
+        camp.activeHutSite = nil
+        return false
     end
 
-    site.stage = (site.stage or 0) + 1
-    local fwd = site.ang:Forward()
-    local right = site.ang:Right()
-
-    local pModel = "models/props_wasteland/wood_fence01a.mdl"
-    local pPos = site.pos
-    local pAng = site.ang
-
-    if site.stage == 1 then
-        -- Stage 1: Full 96x96 wooden plank floor platform
-        pModel = "models/props_wasteland/wood_fence01a.mdl"
-        pPos = site.pos + Vector(0, 0, 2)
-        pAng = Angle(90, site.ang.y, 0)
-    elseif site.stage == 2 then
-        -- Stage 2: Back wall (96 units wide, flush at rear perimeter fwd * +46)
-        pModel = "models/props_wasteland/wood_fence01a.mdl"
-        pPos = site.pos + fwd * 46 + Vector(0, 0, 32)
-        pAng = site.ang
-    elseif site.stage == 3 then
-        -- Stage 3: Left side wall (96 units long, flush at left perimeter right * +46)
-        pModel = "models/props_wasteland/wood_fence01a.mdl"
-        pPos = site.pos + right * 46 + Vector(0, 0, 32)
-        pAng = Angle(0, site.ang.y + 90, 0)
-    elseif site.stage == 4 then
-        -- Stage 4: Right side wall (96 units long, flush at right perimeter right * -46)
-        pModel = "models/props_wasteland/wood_fence01a.mdl"
-        pPos = site.pos - right * 46 + Vector(0, 0, 32)
-        pAng = Angle(0, site.ang.y - 90, 0)
-    elseif site.stage == 5 then
-        -- Stage 5: Front left upright pallet framing the doorway
-        pModel = "models/props_junk/wood_pallet001a.mdl"
-        pPos = site.pos - fwd * 46 + right * 24 + Vector(0, 0, 24)
-        pAng = Angle(90, site.ang.y, 0)
-    elseif site.stage == 6 then
-        -- Stage 6: Front right upright pallet framing the doorway
-        pModel = "models/props_junk/wood_pallet001a.mdl"
-        pPos = site.pos - fwd * 46 - right * 24 + Vector(0, 0, 24)
-        pAng = Angle(90, site.ang.y, 0)
-    else
-        -- Stage 7: Slanted wooden/corrugated roof covering the 96x96 shack (skip if indoors under low ceiling!)
-        if camp.isIndoors then
-            local trCeil = util.TraceLine({
-                start = site.pos + Vector(0, 0, 10),
-                endpos = site.pos + Vector(0, 0, 100),
-                mask = MASK_SOLID_BRUSHONLY
-            })
-            if trCeil.Hit and (trCeil.Fraction * 90) < 75 then
-                site.stage = 7
-                local hut = {
-                    pos = site.pos,
-                    ang = site.ang,
-                    props = site.props,
-                    VNPC_IsPreyCampHut = true,
-                    VNPC_PreyCampID = camp.id
-                }
-                camp.huts = camp.huts or {}
-                table.insert(camp.huts, hut)
-                camp.activeHutSite = nil
-                return true
-            end
-        end
-        pModel = "models/props_wasteland/wood_fence01a.mdl"
-        pPos = site.pos + Vector(0, 0, 64)
-        pAng = Angle(8, site.ang.y, 0)
-    end
-
-    if not util.IsValidModel(pModel) then
-        pModel = "models/props_c17/fence01a.mdl"
-    end
-
-    local prop = ents.Create("prop_physics")
-    if not IsValid(prop) then return false end
-
-    prop:SetModel(pModel)
-    prop:SetPos(pPos)
-    prop:SetAngles(pAng)
-    prop:Spawn()
-    prop:Activate()
-
-    prop.VNPC_IsPreyCampHutPiece = true
-    prop.VNPC_PreyCampID = camp.id
-    prop:SetHealth(100)
-
-    local phys = prop:GetPhysicsObject()
-    if IsValid(phys) then
-        phys:SetVelocity(Vector(0,0,0))
-        phys:EnableMotion(false)
-        phys:Sleep()
-    end
-
-    if prop.EmitSound then
-        prop:EmitSound("physics/wood/wood_box_impact_hard1.wav", 80, math.random(95, 105))
-    end
-
-    table.insert(site.props, prop)
-
-    if site.stage >= 7 then
-        local hut = {
+    if site.plan and site.stage >= #site.plan then
+        local hut = VNPC_FinalizeHutSite and VNPC_FinalizeHutSite(camp, site) or {
             id = #(camp.huts or {}) + 1,
             pos = site.pos,
             ang = site.ang,
@@ -1511,13 +1218,18 @@ function VNPC_ConstructPreyCampCourtyardDefense(camp)
 
     if not tr.Hit or tr.HitNormal.z < 0.65 then return false end
 
+    if VNPC_IsCampBuildSpotClear and not VNPC_IsCampBuildSpotClear(tr.HitPos, 90, camp, nil) then
+        return false
+    end
+
     for _, existing in ipairs(camp.courtyardDefenses) do
-        if IsValid(existing) and existing:GetPos():DistToSqr(tr.HitPos) < (85 * 85) then
+        if IsValid(existing) and existing:GetPos():DistToSqr(tr.HitPos) < (95 * 95) then
             return false
         end
     end
     for _, hut in ipairs(camp.huts or {}) do
-        if IsValid(hut) and hut:GetPos():DistToSqr(tr.HitPos) < (100 * 100) then
+        local hutPos = VNPC_GetHutWorldPos and VNPC_GetHutWorldPos(hut) or nil
+        if hutPos and hutPos:DistToSqr(tr.HitPos) < (140 * 140) then
             return false
         end
     end
@@ -1586,6 +1298,17 @@ function VNPC_PreyCampLove_AI(camp, now)
     end
 
     if #females == 0 or #males == 0 then return end
+
+    table.sort(females, function(a, b)
+        local af = (a.VNPC_IsCampFounder or (VNPC_HasTownRole and VNPC_HasTownRole(a, "mate"))) and 1 or 0
+        local bf = (b.VNPC_IsCampFounder or (VNPC_HasTownRole and VNPC_HasTownRole(b, "mate"))) and 1 or 0
+        return af > bf
+    end)
+    table.sort(males, function(a, b)
+        local af = (a.VNPC_IsCampFounder or (VNPC_HasTownRole and VNPC_HasTownRole(a, "mate"))) and 1 or 0
+        local bf = (b.VNPC_IsCampFounder or (VNPC_HasTownRole and VNPC_HasTownRole(b, "mate"))) and 1 or 0
+        return af > bf
+    end)
 
     -- 1. Check existing pregnancies for womb growth (value 10 to 50) and childbirth
     for _, f in ipairs(females) do
@@ -1893,7 +1616,11 @@ hook.Add("Think", "VNPC_PreyCamps_AI_Loop", function()
         camp.huts = camp.huts or {}
         for h = #camp.huts, 1, -1 do
             local hut = camp.huts[h]
-            if not IsValid(hut) then
+            if VNPC_IsHutAlive then
+                if not VNPC_IsHutAlive(hut) then
+                    table.remove(camp.huts, h)
+                end
+            elseif not hut or (not hut.pos and not IsValid(hut)) then
                 table.remove(camp.huts, h)
             end
         end
@@ -1989,8 +1716,9 @@ hook.Add("Think", "VNPC_PreyCamps_AI_Loop", function()
                 if IsValid(mem) and mem:Health() > 0 and not mem.Vored and not mem.VNPC_IsSleeping and not mem.VNPC_IsCollectingScrap and not IsValid(mem:GetEnemy()) then
                     if camp.huts and #camp.huts > 0 then
                         local hut = camp.huts[math.random(1, #camp.huts)]
-                        if hut and hut.pos and mem:GetPos():DistToSqr(hut.pos) > (150 * 150) then
-                            if mem.SetLastPosition then pcall(mem.SetLastPosition, mem, hut.pos) end
+                        local shelterPos = (VNPC_GetHutInteriorPos and VNPC_GetHutInteriorPos(hut)) or (hut and hut.pos) or nil
+                        if shelterPos and mem:GetPos():DistToSqr(shelterPos) > (70 * 70) then
+                            if mem.SetLastPosition then pcall(mem.SetLastPosition, mem, shelterPos) end
                             if mem.SetSchedule then pcall(mem.SetSchedule, mem, SCHED_FORCED_GO_RUN) end
                         end
                     end
@@ -2008,7 +1736,11 @@ hook.Add("Think", "VNPC_PreyCamps_AI_Loop", function()
         end
 
         -- Check if perimeter wall ring is finished (fortified!)
-        camp.fortified = (#camp.walls >= maxWalls or #camp.walls >= 10)
+        local pendingWalls, plannedTotal = 0, 0
+        if VNPC_CountPendingCampWalls then
+            pendingWalls, plannedTotal = VNPC_CountPendingCampWalls(camp)
+        end
+        camp.fortified = (plannedTotal > 0 and pendingWalls == 0) or (#camp.walls >= maxWalls or #camp.walls >= 10)
 
         -- When fortified, build Little Huts in the inner courtyard for shelter
         local hutCost = camp_hut_cost:GetFloat()
@@ -2031,8 +1763,9 @@ hook.Add("Think", "VNPC_PreyCamps_AI_Loop", function()
             for idx, mem in ipairs(camp.members) do
                 if IsValid(mem) and not IsValid(mem:GetEnemy()) then
                     local targetHut = camp.huts[((idx - 1) % #camp.huts) + 1]
-                    if IsValid(targetHut) and mem:GetPos():DistToSqr(targetHut:GetPos()) > (160 * 160) then
-                        if mem.SetLastPosition then pcall(mem.SetLastPosition, mem, targetHut:GetPos()) end
+                    local hutPos = (VNPC_GetHutInteriorPos and VNPC_GetHutInteriorPos(targetHut)) or (targetHut and targetHut.pos) or nil
+                    if hutPos and mem:GetPos():DistToSqr(hutPos) > (90 * 90) then
+                        if mem.SetLastPosition then pcall(mem.SetLastPosition, mem, hutPos) end
                         if mem.SetSchedule then pcall(mem.SetSchedule, mem, SCHED_FORCED_GO) end
                     end
                 end
@@ -2062,8 +1795,8 @@ hook.Add("Think", "VNPC_PreyCamps_AI_Loop", function()
 
         -- 4. Check for predators swallowing Little Huts in the fort courtyard
         for _, hut in ipairs(camp.huts) do
-            if not IsValid(hut) then continue end
-            local hutPos = hut:GetPos()
+            local hutPos = (VNPC_GetHutWorldPos and VNPC_GetHutWorldPos(hut)) or nil
+            if not hutPos then continue end
             for _, pred in ipairs(ents.FindInSphere(hutPos, 160)) do
                 if not IsValid(pred) or pred:Health() <= 0 then continue end
                 if pred.VNPC_PreyCampID and pred.VNPC_PreyCampID == camp.id then continue end
@@ -2183,7 +1916,7 @@ concommand.Add("vnpcs_prey_camps_status", function(ply)
         local hutStr = IsValid(camp.leaderTable) and " | Leader Hut & Table: BUILT" or " | Leader Hut & Table: NONE"
         local decStr = camp.leaderDecision and string.format(" | Strategy Decision: %s", camp.leaderDecision) or ""
         local stageData = VNPC_TownDevelopmentStages and VNPC_TownDevelopmentStages[camp.townStage or 1]
-        local townStr = string.format(" | Town Stage: %d [%s] (Dev Pts: %d / %d)", camp.townStage or 1, stageData and stageData.name or "OUTPOST", math.floor(camp.townDevPoints or 0), stageData and stageData.ptsRequired or 0)
+        local townStr = string.format(" | Town Stage: %d [%s] (Dev Pts: %d / %d) | Layout: %s", camp.townStage or 1, stageData and stageData.name or "OUTPOST", math.floor(camp.townDevPoints or 0), stageData and stageData.ptsRequired or 0, tostring(camp.layoutType or "pending"))
         local playerCount = 0
         for _, m in ipairs(camp.members) do
             if IsValid(m) and m:IsPlayer() then playerCount = playerCount + 1 end
@@ -2513,7 +2246,11 @@ concommand.Add("vnpcs_clear_prey_camps", function(ply)
             if IsValid(wall) then wall:Remove() end
         end
         for _, hut in ipairs(camp.huts or {}) do
-            if IsValid(hut) then hut:Remove() end
+            if VNPC_RemoveHutStructure then
+                VNPC_RemoveHutStructure(hut)
+            elseif IsValid(hut) then
+                hut:Remove()
+            end
         end
         for _, def in ipairs(camp.courtyardDefenses or {}) do
             if IsValid(def) then def:Remove() end

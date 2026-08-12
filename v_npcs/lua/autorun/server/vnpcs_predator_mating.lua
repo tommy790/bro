@@ -127,7 +127,7 @@ hook.Add("Think", "VNPC_PredatorMating_AI_Loop", function()
             end
 
             -- 2. If camp needs mate, Foragers seek willing male prey to carry home
-            if camp.needsMate and pred.VNPC_CampRole == "forager" then
+            if camp.needsMate and (pred.VNPC_CampRole == "forager" or pred.VNPC_IsCampFounder or (VNPC_HasTownRole and VNPC_HasTownRole(pred, "mate"))) then
                 local belly = pred.VNPC_Belly or pred.Belly
                 if pred.VNPC_IsCarryingMateForCamp and IsValid(belly) and #belly.Prey > 0 then
                     if pred.SetEnemy then pcall(pred.SetEnemy, pred, nil) end
