@@ -52,6 +52,9 @@ function VNPC_GiveFemaleModelVore(ent)
     
     ent.VNPC_FemaleModelVore = true
     ent.Predator = true
+    if VNPC_AssignPreyAttraction then
+        VNPC_AssignPreyAttraction(ent)
+    end
     ent.Belly_Angles = ent.Belly_Angles or Angle(0, 90, 90)
     ent.Belly_Offset = VNPC_GetFixedFemaleBellyOffset(ent)
     
@@ -645,10 +648,10 @@ hook.Add("Think", "VNPC_FemaleModelVore_AI", function()
         local eff_grab = grab_dist * (pers_data and pers_data.grab_multiplier or 1.0)
         local eff_detect = detect_dist * (pers_data and pers_data.range_multiplier or 1.0)
 
-        -- Target enemy if present
+        -- Target enemy if present and this predator is attracted to that prey type
         local enemy = npc:GetEnemy()
         local prefer_swallow = GetConVar("vnpcs_ai_prefer_swallowing")
-        if IsValid(enemy) and enemy ~= npc and not enemy.Vored then
+        if IsValid(enemy) and enemy ~= npc and not enemy.Vored and (not VNPC_ShouldHuntPreyType or VNPC_ShouldHuntPreyType(npc, enemy)) then
             local targetRad = (enemy.OBBMaxs and enemy:OBBMaxs():Length2D() or 30)
             local dist = npc:GetPos():Distance(enemy:GetPos())
             local battle_grab = math.max(140, eff_grab * 1.5) + targetRad + levelBonus
@@ -671,38 +674,59 @@ hook.Add("Think", "VNPC_FemaleModelVore_AI", function()
                 npc.VNPC_RemovedRangeAttack = nil
             end
             if pers_data and pers_data.only_enemies then continue end
-            -- Search for nearby hostile target or corpses
+            -- Search for the nearby hostile / corpse this predator is most attracted to
+            local bestEnt, bestScore = nil, -1e9
+            local bestRag, bestRagScore = nil, -1e9
             for _, ent in ipairs(ents.FindInSphere(npc:GetPos(), eff_detect)) do
-                if IsValid(ent) and ent ~= npc and not ent.Vored and (ent:IsPlayer() or ent:IsNPC()) then
-                    if ent.VNPC_DigestedBone or ent.VNPC_BoneOwner or ent.VNPC_NoVore then continue end
-                    if VNPC_IsFamilyOrMate and VNPC_IsFamilyOrMate(npc, ent) then continue end
-                    if not (npc.VNPC_IsWildWanderer and npc.VNPC_WildType == "predator") and VNPC_IsProtectedChildPrey and VNPC_IsProtectedChildPrey(ent) then continue end
-                    if VNPC_IsPreyEmissary and VNPC_IsPreyEmissary(ent) then continue end
-                    if npc.GetRelationship and npc:GetRelationship(ent) == D_HT then
-                        local targetRad = (ent.OBBMaxs and ent:OBBMaxs():Length2D() or 30)
-                        local levelBonus = (VNPC_GetPredatorLevel and (VNPC_GetPredatorLevel(npc) - 1) * 3) or 0
-                        local grab_reach = math.max(110, eff_grab) + targetRad + levelBonus
-                        if npc:GetPos():Distance(ent:GetPos()) <= grab_reach then
-                            npc:EatEntity(ent)
-                            break
-                        elseif npc.SetEnemy then
-                            pcall(npc.SetEnemy, npc, ent)
-                            if prefer_swallow and prefer_swallow:GetBool() and npc.CapabilitiesRemove then
-                                pcall(npc.CapabilitiesRemove, npc, CAP_WEAPON_RANGE_ATTACK1)
-                                npc.VNPC_RemovedRangeAttack = true
-                            end
-                            if npc.SetSchedule then pcall(npc.SetSchedule, npc, SCHED_CHASE_ENEMY) end
-                            break
+                if not IsValid(ent) or ent == npc or ent.Vored then continue end
+                if ent.VNPC_DigestedBone or ent.VNPC_BoneOwner or ent.VNPC_NoVore then continue end
+                if (ent:GetClass() == "prop_ragdoll" or ent.VNPC_IsCorpse) and npc.CanEatCorpse and npc:CanEatCorpse(ent) then
+                    if VNPC_ShouldHuntPreyType and not VNPC_ShouldHuntPreyType(npc, ent) then continue end
+                    local rag_dist = GetConVar("vnpcs_female_model_vore_ragdoll_range"):GetFloat() or 150
+                    local d = npc:GetPos():Distance(ent:GetPos())
+                    if d <= math.min(eff_grab, rag_dist) then
+                        local score = 80 / (d + 20)
+                        if VNPC_GetPreyAttractionMultiplier then
+                            score = score * VNPC_GetPreyAttractionMultiplier(npc, ent)
+                        end
+                        if score > bestRagScore then
+                            bestRag = ent
+                            bestRagScore = score
                         end
                     end
-                elseif IsValid(ent) and (ent:GetClass() == "prop_ragdoll" or ent.VNPC_IsCorpse) and npc.CanEatCorpse and npc:CanEatCorpse(ent) then
-                    if ent.VNPC_DigestedBone or ent.VNPC_BoneOwner or ent.VNPC_NoVore then continue end
-                    local rag_dist = GetConVar("vnpcs_female_model_vore_ragdoll_range"):GetFloat() or 150
-                    if npc:GetPos():Distance(ent:GetPos()) <= math.min(eff_grab, rag_dist) then
-                        npc:EatEntity(ent)
-                        break
-                    end
+                    continue
                 end
+                if not (ent:IsPlayer() or ent:IsNPC()) then continue end
+                if VNPC_IsFamilyOrMate and VNPC_IsFamilyOrMate(npc, ent) then continue end
+                if not (npc.VNPC_IsWildWanderer and npc.VNPC_WildType == "predator") and VNPC_IsProtectedChildPrey and VNPC_IsProtectedChildPrey(ent) then continue end
+                if VNPC_IsPreyEmissary and VNPC_IsPreyEmissary(ent) then continue end
+                if VNPC_ShouldHuntPreyType and not VNPC_ShouldHuntPreyType(npc, ent) then continue end
+                if not (npc.GetRelationship and npc:GetRelationship(ent) == D_HT) then continue end
+                local d = npc:GetPos():Distance(ent:GetPos())
+                local score = 100 / (d + 40)
+                if VNPC_GetPreyAttractionMultiplier then
+                    score = score * VNPC_GetPreyAttractionMultiplier(npc, ent)
+                end
+                if score > bestScore then
+                    bestEnt = ent
+                    bestScore = score
+                end
+            end
+            if IsValid(bestEnt) then
+                local targetRad = (bestEnt.OBBMaxs and bestEnt:OBBMaxs():Length2D() or 30)
+                local grab_reach = math.max(110, eff_grab) + targetRad + levelBonus
+                if npc:GetPos():Distance(bestEnt:GetPos()) <= grab_reach then
+                    npc:EatEntity(bestEnt)
+                elseif npc.SetEnemy then
+                    pcall(npc.SetEnemy, npc, bestEnt)
+                    if prefer_swallow and prefer_swallow:GetBool() and npc.CapabilitiesRemove then
+                        pcall(npc.CapabilitiesRemove, npc, CAP_WEAPON_RANGE_ATTACK1)
+                        npc.VNPC_RemovedRangeAttack = true
+                    end
+                    if npc.SetSchedule then pcall(npc.SetSchedule, npc, SCHED_CHASE_ENEMY) end
+                end
+            elseif IsValid(bestRag) then
+                npc:EatEntity(bestRag)
             end
         end
     end

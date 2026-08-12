@@ -1024,8 +1024,9 @@ concommand.Add("vnpcs_wild_ecology_status", function(ply)
                 local mateStr = IsValid(w.VNPC_WildMate) and (" | Mate: [" .. w.VNPC_WildMate:EntIndex() .. "]") or ""
                 local loveStr = (w.VNPC_MateLove and w.VNPC_MateLove > 0) and string.format(" | Love: %.0f", w.VNPC_MateLove) or ""
                 local pregStr = w.VNPC_IsPregnant and string.format(" | Pregnant: %.1f/50 x%d", w.VNPC_BabyGrowthValue or 40, math.max(1, tonumber(w.VNPC_LitterSize) or 1)) or ""
-                print(string.format(" -> Wild Predator [#%d] %s | Pers: %s | HP: %d%s%s%s",
-                    w:EntIndex(), w:GetClass(), string.upper(pers), w:Health(), mateStr, loveStr, pregStr))
+                local dietStr = (VNPC_FormatPreyAttraction and (" | Attracted: " .. VNPC_FormatPreyAttraction(w))) or ""
+                print(string.format(" -> Wild Predator [#%d] %s | Pers: %s | HP: %d%s%s%s%s",
+                    w:EntIndex(), w:GetClass(), string.upper(pers), w:Health(), mateStr, loveStr, pregStr, dietStr))
             else
                 wPrey = wPrey + 1
                 local pers = w.VNPC_PreyPersonality or w.PreyPersonality or "fighter"

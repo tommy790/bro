@@ -178,6 +178,9 @@ function VNPC_SetPredatorPersonality(ent, pers_name)
     if VNPC_PREDATOR_PERSONALITIES[pers_name] then
         ent.VNPC_PredatorPersonality = pers_name
         if ent.VoreSettings then ent.VoreSettings.PredatorPersonality = pers_name end
+        if VNPC_AssignPreyAttraction then
+            VNPC_AssignPreyAttraction(ent)
+        end
     end
 end
 
@@ -213,6 +216,9 @@ function VNPC_RandomizePersonalities(ent)
     if ent.VoreSettings then ent.VoreSettings.PredatorPersonality = pred_pers end
     ent.VNPC_PreyPersonality = prey_pers
     ent.PreyPersonality = prey_pers
+    if VNPC_AssignPreyAttraction then
+        VNPC_AssignPreyAttraction(ent)
+    end
     return pred_pers, prey_pers
 end
 
