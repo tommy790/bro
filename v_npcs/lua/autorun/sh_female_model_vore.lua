@@ -2066,6 +2066,75 @@ VNPC_HeavyGroundMountBonePose = {
     ["ValveBiped.Bip01_L_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(-85, -25, 0) }
 }
 
+CreateConVar("vnpcs_calm_swallow_animation", "1", {FCVAR_REPLICATED, FCVAR_ARCHIVE}, "Enable 5-second grab-lift-gulp oral swallow pose when a human predator swallows human prey")
+
+VNPC_Calm5SecSwallowKeyframes = {
+    length = 5.0,
+    oneshot = true,
+    keyframes = {
+        [0.00] = { -- grab
+            ["ValveBiped.Bip01_Head1"] = { pos = Vector(0, 0, 0), ang = Angle(0, 15, 0) },
+            ["ValveBiped.Bip01_Spine1"] = { pos = Vector(0, 0, 0), ang = Angle(0, -3, 0) },
+            ["ValveBiped.Bip01_R_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(50, -20, 30) },
+            ["ValveBiped.Bip01_R_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(-80, 25, -40) },
+            ["ValveBiped.Bip01_R_Hand"] = { pos = Vector(0, 0, 0), ang = Angle(10, 0, 0) },
+            ["ValveBiped.Bip01_L_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(-50, -20, -30) },
+            ["ValveBiped.Bip01_L_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(80, 25, 40) },
+            ["ValveBiped.Bip01_L_Hand"] = { pos = Vector(0, 0, 0), ang = Angle(-10, 0, 0) }
+        },
+        [0.20] = { -- lift prey to open mouth
+            ["ValveBiped.Bip01_Head1"] = { pos = Vector(0, 0, 0), ang = Angle(0, 28, 0) },
+            ["ValveBiped.Bip01_Spine1"] = { pos = Vector(0, 0, 0), ang = Angle(0, -5, 0) },
+            ["ValveBiped.Bip01_R_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(65, -35, 40) },
+            ["ValveBiped.Bip01_R_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(-120, 45, -70) },
+            ["ValveBiped.Bip01_R_Hand"] = { pos = Vector(0, 0, 0), ang = Angle(15, -10, 20) },
+            ["ValveBiped.Bip01_L_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(-65, -35, -40) },
+            ["ValveBiped.Bip01_L_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(120, 45, 70) },
+            ["ValveBiped.Bip01_L_Hand"] = { pos = Vector(0, 0, 0), ang = Angle(-15, -10, -20) }
+        },
+        [0.40] = { -- guide head into mouth
+            ["ValveBiped.Bip01_Head1"] = { pos = Vector(0, 0, 0), ang = Angle(0, 35, 0) },
+            ["ValveBiped.Bip01_Spine1"] = { pos = Vector(0, 0, 0), ang = Angle(0, -8, 0) },
+            ["ValveBiped.Bip01_R_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(55, -40, 30) },
+            ["ValveBiped.Bip01_R_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(-140, 50, -100) },
+            ["ValveBiped.Bip01_R_Hand"] = { pos = Vector(0, 0, 0), ang = Angle(20, -30, 40) },
+            ["ValveBiped.Bip01_L_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(-55, -40, -30) },
+            ["ValveBiped.Bip01_L_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(140, 50, 100) },
+            ["ValveBiped.Bip01_L_Hand"] = { pos = Vector(0, 0, 0), ang = Angle(-20, -30, -40) }
+        },
+        [0.60] = { -- throat swallow
+            ["ValveBiped.Bip01_Head1"] = { pos = Vector(0, 0, 0), ang = Angle(0, 15, 0) },
+            ["ValveBiped.Bip01_Spine1"] = { pos = Vector(0, 0, 0), ang = Angle(0, 0, 0) },
+            ["ValveBiped.Bip01_R_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(40, -40, 20) },
+            ["ValveBiped.Bip01_R_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(-145, 50, -110) },
+            ["ValveBiped.Bip01_R_Hand"] = { pos = Vector(0, 0, 0), ang = Angle(25, -20, 50) },
+            ["ValveBiped.Bip01_L_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(-40, -40, -20) },
+            ["ValveBiped.Bip01_L_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(145, 50, 110) },
+            ["ValveBiped.Bip01_L_Hand"] = { pos = Vector(0, 0, 0), ang = Angle(-25, -20, -50) }
+        },
+        [0.80] = { -- final gulp
+            ["ValveBiped.Bip01_Head1"] = { pos = Vector(0, 0, 0), ang = Angle(-10, -15, 5) },
+            ["ValveBiped.Bip01_Spine1"] = { pos = Vector(0, 0, 0), ang = Angle(0, 5, 0) },
+            ["ValveBiped.Bip01_R_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(25, -30, 20) },
+            ["ValveBiped.Bip01_R_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(-155, 45, -120) },
+            ["ValveBiped.Bip01_R_Hand"] = { pos = Vector(0, 0, 0), ang = Angle(30, 40, 60) },
+            ["ValveBiped.Bip01_L_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(-25, -30, -20) },
+            ["ValveBiped.Bip01_L_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(155, 45, 120) },
+            ["ValveBiped.Bip01_L_Hand"] = { pos = Vector(0, 0, 0), ang = Angle(-30, 40, -60) }
+        },
+        [1.00] = { -- settle
+            ["ValveBiped.Bip01_Head1"] = { pos = Vector(0, 0, 0), ang = Angle(0, -5, 0) },
+            ["ValveBiped.Bip01_Spine1"] = { pos = Vector(0, 0, 0), ang = Angle(0, -5, 0) },
+            ["ValveBiped.Bip01_R_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(15, -15, 10) },
+            ["ValveBiped.Bip01_R_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(-90, 25, -40) },
+            ["ValveBiped.Bip01_R_Hand"] = { pos = Vector(0, 0, 0), ang = Angle(10, 10, 20) },
+            ["ValveBiped.Bip01_L_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(-15, -15, -10) },
+            ["ValveBiped.Bip01_L_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(-90, -25, 40) },
+            ["ValveBiped.Bip01_L_Hand"] = { pos = Vector(0, 0, 0), ang = Angle(-10, 10, -20) }
+        }
+    }
+}
+
 VNPC_SleepingCrawlReceiveKeyframes = {
     length = 7.5,
     keyframes = {
@@ -2124,7 +2193,9 @@ function VNPC_AnimatedBoneOffsets(ent)
     local phase = ent:GetNWInt("FacialPhase", -1)
     local animList = VNPC_GetAnimatedBoneList(ent)
     local data = animList[phase] or animList[0]
-    if (ent.VNPC_IsMatingBonePose or (ent.GetNWBool and ent:GetNWBool("VNPC_IsMatingBonePose"))) and VNPC_MatingBonePose then
+    if (ent.VNPC_IsHumanOralSwallow or (ent.GetNWBool and ent:GetNWBool("VNPC_IsHumanOralSwallow"))) and VNPC_Calm5SecSwallowKeyframes then
+        data = VNPC_Calm5SecSwallowKeyframes
+    elseif (ent.VNPC_IsMatingBonePose or (ent.GetNWBool and ent:GetNWBool("VNPC_IsMatingBonePose"))) and VNPC_MatingBonePose then
         data = VNPC_MatingBonePose
     elseif (ent.VNPC_IsWillingUnbirthCrawl or (ent.GetNWBool and ent:GetNWBool("VNPC_IsWillingUnbirthCrawl"))) and VNPC_UnbirthWillingReceiveBonePose then
         data = VNPC_UnbirthWillingReceiveBonePose
@@ -2155,7 +2226,11 @@ function VNPC_AnimatedBoneOffsets(ent)
         if data and data.keyframes and data.length then
             local elapsed = CurTime() - (ent.FacialPhaseStartTime or 0)
             local tNorm = elapsed / data.length
-            tNorm = math.abs((tNorm % 2) - 1)
+            if data.oneshot then
+                tNorm = math.Clamp(tNorm, 0, 1)
+            else
+                tNorm = math.abs((tNorm % 2) - 1)
+            end
             tgtPos, tgtAng = VNPC_InterpolateKeyframes(data.keyframes, tNorm, boneName)
         elseif data then
             local tgt = (data.pose and data.pose[boneName]) or data[boneName]

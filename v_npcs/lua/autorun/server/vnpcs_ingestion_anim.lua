@@ -39,6 +39,73 @@ local function resetAllBoneManipulations(ent)
     end
 end
 
+function VNPC_RevealSwallowingPrey(prey)
+    if not IsValid(prey) then return end
+    prey:SetNoDraw(false)
+    if prey.RemoveEffects then prey:RemoveEffects(EF_NODRAW) end
+    if prey.SetRenderMode then prey:SetRenderMode(RENDERMODE_NORMAL) end
+    if prey.SetColor then prey:SetColor(Color(255, 255, 255, 255)) end
+    if prey.SetRenderFX then prey:SetRenderFX(kRenderFxNone) end
+    if prey.DrawShadow then prey:DrawShadow(true) end
+end
+
+function VNPC_IsHumanoidSwallowPrey(prey)
+    if not IsValid(prey) then return false end
+    local species = VNPC_GetPreySpecies(prey)
+    return species == "human" or species == "zombie"
+end
+
+local function lerpDeflateCategory(ent, category, amount)
+    amount = math.Clamp(amount or 0, 0, 1)
+    local s = Lerp(amount, 1, 0.04)
+    deflateBoneCategory(ent, category, Vector(s, s, s))
+end
+
+function VNPC_ApplyHumanOralSwallowTransform(pred, prey, tEase)
+    if not IsValid(pred) or not IsValid(prey) then return end
+    local headBone = pred:LookupBone("ValveBiped.Bip01_Head1") or pred:LookupBone("Head") or pred:LookupBone("head")
+    local headPos = nil
+    if headBone then
+        headPos = pred:GetBonePosition(headBone)
+    end
+    if not headPos then
+        headPos = pred:GetPos() + pred:GetUp() * 64
+    end
+
+    local fwd = pred:GetForward()
+    local up = pred:GetUp()
+    local yaw = pred:GetAngles().y + 180
+
+    local grabPos = pred:GetPos() + fwd * 34 + Vector(0, 0, 10)
+    local liftPos = headPos + fwd * 24 + up * 8
+    local mouthPos = headPos + fwd * 10 + up * 2
+    local throatPos = headPos - fwd * 2 - up * 8
+    local bellyPos = pred:GetPos() + fwd * 6 + Vector(0, 0, 36)
+
+    local pos, pitch
+    if tEase < 0.18 then
+        local a = tEase / 0.18
+        pos = LerpVector(a, grabPos, liftPos)
+        pitch = Lerp(a, 6, 28)
+    elseif tEase < 0.40 then
+        local a = (tEase - 0.18) / 0.22
+        pos = LerpVector(a, liftPos, mouthPos)
+        pitch = Lerp(a, 28, 70)
+    elseif tEase < 0.72 then
+        local a = (tEase - 0.40) / 0.32
+        pos = LerpVector(a, mouthPos, throatPos)
+        pitch = Lerp(a, 70, 84)
+    else
+        local a = (tEase - 0.72) / 0.28
+        pos = LerpVector(a, throatPos, bellyPos)
+        pitch = Lerp(a, 84, 92)
+    end
+
+    prey:SetParent(nil)
+    prey:SetPos(pos)
+    prey:SetAngles(Angle(pitch, yaw, 0))
+end
+
 VNPC_PreyStruggleProfiles = {
     ["chiku"] = {
         spine = function(now) return Angle(0, 25, math.sin(now * 16) * 18) end,
@@ -291,16 +358,17 @@ function VNPC_StartIngestionAnimation(pred, prey, belly)
     local dur_cv = GetConVar("vnpcs_ingestion_duration")
     local duration = dur_cv and dur_cv:GetFloat() or 1.2
     local calm_swallow_cv = GetConVar("vnpcs_calm_swallow_animation")
-    if calm_swallow_cv and calm_swallow_cv:GetBool() and not IsValid(pred:GetEnemy()) then
+    if calm_swallow_cv and calm_swallow_cv:GetBool() and pred.GetEnemy and not IsValid(pred:GetEnemy()) then
         duration = 5.0
     end
     if duration <= 0.1 then return false end
 
-    -- Keep prey visible during ingestion animation
-    prey:SetNoDraw(false)
+    -- Keep the actual prey model visible for the whole oral swallow
+    VNPC_RevealSwallowingPrey(prey)
     prey.VNPC_IsBeingSwallowed = true
 
     local species = VNPC_GetPreySpecies(prey)
+    local isHumanoid = (species == "human" or species == "zombie")
     local isHeavyGround = (species == "antlionguard" or prey.VNPC_IsHeavyGroundPrey or (prey.GetMaxHealth and prey:GetMaxHealth() >= 250))
     if isHeavyGround then
         duration = math.max(duration, 7.5)
@@ -316,6 +384,18 @@ function VNPC_StartIngestionAnimation(pred, prey, belly)
         prey.VNPC_IsAntlionPrey = true
         prey:SetParent(nil)
         print("[V-NPCs] Antlion Lift & Slow Swallow: Predator " .. tostring(pred) .. " lifted " .. tostring(prey) .. " (Antlion) off the ground and is slowly forcing it into her mouth over " .. duration .. "s!")
+    elseif isHumanoid then
+        -- Human pred -> human prey/pred: grab, lift, head-first oral swallow with the prey model still drawn
+        duration = math.max(duration, 5.5)
+        prey.VNPC_IsHumanOralSwallow = true
+        pred.VNPC_IsHumanOralSwallow = true
+        if pred.SetNWBool then pred:SetNWBool("VNPC_IsHumanOralSwallow", true) end
+        if pred.SetNWInt then pred:SetNWInt("FacialPhase", 1) end
+        pred.FacialPhaseStartTime = CurTime()
+        pred.LastFacialPhase = 1
+        prey:SetParent(nil)
+        VNPC_ApplyHumanOralSwallowTransform(pred, prey, 0)
+        print("[V-NPCs] Human Oral Swallow: Predator " .. tostring(pred) .. " grabbed " .. tostring(prey) .. " and is swallowing them head-first over " .. duration .. "s!")
     else
         -- Position prey at predator's mouth / head area
         local headBone = pred:LookupBone("ValveBiped.Bip01_Head1") or pred:LookupBone("Head") or pred:LookupBone("head")
@@ -325,7 +405,9 @@ function VNPC_StartIngestionAnimation(pred, prey, belly)
                 prey:SetPos(headPos + pred:GetForward() * 15 - pred:GetUp() * 5)
             end
         end
-        prey:SetParent(pred)
+        if not prey:IsPlayer() then
+            prey:SetParent(pred)
+        end
     end
 
     -- Ensure predator opens mouth wide for swallowing
@@ -397,9 +479,13 @@ hook.Add("Think", "VNPCS_IngestionAnimation_Loop", function()
 
         if not IsValid(pred) or not IsValid(prey) or not IsValid(belly) then
             if IsValid(prey) then
-                resetAllBoneScales(prey)
-                prey:SetNoDraw(true)
+                resetAllBoneManipulations(prey)
                 prey.VNPC_IsBeingSwallowed = false
+                prey.VNPC_IsHumanOralSwallow = nil
+            end
+            if IsValid(pred) then
+                pred.VNPC_IsHumanOralSwallow = nil
+                if pred.SetNWBool then pred:SetNWBool("VNPC_IsHumanOralSwallow", false) end
             end
             if IsValid(pred) then
                 VNPC_ResetEsophagusBulge(pred)
@@ -463,8 +549,15 @@ hook.Add("Think", "VNPCS_IngestionAnimation_Loop", function()
                 prey:SetPos(curP)
                 if pred.SetFacialExpression then pcall(pred.SetFacialExpression, pred, 1) end
             end
+        elseif prey.VNPC_IsHumanOralSwallow then
+            VNPC_RevealSwallowingPrey(prey)
+            VNPC_ApplyHumanOralSwallowTransform(pred, prey, tEase)
+            if pred.SetFacialExpression then
+                pcall(pred.SetFacialExpression, pred, (tEase >= 0.82) and 4 or 1)
+            end
         else
             -- Keep prey positioned at predator's mouth as she swallows
+            VNPC_RevealSwallowingPrey(prey)
             local headBone = pred:LookupBone("ValveBiped.Bip01_Head1") or pred:LookupBone("Head") or pred:LookupBone("head")
             if headBone then
                 local headPos, headAng = pred:GetBonePosition(headBone)
@@ -478,31 +571,55 @@ hook.Add("Think", "VNPCS_IngestionAnimation_Loop", function()
 
         VNPC_AnimatePreyStruggling(prey, anim.stage, tEase, pred.VNPC_AssignedMoveset)
         if not isUnbirth then
-            VNPC_ApplyEsophagusBulge(pred, tEase)
+            if prey.VNPC_IsHumanOralSwallow then
+                VNPC_ApplyEsophagusBulge(pred, math.Clamp((tEase - 0.38) / 0.50, 0, 1))
+            else
+                VNPC_ApplyEsophagusBulge(pred, tEase)
+            end
         end
 
-        -- STAGE 1 (tEase >= 0.05): Head enters mouth -> Deflate head & neck bones so there is zero clipping!
-        if tEase >= 0.05 and anim.stage < 1 then
+        local isHumanOral = prey.VNPC_IsHumanOralSwallow and true or false
+        local headEnter = isHumanOral and 0.40 or 0.05
+        local torsoEnter = isHumanOral and 0.60 or 0.35
+        local legsEnter = isHumanOral and 0.82 or 0.70
+
+        -- STAGE 1: Head enters mouth. Human prey stays full-size until the head is actually inside.
+        if tEase >= headEnter and anim.stage < 1 then
             anim.stage = 1
-            deflateBoneCategory(prey, "head", Vector(0.01, 0.01, 0.01))
+            if not isHumanOral then
+                deflateBoneCategory(prey, "head", Vector(0.01, 0.01, 0.01))
+            end
             if prey.EmitSound then prey:EmitSound("physics/flesh/flesh_squishy_impact_hard" .. math.random(1, 4) .. ".wav", 75, math.random(95, 105)) end
         end
+        if isHumanOral and tEase >= headEnter then
+            lerpDeflateCategory(prey, "head", (tEase - headEnter) / 0.14)
+        end
 
-        -- STAGE 2 (tEase >= 0.35): Upper body enters throat -> Deflate torso, arms, and collarbones!
-        if tEase >= 0.35 and anim.stage < 2 then
+        -- STAGE 2: Upper body enters throat. Human torso shrinks only after it has slid in; kicking legs stay visible.
+        if tEase >= torsoEnter and anim.stage < 2 then
             anim.stage = 2
-            deflateBoneCategory(prey, "torso", Vector(0.01, 0.01, 0.01))
+            if not isHumanOral then
+                deflateBoneCategory(prey, "torso", Vector(0.01, 0.01, 0.01))
+            end
             if prey.EmitSound then prey:EmitSound("physics/flesh/flesh_squishy_impact_hard" .. math.random(1, 4) .. ".wav", 75, math.random(95, 105)) end
         end
+        if isHumanOral and tEase >= torsoEnter then
+            lerpDeflateCategory(prey, "torso", (tEase - torsoEnter) / 0.16)
+        end
 
-        -- STAGE 3 (tEase >= 0.70): Legs and feet slide in -> Deflate lower body!
-        if tEase >= 0.70 and anim.stage < 3 then
+        -- STAGE 3: Legs and feet slide in.
+        if tEase >= legsEnter and anim.stage < 3 then
             anim.stage = 3
-            deflateBoneCategory(prey, "legs", Vector(0.01, 0.01, 0.01))
+            if not isHumanOral then
+                deflateBoneCategory(prey, "legs", Vector(0.01, 0.01, 0.01))
+            end
             if prey.EmitSound then prey:EmitSound("physics/flesh/flesh_squishy_impact_hard" .. math.random(1, 4) .. ".wav", 75, math.random(95, 105)) end
             if pred.SetFacialExpression then
                 pcall(pred.SetFacialExpression, pred, 4) -- Final Gulp face!
             end
+        end
+        if isHumanOral and tEase >= legsEnter then
+            lerpDeflateCategory(prey, "legs", (tEase - legsEnter) / 0.16)
         end
 
         -- STAGE 4 (tNorm >= 1.00): Ingestion complete! Store prey inside belly and reset bone manipulations!
@@ -515,6 +632,9 @@ hook.Add("Think", "VNPCS_IngestionAnimation_Loop", function()
                 if pred.SetNWBool then pred:SetNWBool("VNPC_IsMountingHeavyPrey", false) end
             end
             prey.VNPC_IsAntlionPrey = nil
+            prey.VNPC_IsHumanOralSwallow = nil
+            pred.VNPC_IsHumanOralSwallow = nil
+            if pred.SetNWBool then pred:SetNWBool("VNPC_IsHumanOralSwallow", false) end
             if VNPC_HideSwallowedPrey then
                 VNPC_HideSwallowedPrey(prey, belly)
             else

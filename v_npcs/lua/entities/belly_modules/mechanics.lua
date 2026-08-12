@@ -374,27 +374,27 @@ function ENT:AddPrey(prey)
     prey:SetMoveType(MOVETYPE_NONE)
     prey:AddEFlags(EFL_NOCLIP_ACTIVE)
     prey:AddFlags(FL_NOTARGET)
-    VNPC_HideSwallowedPrey(prey, self)
 
     if is_npc then
         prey:SetSchedule(SCHED_NPC_FREEZE)
         prey:SetEnemy(nil)
     end
 
-    if not is_player then
-        prey:SetPos(self:GetPos())
-        prey:SetParent(self)
-
-        --[[
-            only npcs get parented because they cant see,
-            aka if a player is under the map or out of bounds entities arent rendered and sometimes players do that when they get parented so ya
-        ]]
-    end
-
     VNPC_SwallowAttachedEntities(self, prey)
 
+    -- Keep the prey model visible for the oral swallow animation; hide only if it cannot start.
+    prey.VNPC_IsBeingSwallowed = true
+    local startedIngest = false
     if VNPC_StartIngestionAnimation then
-        VNPC_StartIngestionAnimation(self.NPC or self:GetOwner() or self, prey, self)
+        startedIngest = VNPC_StartIngestionAnimation(self.NPC or self:GetOwner() or self, prey, self) and true or false
+    end
+    if not startedIngest then
+        prey.VNPC_IsBeingSwallowed = nil
+        VNPC_HideSwallowedPrey(prey, self)
+        if not is_player then
+            prey:SetPos(self:GetPos())
+            prey:SetParent(self)
+        end
     end
 
     if prey:Health() < 25 then --fix for objects/npcs getting instantly digested, uhhhh super binary and hardcoded
