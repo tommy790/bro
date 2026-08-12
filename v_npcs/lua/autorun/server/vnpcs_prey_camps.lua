@@ -16,6 +16,10 @@ local town_evolve_rate = CreateConVar("vnpcs_town_evolution_rate", "1.5", {FCVAR
 
 VNPC_ActivePreyCamps = VNPC_ActivePreyCamps or {}
 
+AddCSLuaFile("autorun/client/cl_vnpcs_prey_camp_ui.lua")
+util.AddNetworkString("VNPC_PreyCampJoinPrompt")
+util.AddNetworkString("VNPC_PreyCampJoinResponse")
+
 local PREY_WALL_MODELS = {
     "models/props_wasteland/wood_fence01a.mdl",       -- Wide wooden fence barrier
     "models/props_c17/fence01a.mdl"                   -- Metal chainlink fence barrier (base HL2)
@@ -436,6 +440,82 @@ function VNPC_AssignPreyToCamp(npc, force)
         return VNPC_CreatePreyCamp(npcPos, npc)
     end
 end
+
+hook.Add("KeyPress", "VNPC_PreyCamp_PlayerUseJoin", function(ply, key)
+    if key ~= IN_USE or not IsValid(ply) or not ply:IsPlayer() then return end
+    if (ply.VNPC_NextCampPromptTime or 0) > CurTime() then return end
+
+    local tr = ply:GetEyeTrace()
+    local target = tr.Entity
+    if not IsValid(target) or tr.HitPos:DistToSqr(ply:GetEyeTrace().StartPos) > (130 * 130) then return end
+    if not VNPC_IsEligiblePreyNPC(target) and not target.VNPC_PreyCampID then return end
+
+    local camp = VNPC_GetPreyCamp(target)
+    if not camp then return end
+
+    if ply.VNPC_PreyCampID == camp.id then return end
+
+    ply.VNPC_NextCampPromptTime = CurTime() + 3.0
+
+    net.Start("VNPC_PreyCampJoinPrompt")
+        net.WriteUInt(camp.id, 32)
+        net.WriteString(camp.townStageName or "OUTPOST")
+        net.WriteUInt(#(camp.members or {}), 16)
+    net.Send(ply)
+end)
+
+net.Receive("VNPC_PreyCampJoinResponse", function(len, ply)
+    if not IsValid(ply) then return end
+    local campID = net.ReadUInt(32)
+    local accepted = net.ReadBool()
+    if not accepted or not campID then return end
+
+    local targetCamp = nil
+    for _, camp in ipairs(VNPC_ActivePreyCamps or {}) do
+        if camp.id == campID then
+            targetCamp = camp
+            break
+        end
+    end
+
+    if targetCamp then
+        if ply.VNPC_PreyCampID then
+            local oldCamp = nil
+            for _, c in ipairs(VNPC_ActivePreyCamps or {}) do
+                if c.id == ply.VNPC_PreyCampID then oldCamp = c break end
+            end
+            if oldCamp and oldCamp.members then
+                for m = #oldCamp.members, 1, -1 do
+                    if oldCamp.members[m] == ply then table.remove(oldCamp.members, m) end
+                end
+            end
+        end
+
+        ply.VNPC_PreyCampID = targetCamp.id
+        targetCamp.members = targetCamp.members or {}
+        if not table.HasValue(targetCamp.members, ply) then
+            table.insert(targetCamp.members, ply)
+        end
+
+        if ply.EmitSound then
+            ply:EmitSound("npc/citizen/vo/nice.wav", 75, 105)
+        end
+
+        print(string.format("[V-NPCs] Player %s [%d] joined Prey Camp #%d [%s]!", ply:Nick(), ply:EntIndex(), targetCamp.id, tostring(targetCamp.townStageName or "OUTPOST")))
+        hook.Run("VNPC_OnPlayerJoinPreyCamp", ply, targetCamp)
+    end
+end)
+
+hook.Add("PlayerDisconnected", "VNPC_PreyCamp_PlayerDisconnect", function(ply)
+    if not IsValid(ply) or not ply.VNPC_PreyCampID then return end
+    for _, camp in ipairs(VNPC_ActivePreyCamps or {}) do
+        if camp.members then
+            for m = #camp.members, 1, -1 do
+                if camp.members[m] == ply then table.remove(camp.members, m) end
+            end
+        end
+    end
+end)
 
 function VNPC_PlanPreyCampLayout(camp)
     if not camp or not camp.pos then return end
@@ -2057,14 +2137,52 @@ concommand.Add("vnpcs_prey_camps_status", function(ply)
         local decStr = camp.leaderDecision and string.format(" | Strategy Decision: %s", camp.leaderDecision) or ""
         local stageData = VNPC_TownDevelopmentStages and VNPC_TownDevelopmentStages[camp.townStage or 1]
         local townStr = string.format(" | Town Stage: %d [%s] (Dev Pts: %d / %d)", camp.townStage or 1, stageData and stageData.name or "OUTPOST", math.floor(camp.townDevPoints or 0), stageData and stageData.ptsRequired or 0)
-        print(string.format(" -> Prey Camp [#%d] | Members: %d%s (Pregnant: %d)%s%s%s%s%s%s%s | Territory Radius: %d | Walls: %d | Huts: %d | Courtyard Defenses: %d | Resources: %.1f | Fortified: %s",
-            camp.id, #camp.members, stateStr, pregCount, indoorStr, guardStr, infStr, leaderStr, hutStr, decStr, townStr, math.floor(camp.territoryRadius or 450), #camp.walls, #(camp.huts or {}), #(camp.courtyardDefenses or {}), camp.resources or 0, tostring(camp.fortified or false)))
+        local playerCount = 0
+        for _, m in ipairs(camp.members) do
+            if IsValid(m) and m:IsPlayer() then playerCount = playerCount + 1 end
+        end
+        local plyStr = playerCount > 0 and string.format(" (Players: %d)", playerCount) or ""
+        print(string.format(" -> Prey Camp [#%d] | Members: %d%s%s (Pregnant: %d)%s%s%s%s%s%s%s | Territory Radius: %d | Walls: %d | Huts: %d | Courtyard Defenses: %d | Resources: %.1f | Fortified: %s",
+            camp.id, #camp.members, plyStr, stateStr, pregCount, indoorStr, guardStr, infStr, leaderStr, hutStr, decStr, townStr, math.floor(camp.territoryRadius or 450), #camp.walls, #(camp.huts or {}), #(camp.courtyardDefenses or {}), camp.resources or 0, tostring(camp.fortified or false)))
     end
     print("Total active prey camps: " .. #VNPC_ActivePreyCamps)
     print("=========================================")
     if IsValid(ply) then
         ply:ChatPrint("[V-NPCs] Prey camp status printed to console. Active prey camps: " .. #VNPC_ActivePreyCamps)
     end
+end)
+
+concommand.Add("vnpcs_test_join_prey_camp", function(ply)
+    if not IsValid(ply) or not ply:IsPlayer() then return end
+    local camp = VNPC_ActivePreyCamps[1]
+    if not camp then
+        print("[V-NPCs] No active prey camps available to join!")
+        return
+    end
+    net.Start("VNPC_PreyCampJoinPrompt")
+        net.WriteUInt(camp.id, 32)
+        net.WriteString(camp.townStageName or "OUTPOST")
+        net.WriteUInt(#(camp.members or {}), 16)
+    net.Send(ply)
+    print(string.format("[V-NPCs] Sent Prey Camp #%d recruitment popup prompt to player %s!", camp.id, ply:Nick()))
+end)
+
+concommand.Add("vnpcs_test_leave_prey_camp", function(ply)
+    if not IsValid(ply) or not ply:IsPlayer() or not ply.VNPC_PreyCampID then
+        print("[V-NPCs] You are not currently in a Prey Camp!")
+        return
+    end
+    local oldID = ply.VNPC_PreyCampID
+    for _, camp in ipairs(VNPC_ActivePreyCamps or {}) do
+        if camp.id == oldID and camp.members then
+            for m = #camp.members, 1, -1 do
+                if camp.members[m] == ply then table.remove(camp.members, m) end
+            end
+        end
+    end
+    ply.VNPC_PreyCampID = nil
+    if ply.EmitSound then ply:EmitSound("buttons/button15.wav", 75, 100) end
+    print(string.format("[V-NPCs] Player %s left Prey Camp #%d!", ply:Nick(), oldID))
 end)
 
 concommand.Add("vnpcs_test_camp_leader", function(ply)
