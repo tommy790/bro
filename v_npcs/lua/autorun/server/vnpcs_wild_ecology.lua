@@ -427,12 +427,15 @@ end
 
 function VNPC_IsMaleWildWanderer(ent)
     if not IsValid(ent) or ent:Health() <= 0 or ent.Vored or ent.VNPC_Vored then return false end
-    if ent.VNPC_IsPregnant or ent.VNPC_WildMate then return false end
+    if ent.VNPC_IsPregnant then return false end
+    if VNPC_IsAdultPreyCitizen and not VNPC_IsAdultPreyCitizen(ent) then return false end
+    if VNPC_IsMalePreyCitizen and VNPC_IsMalePreyCitizen(ent) then return true end
+    if VNPC_ModelLooksFemale and VNPC_ModelLooksFemale(ent) then return false end
     if ent.VNPC_ChildGender == "male" then return true end
     local mdl = string.lower(ent:GetModel() or "")
     local cls = string.lower(ent:GetClass() or "")
     if cls:find("citizen") or cls:find("rebel") or cls:find("refugee") then
-        if mdl:find("male") or mdl:find("m_") or mdl:find("group01/male") or not (mdl:find("female") or mdl:find("alyx") or mdl:find("mossman")) then
+        if mdl:find("male") or mdl:find("m_") or mdl:find("group01/male") or not (mdl:find("female") or mdl:find("alyx") or mdl:find("mossman") or mdl:find("girl") or mdl:find("woman")) then
             return true
         end
     end
@@ -441,13 +444,15 @@ end
 
 function VNPC_IsFemaleWildWanderer(ent)
     if not IsValid(ent) or ent:Health() <= 0 or ent.Vored or ent.VNPC_Vored then return false end
-    if not ent.VNPC_IsWildWanderer then return false end
-    if ent.VNPC_IsPregnant or ent.VNPC_WildMate then return false end
-    if ent.VNPC_WildType == "predator" then return true end
+    if ent.VNPC_IsPregnant then return false end
+    if VNPC_IsAdultPreyCitizen and not VNPC_IsAdultPreyCitizen(ent) then return false end
+    if ent.VNPC_WildType == "predator" or ent.IsDrGNextbot or ent.VNPC_FemaleModelVore or ent.Predator then return true end
+    if VNPC_IsFemalePreyCitizen and VNPC_IsFemalePreyCitizen(ent) then return true end
+    if VNPC_ModelLooksFemale and VNPC_ModelLooksFemale(ent) then return true end
     local mdl = string.lower(ent:GetModel() or "")
     local cls = string.lower(ent:GetClass() or "")
     if cls:find("citizen") or cls:find("rebel") or cls:find("refugee") or cls:find("alyx") or cls:find("mossman") then
-        if mdl:find("female") or mdl:find("alyx") or mdl:find("mossman") or mdl:find("f_") then
+        if mdl:find("female") or mdl:find("alyx") or mdl:find("mossman") or mdl:find("f_") or mdl:find("girl") or mdl:find("woman") or mdl:find("lady") then
             return true
         end
     end
@@ -488,10 +493,17 @@ end
 function VNPC_BeginMatingBonePose(pred, mate, now)
     if not IsValid(pred) or not IsValid(mate) then return false end
     now = now or CurTime()
+    local love = VNPC_GetMateLove and VNPC_GetMateLove(pred, mate) or 0
+    if VNPC_AddMateLove then
+        love = VNPC_AddMateLove(pred, mate, 8.0)
+    end
+    pred.VNPC_MateBondCount = (pred.VNPC_MateBondCount or 0) + 1
+    mate.VNPC_MateBondCount = (mate.VNPC_MateBondCount or 0) + 1
+    local dur = (VNPC_GetMatingDuration and VNPC_GetMatingDuration(love)) or 8.0
     pred.VNPC_IsMatingBonePose = true
     mate.VNPC_IsMatingBonePose = true
-    pred.VNPC_MatingPoseEndTime = now + 8.0
-    mate.VNPC_MatingPoseEndTime = now + 8.0
+    pred.VNPC_MatingPoseEndTime = now + dur
+    mate.VNPC_MatingPoseEndTime = now + dur
     if pred.SetNWBool then pred:SetNWBool("VNPC_IsMatingBonePose", true) end
     if mate.SetNWBool then mate:SetNWBool("VNPC_IsMatingBonePose", true) end
 
@@ -506,7 +518,7 @@ function VNPC_BeginMatingBonePose(pred, mate, now)
     if mate.SetSchedule then pcall(mate.SetSchedule, mate, SCHED_NPC_FREEZE) end
     if pred.EmitSound then pred:EmitSound("npc/alyx/vo/flatter.wav", 80, math.random(100, 110)) end
     if mate.EmitSound then mate:EmitSound("npc/citizen/vo/nice.wav", 75, math.random(100, 110)) end
-    print("[V-NPCs] Mating Bone Pose: Couple " .. tostring(pred) .. " & " .. tostring(mate) .. " started the mating bone pose!")
+    print(string.format("[V-NPCs] Mating Bone Pose: Couple %s & %s started the mating bone pose for %.1fs (love %.0f)!", tostring(pred), tostring(mate), dur, love))
     return true
 end
 
@@ -537,14 +549,22 @@ function VNPC_CompleteMatingPregnancy(mother, mate)
         female = mate
     end
 
+    local love = VNPC_GetMateLove and VNPC_GetMateLove(female, mate) or 0
+    if VNPC_AddMateLove then
+        love = VNPC_AddMateLove(female, mate, 14.0 + love * 0.08)
+    end
+    local litter = (VNPC_GetLitterSize and VNPC_GetLitterSize(love)) or 1
     female.VNPC_IsPregnant = true
     female.VNPC_BabyGrowthValue = female.VNPC_BabyGrowthValue or 10.0
     female.VNPC_PregnancyStartTime = CurTime()
     female.VNPC_LastGrowthTime = CurTime()
-    if VNPC_EnsureUnbornChild then
-        VNPC_EnsureUnbornChild(female)
+    female.VNPC_LitterSize = litter
+    if VNPC_EnsureUnbornLitter then
+        VNPC_EnsureUnbornLitter(female, litter)
+    elseif VNPC_EnsureUnbornChild then
+        VNPC_EnsureUnbornChild(female, litter)
     end
-    print("[V-NPCs] Mating Complete: " .. tostring(female) .. " is now pregnant (growth 10/50) with mate " .. tostring(mate) .. "!")
+    print(string.format("[V-NPCs] Mating Complete: %s is now pregnant with a litter of %d (love %.0f, growth 10/50) with mate %s!", tostring(female), litter, love, tostring(mate)))
     hook.Run("VNPC_OnPrivateMatingComplete", female, mate)
     return true
 end
@@ -562,6 +582,9 @@ function VNPC_InitiatePrivateMating(pred, mate, camp)
     mate.VNPC_LovedPartner = pred
     pred.VNPC_MatingTravelStart = CurTime()
     mate.VNPC_MatingTravelStart = CurTime()
+    if VNPC_AddMateLove then
+        VNPC_AddMateLove(pred, mate, 6.0)
+    end
 
     if pred:GetPos():DistToSqr(mate:GetPos()) <= (200 * 200) then
         VNPC_BeginMatingBonePose(pred, mate, CurTime())
@@ -587,8 +610,12 @@ function VNPC_PrivateMating_AI(now)
         if not (pred:IsNPC() or pred:IsNextBot() or pred.IsDrGNextbot) then continue end
 
         if pred.VNPC_IsMatingBonePose then
+            local mate = pred.VNPC_MatingPartner
+            if VNPC_TickCoupleLove and IsValid(mate) and pred:EntIndex() <= mate:EntIndex() then
+                VNPC_TickCoupleLove(pred, mate, FrameTime())
+            end
             if now >= (pred.VNPC_MatingPoseEndTime or 0) then
-                VNPC_CompleteMatingPregnancy(pred, pred.VNPC_MatingPartner)
+                VNPC_CompleteMatingPregnancy(pred, mate)
             end
             continue
         end
@@ -652,6 +679,7 @@ end
 function VNPC_WildGiveBirth(mother)
     if not IsValid(mother) then return nil end
 
+    local litterSize = math.max(1, tonumber(mother.VNPC_LitterSize) or 1)
     mother.VNPC_IsPregnant = nil
     mother.VNPC_BabyGrowthValue = nil
 
@@ -659,31 +687,46 @@ function VNPC_WildGiveBirth(mother)
         VNPC_StartChildbirthAnimation(mother, nil, nil)
     end
 
+    timer.Simple(0.2, function()
+        if not IsValid(mother) then return end
+        local tagged = 0
+        local firstChild = nil
+        for _, ent in ipairs(ents.GetAll()) do
+            if IsValid(ent) and ent.VNPC_IsGrowingBaby and (ent.VNPC_MotherRef == mother or (CurTime() - (ent.VNPC_BabyBirthTime or 0)) < 3.0) then
+                ent.VNPC_MotherRef = mother
+                mother.VNPC_WildChild = ent
+                if IsValid(mother.VNPC_WildMate) then
+                    ent.VNPC_FatherRef = mother.VNPC_WildMate
+                    mother.VNPC_WildMate.VNPC_WildChild = ent
+                end
+                if VNPC_MakeWildWanderer then
+                    VNPC_MakeWildWanderer(ent)
+                end
+                if mother.VNPC_WildType == "predator" and (ent.VNPC_ChildGender == "female" or string.find(string.lower(ent:GetModel() or ""), "female")) then
+                    ent.VNPC_WildType = "predator"
+                    if VNPC_ForceGiveWildPredatorVore then
+                        VNPC_ForceGiveWildPredatorVore(ent)
+                    end
+                else
+                    ent.VNPC_WildType = ent.VNPC_WildType or "prey"
+                end
+                tagged = tagged + 1
+                firstChild = firstChild or ent
+                if tagged >= litterSize then break end
+            end
+        end
+        if tagged > 0 then
+            print("[V-NPCs] Wild Birth: " .. tostring(mother) .. " gave birth to a wild litter of " .. tagged .. " in the wilderness!")
+            hook.Run("VNPC_OnWildBirth", mother, firstChild)
+        end
+    end)
+
     local child = nil
     for _, ent in ipairs(ents.GetAll()) do
-        if IsValid(ent) and ent.VNPC_IsGrowingBaby and (CurTime() - (ent.VNPC_BabyBirthTime or 0)) < 1.5 then
+        if IsValid(ent) and ent.VNPC_IsGrowingBaby and (ent.VNPC_MotherRef == mother or (CurTime() - (ent.VNPC_BabyBirthTime or 0)) < 1.5) then
             child = ent
             break
         end
-    end
-
-    if IsValid(child) then
-        child.VNPC_MotherRef = mother
-        mother.VNPC_WildChild = child
-        if IsValid(mother.VNPC_WildMate) then
-            child.VNPC_FatherRef = mother.VNPC_WildMate
-            mother.VNPC_WildMate.VNPC_WildChild = child
-        end
-
-        VNPC_MakeWildWanderer(child)
-        if mother.VNPC_WildType == "predator" and (child.VNPC_ChildGender == "female" or string.find(string.lower(child:GetModel() or ""), "female")) then
-            child.VNPC_WildType = "predator"
-            VNPC_ForceGiveWildPredatorVore(child)
-        else
-            child.VNPC_WildType = "prey"
-        end
-        print("[V-NPCs] Wild Birth: " .. tostring(mother) .. " gave birth to wild wanderer child " .. tostring(child) .. " in the wilderness!")
-        hook.Run("VNPC_OnWildBirth", mother, child)
     end
     return child
 end
@@ -731,6 +774,11 @@ function VNPC_WildMating_AI(now)
     for _, w in ipairs(VNPC_ActiveWildWanderers) do
         if not IsValid(w) or w:Health() <= 0 or w.Vored or w.VNPC_Vored then continue end
 
+        local partner = w.VNPC_WildMate or w.VNPC_LovedPartner or w.VNPC_MatingPartner
+        if IsValid(partner) and VNPC_TickCoupleLove and w:EntIndex() <= partner:EntIndex() and not w.VNPC_IsMatingBonePose and not partner.VNPC_IsMatingBonePose then
+            VNPC_TickCoupleLove(w, partner, FrameTime())
+        end
+
         if w.VNPC_IsPregnant then
             if (now - (w.VNPC_LastGrowthTime or now)) >= 1.0 then
                 w.VNPC_LastGrowthTime = now
@@ -742,6 +790,7 @@ function VNPC_WildMating_AI(now)
                 end
             end
         elseif VNPC_IsFemaleWildWanderer(w) then
+            if VNPC_IsBusyMating and VNPC_IsBusyMating(w) then continue end
             -- 1. Check if we already have a mate/partner in close physical contact to start pregnancy
             if IsValid(w.VNPC_SeekingMate) and w.VNPC_SeekingMate:Health() > 0 and not w.VNPC_SeekingMate.Vored then
                 local dSqr = w:GetPos():DistToSqr(w.VNPC_SeekingMate:GetPos())
@@ -973,16 +1022,18 @@ concommand.Add("vnpcs_wild_ecology_status", function(ply)
                 wPreds = wPreds + 1
                 local pers = w.VNPC_PredatorPersonality or (w.VoreSettings and w.VoreSettings.PredatorPersonality) or "opportunistic"
                 local mateStr = IsValid(w.VNPC_WildMate) and (" | Mate: [" .. w.VNPC_WildMate:EntIndex() .. "]") or ""
-                local pregStr = w.VNPC_IsPregnant and string.format(" | Pregnant: %.1f/50", w.VNPC_BabyGrowthValue or 40) or ""
-                print(string.format(" -> Wild Predator [#%d] %s | Pers: %s | HP: %d%s%s",
-                    w:EntIndex(), w:GetClass(), string.upper(pers), w:Health(), mateStr, pregStr))
+                local loveStr = (w.VNPC_MateLove and w.VNPC_MateLove > 0) and string.format(" | Love: %.0f", w.VNPC_MateLove) or ""
+                local pregStr = w.VNPC_IsPregnant and string.format(" | Pregnant: %.1f/50 x%d", w.VNPC_BabyGrowthValue or 40, math.max(1, tonumber(w.VNPC_LitterSize) or 1)) or ""
+                print(string.format(" -> Wild Predator [#%d] %s | Pers: %s | HP: %d%s%s%s",
+                    w:EntIndex(), w:GetClass(), string.upper(pers), w:Health(), mateStr, loveStr, pregStr))
             else
                 wPrey = wPrey + 1
                 local pers = w.VNPC_PreyPersonality or w.PreyPersonality or "fighter"
                 local mateStr = IsValid(w.VNPC_WildMate) and (" | Mate: [" .. w.VNPC_WildMate:EntIndex() .. "]") or ""
-                local pregStr = w.VNPC_IsPregnant and string.format(" | Pregnant: %.1f/50", w.VNPC_BabyGrowthValue or 40) or ""
-                print(string.format(" -> Wild Prey [#%d] %s | Pers: %s | HP: %d%s%s",
-                    w:EntIndex(), w:GetClass(), string.upper(pers), w:Health(), mateStr, pregStr))
+                local loveStr = (w.VNPC_MateLove and w.VNPC_MateLove > 0) and string.format(" | Love: %.0f", w.VNPC_MateLove) or ""
+                local pregStr = w.VNPC_IsPregnant and string.format(" | Pregnant: %.1f/50 x%d", w.VNPC_BabyGrowthValue or 40, math.max(1, tonumber(w.VNPC_LitterSize) or 1)) or ""
+                print(string.format(" -> Wild Prey [#%d] %s | Pers: %s | HP: %d%s%s%s",
+                    w:EntIndex(), w:GetClass(), string.upper(pers), w:Health(), mateStr, loveStr, pregStr))
             end
         end
     end

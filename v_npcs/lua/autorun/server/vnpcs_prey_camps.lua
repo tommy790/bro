@@ -325,7 +325,14 @@ function VNPC_IsBusyMating(ent)
     return false
 end
 
-function VNPC_EnsureUnbornChild(mother)
+function VNPC_EnsureUnbornChild(mother, count)
+    if VNPC_EnsureUnbornLitter then
+        local kids = VNPC_EnsureUnbornLitter(mother, count)
+        if istable(kids) then
+            return kids[1] or mother.VNPC_UnbornChild
+        end
+        return kids
+    end
     if not IsValid(mother) then return nil end
     if IsValid(mother.VNPC_UnbornChild) then return mother.VNPC_UnbornChild end
     local child = ents.Create("npc_citizen")
@@ -1326,7 +1333,6 @@ end
 function VNPC_PreyCampLove_AI(camp, now)
     if not love_enabled:GetBool() or not camp then return end
     local maxMembers = camp.maxMembers or camp_max_members:GetInt()
-    if #camp.members >= maxMembers then return end
 
     local females = {}
     local males = {}
@@ -1341,7 +1347,7 @@ function VNPC_PreyCampLove_AI(camp, now)
         end
     end
 
-    if #females == 0 or #males == 0 then return end
+    if #females == 0 and #males == 0 then return end
 
     table.sort(females, function(a, b)
         local af = (a.VNPC_IsCampFounder or (VNPC_HasTownRole and VNPC_HasTownRole(a, "mate"))) and 1 or 0
@@ -1355,6 +1361,12 @@ function VNPC_PreyCampLove_AI(camp, now)
     end)
 
     for _, f in ipairs(females) do
+        local partner = f.VNPC_LovedPartner or f.VNPC_MatingPartner or f.VNPC_WildMate
+        if IsValid(partner) and VNPC_TickCoupleLove and not f.VNPC_IsMatingBonePose and not partner.VNPC_IsMatingBonePose then
+            local dt = math.max(0.1, now - (f.VNPC_LastLoveTick or (now - 1.0)))
+            f.VNPC_LastLoveTick = now
+            VNPC_TickCoupleLove(f, partner, dt)
+        end
         if f.VNPC_IsPregnant then
             local dt = math.max(0.1, now - (f.VNPC_LastGrowthTime or now))
             f.VNPC_LastGrowthTime = now
@@ -1371,6 +1383,7 @@ function VNPC_PreyCampLove_AI(camp, now)
         end
     end
 
+    if #females == 0 or #males == 0 then return end
     if (camp.lastLoveTriggerTime or 0) > now or #camp.members >= maxMembers then return end
 
     for _, f in ipairs(females) do
@@ -1385,6 +1398,9 @@ function VNPC_PreyCampLove_AI(camp, now)
                     chosenMale = m
                     f.VNPC_LovedPartner = m
                     m.VNPC_LovedPartner = f
+                    if VNPC_AddMateLove then
+                        VNPC_AddMateLove(f, m, 6.0)
+                    end
                     break
                 end
             end
@@ -1392,15 +1408,20 @@ function VNPC_PreyCampLove_AI(camp, now)
 
         if IsValid(chosenMale) then
             camp.lastLoveTriggerTime = now + 12.0
-            if VNPC_EnsureUnbornChild then
-                VNPC_EnsureUnbornChild(f)
-            end
             if VNPC_InitiatePrivateMating then
                 VNPC_InitiatePrivateMating(f, chosenMale, camp)
             else
+                local love = VNPC_GetMateLove and VNPC_GetMateLove(f, chosenMale) or 0
+                local litter = (VNPC_GetLitterSize and VNPC_GetLitterSize(love)) or 1
                 f.VNPC_IsPregnant = true
                 f.VNPC_BabyGrowthValue = f.VNPC_BabyGrowthValue or 10.0
                 f.VNPC_LastGrowthTime = now
+                f.VNPC_LitterSize = litter
+                if VNPC_EnsureUnbornLitter then
+                    VNPC_EnsureUnbornLitter(f, litter)
+                elseif VNPC_EnsureUnbornChild then
+                    VNPC_EnsureUnbornChild(f, litter)
+                end
             end
             if f.EmitSound then
                 f:EmitSound("npc/citizen/vo/nice.wav", 75, math.random(105, 115))
@@ -1896,10 +1917,8 @@ hook.Add("Think", "VNPC_PreyCamps_AI_Loop", function()
             end
         end
 
-        -- 5. Population growth via Love & Pregnancy System in fortified camps with huts
-        if camp.fortified and #camp.huts > 0 then
-            VNPC_PreyCampLove_AI(camp, now)
-        end
+        -- 5. Population growth via Love & Pregnancy System (love grows even before walls/huts finish)
+        VNPC_PreyCampLove_AI(camp, now)
 
         -- 6. Intelligence Agency recon missions to scout predator camps & wild hotspots
         if VNPC_PreyCampIntelligence_AI then
@@ -1921,10 +1940,15 @@ concommand.Add("vnpcs_prey_camps_status", function(ply)
     print("Love/Pregnancy Enabled: " .. tostring(love_enabled:GetBool()))
     print("-----------------------------------------")
     for idx, camp in ipairs(VNPC_ActivePreyCamps) do
-        local pregCount = 0
+        local pregCount, lovePairs, wombBabies = 0, 0, 0
         for _, m in ipairs(camp.members) do
+            if IsValid(m) and IsValid(m.VNPC_LovedPartner) and m:EntIndex() < m.VNPC_LovedPartner:EntIndex() then
+                lovePairs = lovePairs + 1
+            end
             if IsValid(m) and m.VNPC_IsPregnant then
                 pregCount = pregCount + 1
+                local kids = VNPC_GetUnbornLitter and VNPC_GetUnbornLitter(m) or {}
+                wombBabies = wombBabies + math.max(#kids, tonumber(m.VNPC_LitterSize) or 1)
             end
         end
         local awakeSentries = 0
@@ -1947,8 +1971,8 @@ concommand.Add("vnpcs_prey_camps_status", function(ply)
             if IsValid(m) and m:IsPlayer() then playerCount = playerCount + 1 end
         end
         local plyStr = playerCount > 0 and string.format(" (Players: %d)", playerCount) or ""
-        print(string.format(" -> Prey Camp [#%d] | Members: %d%s%s (Pregnant: %d)%s%s%s%s%s%s%s | Territory Radius: %d | Walls: %d | Huts: %d | Courtyard Defenses: %d | Resources: %.1f | Fortified: %s",
-            camp.id, #camp.members, plyStr, stateStr, pregCount, indoorStr, guardStr, infStr, leaderStr, hutStr, decStr, townStr, math.floor(camp.territoryRadius or 450), #camp.walls, #(camp.huts or {}), #(camp.courtyardDefenses or {}), camp.resources or 0, tostring(camp.fortified or false)))
+        print(string.format(" -> Prey Camp [#%d] | Members: %d%s%s (Pregnant: %d | Love Pairs: %d | Womb Babies: %d)%s%s%s%s%s%s%s | Territory Radius: %d | Walls: %d | Huts: %d | Courtyard Defenses: %d | Resources: %.1f | Fortified: %s",
+            camp.id, #camp.members, plyStr, stateStr, pregCount, lovePairs, wombBabies, indoorStr, guardStr, infStr, leaderStr, hutStr, decStr, townStr, math.floor(camp.territoryRadius or 450), #camp.walls, #(camp.huts or {}), #(camp.courtyardDefenses or {}), camp.resources or 0, tostring(camp.fortified or false)))
     end
     print("Total active prey camps: " .. #VNPC_ActivePreyCamps)
     print("=========================================")
@@ -2092,27 +2116,22 @@ concommand.Add("vnpcs_test_prey_love", function(ply)
     if not camp then
         camp = VNPC_AssignPreyToCamp(target, true)
     end
+    target.VNPC_MateLove = 92
+    if IsValid(target.VNPC_LovedPartner) then
+        target.VNPC_LovedPartner.VNPC_MateLove = 92
+    end
+    local litter = (VNPC_GetLitterSize and VNPC_GetLitterSize(92)) or 4
     target.VNPC_IsPregnant = true
     target.VNPC_BabyGrowthValue = 46.0
     target.VNPC_LastGrowthTime = CurTime()
-
-    local child = ents.Create("npc_citizen")
-    if IsValid(child) then
-        child:SetPos(target:GetPos() + Vector(0, 0, 32))
-        child:SetAngles(Angle(0, target:GetAngles().y, 0))
-        child:Spawn()
-        child:Activate()
-        child:SetModelScale(0.30, 0)
-        child:SetNoDraw(true)
-        child:SetSolid(0)
-        child:SetMoveType(MOVETYPE_NONE)
-        child:SetParent(target)
-        child.VNPC_IsUnbornBaby = true
-        child.VNPC_MotherRef = target
-        target.VNPC_UnbornChild = child
+    target.VNPC_LitterSize = litter
+    if VNPC_EnsureUnbornLitter then
+        VNPC_EnsureUnbornLitter(target, litter)
+    elseif VNPC_EnsureUnbornChild then
+        VNPC_EnsureUnbornChild(target, litter)
     end
 
-    ply:ChatPrint("[V-NPCs] Triggered love & pregnancy on " .. tostring(target) .. " in Prey Camp #" .. camp.id .. "! Baby citizen inside womb at value 46 (birth at 50 in 4s)!")
+    ply:ChatPrint("[V-NPCs] Triggered high love (92) pregnancy on " .. tostring(target) .. " in Prey Camp #" .. camp.id .. "! Carrying a litter of " .. litter .. " at value 46 (birth at 50 in 4s)!")
 end)
 
 concommand.Add("vnpcs_test_create_prey_camp", function(ply)
