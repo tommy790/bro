@@ -14,6 +14,9 @@
 	"$gore_center"		"[0 0 0]"
 	"$gore_radius"		"0"
 	"$gore_intensity"	"0"
+	"$gore_preg"		"0"
+	"$gore_prey"		"0"
+	"$gore_jiggle"		"[0 0 0]"
 	"$gore_spot1"		"[0 0 0]"
 	"$gore_spot2"		"[0 0 0]"
 	"$gore_spot3"		"[0 0 0]"
@@ -26,6 +29,18 @@
 	"$gore_spotradius2"	"0"
 	"$gore_spotradius3"	"0"
 	"$gore_spotradius4"	"0"
+	"$gore_gulp1"		"[0 0 0]"
+	"$gore_gulp2"		"[0 0 0]"
+	"$gore_gulp3"		"[0 0 0]"
+	"$gore_gulp4"		"[0 0 0]"
+	"$gore_gulpamp1"	"0"
+	"$gore_gulpamp2"	"0"
+	"$gore_gulpamp3"	"0"
+	"$gore_gulpamp4"	"0"
+	"$gore_gulpradius1"	"0"
+	"$gore_gulpradius2"	"0"
+	"$gore_gulpradius3"	"0"
+	"$gore_gulpradius4"	"0"
 
 	Proxies
 	{

@@ -125,6 +125,13 @@ hook.Add("PreDrawOpaqueRenderables", "VNPCS_GPU_Vore_UpdateUniforms", function()
             gpuMat:SetFloat("$gore_radius", radius)
             gpuMat:SetFloat("$gore_intensity", intensity)
             local spots = VNPC_GetGPUBellyStruggleSpots and VNPC_GetGPUBellyStruggleSpots(activePredator) or {}
+            local gulps = VNPC_GetGPUBellyGulpSpots and VNPC_GetGPUBellyGulpSpots(activePredator) or {}
+            local chain = activePredator.VNPC_VirtualBellyBones
+            if chain then
+                gpuMat:SetFloat("$gore_preg", chain.pregFactor or 0)
+                gpuMat:SetFloat("$gore_prey", chain.preyFactor or 0)
+            end
+            gpuMat:SetVector("$gore_jiggle", activePredator.VNPC_GPUJiggleVec or vector_origin)
             for i = 1, 4 do
                 local spot = spots[i]
                 if spot and spot.world then
@@ -135,6 +142,16 @@ hook.Add("PreDrawOpaqueRenderables", "VNPCS_GPU_Vore_UpdateUniforms", function()
                     gpuMat:SetVector("$gore_spot" .. i, center)
                     gpuMat:SetFloat("$gore_spotamp" .. i, 0)
                     gpuMat:SetFloat("$gore_spotradius" .. i, 0)
+                end
+                local g = gulps[i]
+                if g and g.world then
+                    gpuMat:SetVector("$gore_gulp" .. i, g.world)
+                    gpuMat:SetFloat("$gore_gulpamp" .. i, g.amp or 0)
+                    gpuMat:SetFloat("$gore_gulpradius" .. i, g.radius or 0)
+                else
+                    gpuMat:SetVector("$gore_gulp" .. i, center)
+                    gpuMat:SetFloat("$gore_gulpamp" .. i, 0)
+                    gpuMat:SetFloat("$gore_gulpradius" .. i, 0)
                 end
             end
         end

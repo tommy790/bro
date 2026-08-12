@@ -10,6 +10,11 @@ CreateConVar("vnpcs_gpu_belly_struggle", "1", {FCVAR_ARCHIVE, FCVAR_REPLICATED},
 CreateConVar("vnpcs_gpu_belly_struggle_amp", "1.0", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Amplitude multiplier for GPU belly struggle lumps")
 CreateConVar("vnpcs_gpu_belly_gulp", "1", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "GPU mesh gulp bulge on the upper torso near the neck, sized by the swallowed prey scale")
 CreateConVar("vnpcs_gpu_belly_gulp_amp", "1.0", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Amplitude multiplier for GPU neck/upper-torso gulp bulges")
+CreateConVar("vnpcs_gpu_belly_torso_hull", "1", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Draw a collar-to-pelvis GPU hull instead of a floating belly sphere")
+CreateConVar("vnpcs_gpu_belly_jiggle", "1", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Spring-damper jiggle on the GPU belly after kicks and movement")
+CreateConVar("vnpcs_gpu_belly_jiggle_amp", "1.0", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Amplitude multiplier for GPU belly jiggle")
+CreateConVar("vnpcs_gpu_belly_preg_shape", "1", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "High/round pregnancy belly vs low/heavy swallowed-prey belly")
+CreateConVar("vnpcs_gpu_belly_hide_entity", "1", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Hide the ent_vore_belly model when the GPU mesh is drawing")
 
 VNPC_GPU_BELLY_BONE_NAMES = {
     "VNPC_Belly_Root",
@@ -270,6 +275,20 @@ function VNPC_SyncGPUBellyStruggle(pred)
             n = n + 1
             if pred.SetNWInt then pred:SetNWInt("VNPC_GPUStruggleID" .. n, prey:EntIndex()) end
             if pred.SetNWFloat then pred:SetNWFloat("VNPC_GPUStruggleMul" .. n, mul) end
+            local headN, torsoN, hipN = 1, 1, 1
+            if VNPC_MeasureBodyParts then
+                local parts = VNPC_MeasureBodyParts(prey)
+                if parts then
+                    headN = ((parts.head and parts.head.width) or 7.2) / 7.2
+                    torsoN = ((parts.torso and parts.torso.width) or 14) / 14
+                    hipN = ((parts.pelvis and parts.pelvis.width) or 12) / 12
+                end
+            end
+            if pred.SetNWFloat then
+                pred:SetNWFloat("VNPC_GPUSilHead" .. n, headN)
+                pred:SetNWFloat("VNPC_GPUSilTorso" .. n, torsoN)
+                pred:SetNWFloat("VNPC_GPUSilHip" .. n, hipN)
+            end
         end
     end
     if pred.VNPC_GPUStruggleTest then
@@ -616,7 +635,7 @@ function VNPC_ApplyGeneratedBellyBoneScale(ent, chain)
     if extra < 0.03 then
         if ent.VNPC_GPUBellyScaled then
             for _, spec in ipairs(SCALE_TARGETS) do
-                local id = lookup(ent, { spec[1], unpack(spec[2]) })
+                local id = lookup(ent, spec.names)
                 if id then
                     ent:ManipulateBoneScale(id, Vector(1, 1, 1))
                 end
@@ -627,9 +646,9 @@ function VNPC_ApplyGeneratedBellyBoneScale(ent, chain)
     end
 
     for _, spec in ipairs(SCALE_TARGETS) do
-        local id = lookup(ent, { spec[1], unpack(spec[2]) })
-        if id then
-            local w = spec[3]
+        local id = lookup(ent, spec.names)
+        if id and spec.mul then
+            local w = spec.mul
             ent:ManipulateBoneScale(id, Vector(1 + extra * w.x, 1 + extra * w.y, 1 + extra * w.z))
         end
     end
@@ -817,10 +836,19 @@ if CLIENT then
             if ent:IsDormant() or (ent.GetNoDraw and ent:GetNoDraw()) then continue end
             local chain = ent.VNPC_VirtualBellyBones or VNPC_UpdateVirtualBellyBones(ent)
             if not chain then continue end
-            if (chain.size or 0) >= 0.035 then
+            local usedFX = false
+            if VNPC_DrawGPUBellyFX then
+                local ok, res = pcall(VNPC_DrawGPUBellyFX, ent, chain)
+                usedFX = ok and res ~= false
+            end
+            if not usedFX and (chain.size or 0) >= 0.035 then
                 pcall(drawGeneratedBelly, ent, chain)
             end
-            pcall(drawGulpBulges, ent, chain)
+            if VNPC_DrawGPUGulpFX then
+                pcall(VNPC_DrawGPUGulpFX, ent, chain)
+            else
+                pcall(drawGulpBulges, ent, chain)
+            end
         end
     end)
 
@@ -957,6 +985,10 @@ concommand.Add("vnpcs_gpu_belly_status", function(ply)
     print(" - Debug: " .. tostring(GetConVar("vnpcs_gpu_belly_debug"):GetBool()))
     print(" - Struggle Deform: " .. tostring(GetConVar("vnpcs_gpu_belly_struggle"):GetBool()) .. " amp=" .. tostring(GetConVar("vnpcs_gpu_belly_struggle_amp"):GetFloat()))
     print(" - Gulp Neck Deform: " .. tostring(GetConVar("vnpcs_gpu_belly_gulp"):GetBool()) .. " amp=" .. tostring(GetConVar("vnpcs_gpu_belly_gulp_amp"):GetFloat()))
+    print(" - Torso Hull: " .. tostring(GetConVar("vnpcs_gpu_belly_torso_hull"):GetBool()))
+    print(" - Jiggle: " .. tostring(GetConVar("vnpcs_gpu_belly_jiggle"):GetBool()) .. " amp=" .. tostring(GetConVar("vnpcs_gpu_belly_jiggle_amp"):GetFloat()))
+    print(" - Preg/Prey Shape: " .. tostring(GetConVar("vnpcs_gpu_belly_preg_shape"):GetBool()))
+    print(" - Hide Belly Entity: " .. tostring(GetConVar("vnpcs_gpu_belly_hide_entity"):GetBool()))
     print("-----------------------------------------")
     local count = 0
     for _, ent in ipairs(ents.FindByClass("npc_*")) do
