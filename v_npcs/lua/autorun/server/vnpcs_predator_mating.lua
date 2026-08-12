@@ -59,14 +59,19 @@ function VNPC_ForagerSeekWillingMate(pred, camp)
         if not VNPC_IsMalePreyCitizen or not VNPC_IsMalePreyCitizen(ent) then continue end
         if VNPC_IsAdultPreyCitizen and not VNPC_IsAdultPreyCitizen(ent) then continue end
 
-        -- Check personality: must be "willing" (or "desire"/"desirous")
-        local pers, _ = VNPC_GetPreyPersonality(ent)
-        if string.lower(tostring(pers or "")) == "willing" or string.lower(tostring(pers or "")) == "desire" or string.lower(tostring(pers or "")) == "desirous" then
-            local dSqr = myPos:DistToSqr(ent:GetPos())
-            if dSqr <= bestDistSqr then
-                bestMale = ent
-                bestDistSqr = dSqr
-            end
+        local pers = ""
+        if VNPC_GetPreyPersonality then
+            pers = select(1, VNPC_GetPreyPersonality(ent)) or ""
+        else
+            pers = ent.VNPC_PreyPersonality or ent.PreyPersonality or ""
+        end
+        pers = string.lower(tostring(pers))
+        local willing = (pers == "willing" or pers == "desire" or pers == "desirous" or pers == "passive")
+        local dSqr = myPos:DistToSqr(ent:GetPos())
+        if willing then dSqr = dSqr * 0.35 end
+        if dSqr <= bestDistSqr then
+            bestMale = ent
+            bestDistSqr = dSqr
         end
     end
 
@@ -107,6 +112,21 @@ hook.Add("Think", "VNPC_PredatorMating_AI_Loop", function()
         for _, pred in ipairs(camp.members) do
             if not IsValid(pred) or pred:Health() <= 0 then continue end
 
+            if pred.VNPC_IsPregnant then
+                local dt = 1.0
+                pred.VNPC_LastGrowthTime = pred.VNPC_LastGrowthTime or now
+                pred.VNPC_BabyGrowthValue = (pred.VNPC_BabyGrowthValue or 10.0) + 1.0
+                pred.VNPC_LastGrowthTime = now
+                if VNPC_ApplyPregnancyBellyBulge then
+                    VNPC_ApplyPregnancyBellyBulge(pred, pred.VNPC_BabyGrowthValue)
+                end
+                if pred.VNPC_BabyGrowthValue >= 50.0 then
+                    if VNPC_StartChildbirthAnimation then
+                        VNPC_StartChildbirthAnimation(pred, pred.VNPC_UnbornChild, camp)
+                    end
+                end
+            end
+
             -- 1. Check existing pregnancy with a new sister
             if pred.VNPC_IsPregnantWithSister and now >= pred.VNPC_IsPregnantWithSister then
                 pred.VNPC_IsPregnantWithSister = nil
@@ -122,6 +142,32 @@ hook.Add("Think", "VNPC_PredatorMating_AI_Loop", function()
 
                     if VNPC_StartChildbirthAnimation then
                         VNPC_StartChildbirthAnimation(pred, child, camp)
+                    end
+                end
+            end
+
+            -- Founders and idle members mate with nearby male citizens without needing a capture hunt
+            if not pred.VNPC_IsPregnant and not (VNPC_IsBusyMating and VNPC_IsBusyMating(pred)) and (pred.VNPC_IsCampFounder or pred.VNPC_CampRole == "stayer" or pred.VNPC_CampRole == "founder") then
+                if (pred.VNPC_NextLocalMateTime or 0) <= now then
+                    pred.VNPC_NextLocalMateTime = now + 5.0
+                    local bestMale = pred.VNPC_LovedMate or pred.VNPC_LovedPartner
+                    if not IsValid(bestMale) or bestMale:Health() <= 0 then
+                        bestMale = nil
+                        local bestDist = 900 * 900
+                        for _, ent in ipairs(ents.FindInSphere(pred:GetPos(), 900)) do
+                            if VNPC_IsMalePreyCitizen and VNPC_IsMalePreyCitizen(ent) then
+                                local dSqr = pred:GetPos():DistToSqr(ent:GetPos())
+                                if dSqr < bestDist then
+                                    bestMale = ent
+                                    bestDist = dSqr
+                                end
+                            end
+                        end
+                    end
+                    if IsValid(bestMale) then
+                        if VNPC_InitiatePrivateMating then
+                            VNPC_InitiatePrivateMating(pred, bestMale, camp)
+                        end
                     end
                 end
             end

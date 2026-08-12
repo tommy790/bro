@@ -458,176 +458,163 @@ function VNPC_FindPrivateMatingSpot(pred, mate, camp)
     if not IsValid(pred) or not IsValid(mate) then return nil end
     local predPos = pred:GetPos()
 
-    -- 1. Check Camp Tents / Huts / Indoors
+    if pred:GetPos():DistToSqr(mate:GetPos()) <= (220 * 220) then
+        local mid = (pred:GetPos() + mate:GetPos()) * 0.5
+        local ground = (VNPC_SnapCampPosToGround and VNPC_SnapCampPosToGround(mid, 160)) or (mid + Vector(0, 0, 8))
+        return ground
+    end
+
     if camp then
+        if camp.huts and #camp.huts > 0 then
+            for _, hut in ipairs(camp.huts) do
+                local hutPos = (VNPC_GetHutInteriorPos and VNPC_GetHutInteriorPos(hut)) or (hut and hut.pos) or nil
+                if hutPos then return hutPos end
+            end
+        end
         if camp.tents and #camp.tents > 0 then
             for _, tent in ipairs(camp.tents) do
                 local tentPos = (VNPC_GetHutInteriorPos and VNPC_GetHutInteriorPos(tent)) or (IsValid(tent) and tent:GetPos()) or nil
-                if tentPos then
-                    return tentPos
-                end
+                if tentPos then return tentPos end
             end
         end
-        if camp.huts and #camp.huts > 0 then
-            for _, hut in ipairs(camp.huts) do
-                if hut and hut.pos then
-                    return hut.pos + Vector(0, 0, 8)
-                end
-            end
-        end
-        if camp.isIndoors and camp.pos then
-            return camp.pos
+        if camp.pos then
+            return camp.pos + Vector(0, 0, 8)
         end
     end
 
-    -- 2. Scan nearby AI nodes / NavMesh areas for a private location without nearby third parties
-    local bestSpot = nil
-    local bestScore = -1e9
+    return predPos + pred:GetForward() * 48 + Vector(0, 0, 8)
+end
 
-    for r = 300, 900, 300 do
-        for s = 1, 8 do
-            local angle = math.rad((s - 1) * 45 + math.random(-15, 15))
-            local candidatePos = predPos + Vector(math.cos(angle) * r, math.sin(angle) * r, 20)
+function VNPC_BeginMatingBonePose(pred, mate, now)
+    if not IsValid(pred) or not IsValid(mate) then return false end
+    now = now or CurTime()
+    pred.VNPC_IsMatingBonePose = true
+    mate.VNPC_IsMatingBonePose = true
+    pred.VNPC_MatingPoseEndTime = now + 8.0
+    mate.VNPC_MatingPoseEndTime = now + 8.0
+    if pred.SetNWBool then pred:SetNWBool("VNPC_IsMatingBonePose", true) end
+    if mate.SetNWBool then mate:SetNWBool("VNPC_IsMatingBonePose", true) end
 
-            local tr = util.TraceLine({
-                start = candidatePos + Vector(0, 0, 100),
-                endpos = candidatePos - Vector(0, 0, 200),
-                mask = MASK_SOLID_BRUSHONLY
-            })
-
-            if tr.Hit and tr.HitNormal.z > 0.75 and not tr.StartSolid then
-                local spotPos = tr.HitPos + Vector(0, 0, 10)
-                local privacyScore = 100.0
-
-                -- Penalize spots near other players or non-mate NPCs
-                for _, other in ipairs(ents.FindInSphere(spotPos, 500)) do
-                    if IsValid(other) and other ~= pred and other ~= mate and (other:IsPlayer() or other:IsNPC()) then
-                        privacyScore = privacyScore - 40.0
-                    end
-                end
-
-                -- Reward indoor/sheltered spots
-                local trUp = util.TraceLine({
-                    start = spotPos + Vector(0, 0, 10),
-                    endpos = spotPos + Vector(0, 0, 300),
-                    mask = MASK_SOLID_BRUSHONLY
-                })
-                if trUp.Hit and not trUp.HitSky then
-                    privacyScore = privacyScore + 50.0
-                end
-
-                if privacyScore > bestScore then
-                    bestScore = privacyScore
-                    bestSpot = spotPos
-                end
-            end
-        end
+    local dir = (mate:GetPos() - pred:GetPos()):GetNormalized()
+    dir.z = 0
+    if dir:Length2DSqr() > 0.01 then
+        pred:SetAngles(dir:Angle())
+        mate:SetAngles((-dir):Angle())
     end
 
-    return bestSpot or (predPos + pred:GetForward() * 60)
+    if pred.SetSchedule then pcall(pred.SetSchedule, pred, SCHED_NPC_FREEZE) end
+    if mate.SetSchedule then pcall(mate.SetSchedule, mate, SCHED_NPC_FREEZE) end
+    if pred.EmitSound then pred:EmitSound("npc/alyx/vo/flatter.wav", 80, math.random(100, 110)) end
+    if mate.EmitSound then mate:EmitSound("npc/citizen/vo/nice.wav", 75, math.random(100, 110)) end
+    print("[V-NPCs] Mating Bone Pose: Couple " .. tostring(pred) .. " & " .. tostring(mate) .. " started the mating bone pose!")
+    return true
+end
+
+function VNPC_CompleteMatingPregnancy(mother, mate)
+    if not IsValid(mother) then return false end
+    mother.VNPC_IsMatingBonePose = nil
+    mother.VNPC_PrivateMatingSpot = nil
+    mother.VNPC_MatingTravelStart = nil
+    if mother.SetNWBool then mother:SetNWBool("VNPC_IsMatingBonePose", false) end
+    if mother.SetSchedule then pcall(mother.SetSchedule, mother, SCHED_IDLE_STAND) end
+
+    if IsValid(mate) then
+        mate.VNPC_IsMatingBonePose = nil
+        mate.VNPC_PrivateMatingSpot = nil
+        mate.VNPC_MatingTravelStart = nil
+        if mate.SetNWBool then mate:SetNWBool("VNPC_IsMatingBonePose", false) end
+        if mate.SetSchedule then pcall(mate.SetSchedule, mate, SCHED_IDLE_STAND) end
+        mother.VNPC_WildMate = mate
+        mate.VNPC_WildMate = mother
+        mother.VNPC_LovedPartner = mate
+        mate.VNPC_LovedPartner = mother
+    end
+
+    local female = mother
+    if VNPC_IsMalePreyCitizen and VNPC_IsMalePreyCitizen(mother) and IsValid(mate) then
+        female = mate
+    elseif VNPC_ModelLooksFemale and not VNPC_ModelLooksFemale(mother) and IsValid(mate) then
+        female = mate
+    end
+
+    female.VNPC_IsPregnant = true
+    female.VNPC_BabyGrowthValue = female.VNPC_BabyGrowthValue or 10.0
+    female.VNPC_PregnancyStartTime = CurTime()
+    female.VNPC_LastGrowthTime = CurTime()
+    if VNPC_EnsureUnbornChild then
+        VNPC_EnsureUnbornChild(female)
+    end
+    print("[V-NPCs] Mating Complete: " .. tostring(female) .. " is now pregnant (growth 10/50) with mate " .. tostring(mate) .. "!")
+    hook.Run("VNPC_OnPrivateMatingComplete", female, mate)
+    return true
 end
 
 function VNPC_InitiatePrivateMating(pred, mate, camp)
     if not IsValid(pred) or not IsValid(mate) then return false end
-    if pred.VNPC_IsPregnant or mate.VNPC_IsPregnant or pred.VNPC_IsMatingBonePose or mate.VNPC_IsMatingBonePose then return false end
+    if pred.VNPC_IsPregnant or mate.VNPC_IsPregnant then return false end
+    if pred.VNPC_IsMatingBonePose or mate.VNPC_IsMatingBonePose then return false end
 
-    local privateSpot = VNPC_FindPrivateMatingSpot(pred, mate, camp)
-    pred.VNPC_PrivateMatingSpot = privateSpot
-    mate.VNPC_PrivateMatingSpot = privateSpot
     pred.VNPC_MatingPartner = mate
     mate.VNPC_MatingPartner = pred
     pred.VNPC_WildMate = mate
     mate.VNPC_WildMate = pred
+    pred.VNPC_LovedPartner = mate
+    mate.VNPC_LovedPartner = pred
+    pred.VNPC_MatingTravelStart = CurTime()
+    mate.VNPC_MatingTravelStart = CurTime()
 
-    -- Both partners travel to the private spot
+    if pred:GetPos():DistToSqr(mate:GetPos()) <= (200 * 200) then
+        VNPC_BeginMatingBonePose(pred, mate, CurTime())
+        return true
+    end
+
+    local privateSpot = VNPC_FindPrivateMatingSpot(pred, mate, camp)
+    pred.VNPC_PrivateMatingSpot = privateSpot
+    mate.VNPC_PrivateMatingSpot = privateSpot
+
     if pred.SetLastPosition then pcall(pred.SetLastPosition, pred, privateSpot) end
     if pred.SetSchedule then pcall(pred.SetSchedule, pred, SCHED_FORCED_GO_RUN) end
     if mate.SetLastPosition then pcall(mate.SetLastPosition, mate, privateSpot) end
     if mate.SetSchedule then pcall(mate.SetSchedule, mate, SCHED_FORCED_GO_RUN) end
 
-    print("[V-NPCs] Private Mating: Couple " .. tostring(pred) .. " & " .. tostring(mate) .. " are going to a private spot to initiate the mating bone pose anim!")
+    print("[V-NPCs] Private Mating: Couple " .. tostring(pred) .. " & " .. tostring(mate) .. " are meeting to mate!")
     return true
 end
 
 function VNPC_PrivateMating_AI(now)
-    for _, pred in ipairs(ents.FindByClass("npc_*")) do
+    for _, pred in ipairs(ents.GetAll()) do
         if not IsValid(pred) or pred:Health() <= 0 or pred.Vored or pred.VNPC_Vored then continue end
+        if not (pred:IsNPC() or pred:IsNextBot() or pred.IsDrGNextbot) then continue end
 
-        -- 1. Check if couple is currently performing the 15-second Mating Bone Pose Animation!
         if pred.VNPC_IsMatingBonePose then
             if now >= (pred.VNPC_MatingPoseEndTime or 0) then
-                -- 15-SECOND MATING BONE POSE COMPLETE: Now pregnancy begins! (Lasts 2 minutes / 120s)
-                pred.VNPC_IsMatingBonePose = nil
-                pred.VNPC_PrivateMatingSpot = nil
-                if pred.SetNWBool then pred:SetNWBool("VNPC_IsMatingBonePose", false) end
-                if pred.SetSchedule then pcall(pred.SetSchedule, pred, SCHED_IDLE_STAND) end
-
-                local mate = pred.VNPC_MatingPartner
-                if IsValid(mate) then
-                    mate.VNPC_IsMatingBonePose = nil
-                    mate.VNPC_PrivateMatingSpot = nil
-                    if mate.SetNWBool then mate:SetNWBool("VNPC_IsMatingBonePose", false) end
-                    if mate.SetSchedule then pcall(mate.SetSchedule, mate, SCHED_IDLE_STAND) end
-                end
-
-                -- Initiate 2-minute pregnancy!
-                pred.VNPC_IsPregnant = true
-                pred.VNPC_BabyGrowthValue = 10.0
-                pred.VNPC_PregnancyStartTime = CurTime()
-                pred.VNPC_LastGrowthTime = CurTime()
-                print("[V-NPCs] Private Mating Complete: " .. tostring(pred) .. " and " .. tostring(pred.VNPC_MatingPartner) .. " completed the mating bone pose animation! 2-minute pregnancy started.")
-                hook.Run("VNPC_OnPrivateMatingComplete", pred, pred.VNPC_MatingPartner)
+                VNPC_CompleteMatingPregnancy(pred, pred.VNPC_MatingPartner)
             end
             continue
         end
 
-        -- 2. Check if couple is traveling to their private mating spot
         if pred.VNPC_PrivateMatingSpot and IsValid(pred.VNPC_MatingPartner) and pred.VNPC_MatingPartner:Health() > 0 then
             local mate = pred.VNPC_MatingPartner
+            if mate.VNPC_IsPregnant or pred.VNPC_IsPregnant then
+                pred.VNPC_PrivateMatingSpot = nil
+                mate.VNPC_PrivateMatingSpot = nil
+                continue
+            end
+
             local spot = pred.VNPC_PrivateMatingSpot
             local d1 = pred:GetPos():DistToSqr(spot)
             local d2 = mate:GetPos():DistToSqr(spot)
+            local pairDist = pred:GetPos():DistToSqr(mate:GetPos())
+            local waited = now - (pred.VNPC_MatingTravelStart or now)
 
-            if d1 <= (135 * 135) and d2 <= (160 * 160) then
-                -- BOTH ARRIVED AT THE PRIVATE SPOT: Initiate the Mating Bone Pose Animation!
-                pred.VNPC_IsMatingBonePose = true
-                mate.VNPC_IsMatingBonePose = true
-                pred.VNPC_MatingPoseEndTime = now + 15.0
-                mate.VNPC_MatingPoseEndTime = now + 15.0
-                if pred.SetNWBool then pred:SetNWBool("VNPC_IsMatingBonePose", true) end
-                if mate.SetNWBool then mate:SetNWBool("VNPC_IsMatingBonePose", true) end
-
-                -- Clear floor debris around private spot so their mating bone pose is unobstructed
-                for _, obs in ipairs(ents.FindInSphere(spot, 60)) do
-                    if IsValid(obs) and obs ~= pred and obs ~= mate and (obs:GetClass() == "prop_ragdoll" or obs:GetClass() == "prop_physics") then
-                        obs:SetPos(obs:GetPos() + Vector(0, 0, 4) + (obs:GetPos() - spot):GetNormalized() * 80)
-                    end
-                end
-
-                -- Position couple facing each other affectionately
-                local dir = (mate:GetPos() - pred:GetPos()):GetNormalized()
-                dir.z = 0
-                if dir:Length2DSqr() > 0.01 then
-                    pred:SetAngles(dir:Angle())
-                    mate:SetAngles((-dir):Angle())
-                end
-
-                if pred.SetSchedule then pcall(pred.SetSchedule, pred, SCHED_NPC_FREEZE) end
-                if mate.SetSchedule then pcall(mate.SetSchedule, mate, SCHED_NPC_FREEZE) end
-
-                if pred.EmitSound then pred:EmitSound("npc/alyx/vo/flatter.wav", 80, math.random(100, 110)) end
-                if mate.EmitSound then mate:EmitSound("npc/citizen/vo/nice.wav", 75, math.random(100, 110)) end
-
-                print("[V-NPCs] Mating Bone Pose: Couple " .. tostring(pred) .. " & " .. tostring(mate) .. " reached their private spot and initiated the mating bone pose animation!")
-            else
-                -- Keep moving to the private spot
-                if (pred.VNPC_NextPrivateMoveTime or 0) <= now then
-                    pred.VNPC_NextPrivateMoveTime = now + 2.0
-                    if pred.SetLastPosition then pcall(pred.SetLastPosition, pred, spot) end
-                    if pred.SetSchedule then pcall(pred.SetSchedule, pred, SCHED_FORCED_GO_RUN) end
-                    if mate.SetLastPosition then pcall(mate.SetLastPosition, mate, spot) end
-                    if mate.SetSchedule then pcall(mate.SetSchedule, mate, SCHED_FORCED_GO_RUN) end
-                end
+            if (d1 <= (180 * 180) and d2 <= (200 * 200)) or pairDist <= (180 * 180) or waited >= 12.0 then
+                VNPC_BeginMatingBonePose(pred, mate, now)
+            elseif (pred.VNPC_NextPrivateMoveTime or 0) <= now then
+                pred.VNPC_NextPrivateMoveTime = now + 1.5
+                if pred.SetLastPosition then pcall(pred.SetLastPosition, pred, mate:GetPos()) end
+                if pred.SetSchedule then pcall(pred.SetSchedule, pred, SCHED_FORCED_GO_RUN) end
+                if mate.SetLastPosition then pcall(mate.SetLastPosition, mate, pred:GetPos()) end
+                if mate.SetSchedule then pcall(mate.SetSchedule, mate, SCHED_FORCED_GO_RUN) end
             end
         end
     end
@@ -935,7 +922,7 @@ hook.Add("Think", "VNPC_WildEcology_AI_Loop", function()
             end
         end
 
-        if not IsValid(ent:GetEnemy()) then
+        if not IsValid(ent:GetEnemy()) and not (VNPC_IsBusyMating and VNPC_IsBusyMating(ent)) and not ent.VNPC_IsPregnant then
             local angle = math.rad(math.random(0, 360))
             local dist = math.random(500, 1100)
             local targetPos = pos + Vector(math.cos(angle) * dist, math.sin(angle) * dist, 0)

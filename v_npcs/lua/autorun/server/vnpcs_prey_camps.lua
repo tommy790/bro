@@ -302,26 +302,68 @@ function VNPC_IsEligiblePreyNPC(ent)
     return (ent:IsNPC() or ent:IsNextBot())
 end
 
+function VNPC_ModelLooksFemale(ent)
+    if not IsValid(ent) then return false end
+    if ent.VNPC_ChildGender == "female" then return true end
+    if ent.VNPC_ChildGender == "male" then return false end
+    if VNPC_HasFemaleModelBones and VNPC_HasFemaleModelBones(ent) then return true end
+    if VNPC_IsFemaleModelNPC and VNPC_IsFemaleModelNPC(ent) then return true end
+    local mdl = string.lower(ent:GetModel() or "")
+    local cls = string.lower(ent:GetClass() or "")
+    if mdl:find("female") or mdl:find("alyx") or mdl:find("mossman") or mdl:find("girl") or mdl:find("woman") or mdl:find("lady") or mdl:find("fema") or mdl:find("/f_") or mdl:find("_f_") or mdl:find("citizen_female") then
+        return true
+    end
+    if cls:find("alyx") or cls:find("mossman") then return true end
+    return false
+end
+
+function VNPC_IsBusyMating(ent)
+    if not IsValid(ent) then return false end
+    if ent.VNPC_IsMatingBonePose or (ent.GetNWBool and ent:GetNWBool("VNPC_IsMatingBonePose")) then return true end
+    if ent.VNPC_PrivateMatingSpot and IsValid(ent.VNPC_MatingPartner) then return true end
+    if (ent.VNPC_InChildbirthPose or 0) > CurTime() then return true end
+    return false
+end
+
+function VNPC_EnsureUnbornChild(mother)
+    if not IsValid(mother) then return nil end
+    if IsValid(mother.VNPC_UnbornChild) then return mother.VNPC_UnbornChild end
+    local child = ents.Create("npc_citizen")
+    if not IsValid(child) then return nil end
+    child:SetPos(mother:GetPos() + Vector(0, 0, 32))
+    child:SetAngles(Angle(0, mother:GetAngles().y, 0))
+    child:Spawn()
+    child:Activate()
+    child:SetModelScale(0.15, 0)
+    child:SetNoDraw(true)
+    child:SetSolid(0)
+    child:SetMoveType(MOVETYPE_NONE)
+    child:SetParent(mother)
+    child.VNPC_IsUnbornBaby = true
+    child.VNPC_MotherRef = mother
+    mother.VNPC_UnbornChild = child
+    return child
+end
+
 function VNPC_IsFemalePreyCitizen(ent)
     if not IsValid(ent) or ent:Health() <= 0 then return false end
     if ent.VNPC_IsPermanentFortPredator then return true end
     if not VNPC_IsEligiblePreyNPC(ent) then return false end
-    local mdl = string.lower(ent:GetModel() or "")
-    local cls = string.lower(ent:GetClass() or "")
-    if cls:find("citizen") or cls:find("rebel") or cls:find("refugee") or cls:find("mossman") or cls:find("alyx") or (ent.Classify and ent:Classify() == CLASS_CITIZEN) then
-        if mdl:find("female") or mdl:find("alyx") or mdl:find("mossman") or mdl:find("f_") or mdl:find("citizen_female") then
-            return true
-        end
-    end
-    return false
+    if VNPC_IsAdultPreyCitizen and not VNPC_IsAdultPreyCitizen(ent) then return false end
+    return VNPC_ModelLooksFemale(ent)
 end
 
 function VNPC_IsMalePreyCitizen(ent)
     if not VNPC_IsEligiblePreyNPC(ent) then return false end
     if VNPC_IsFemalePreyCitizen(ent) then return false end
+    if VNPC_ModelLooksFemale(ent) then return false end
+    if VNPC_IsAdultPreyCitizen and not VNPC_IsAdultPreyCitizen(ent) then return false end
     local mdl = string.lower(ent:GetModel() or "")
     local cls = string.lower(ent:GetClass() or "")
-    if cls:find("citizen") or cls:find("rebel") or cls:find("refugee") or cls:find("barney") or cls:find("monk") or (ent.Classify and ent:Classify() == CLASS_CITIZEN) then
+    if mdl:find("male") or mdl:find("/m_") or mdl:find("_m_") or mdl:find("barney") or mdl:find("monk") or mdl:find("eli") then
+        return true
+    end
+    if cls:find("citizen") or cls:find("rebel") or cls:find("refugee") or cls:find("barney") or cls:find("monk") or cls:find("eli") or (ent.Classify and ent:Classify() == CLASS_CITIZEN) then
         return true
     end
     return false
@@ -694,7 +736,7 @@ function VNPC_PreyCampLeaderDecision_AI(camp, now)
     camp.leaderDecision = decision
 
     -- Command Leader to visit their Leader Hut & Table
-    if IsValid(camp.leaderTable) and not IsValid(leader:GetEnemy()) and not leader.VNPC_IsCookingMeal and not leader.VNPC_IsEatingMeal then
+    if IsValid(camp.leaderTable) and not IsValid(leader:GetEnemy()) and not leader.VNPC_IsCookingMeal and not leader.VNPC_IsEatingMeal and not (VNPC_IsBusyMating and VNPC_IsBusyMating(leader)) then
         local tblPos = camp.leaderTable:GetPos()
         local dSqr = leader:GetPos():DistToSqr(tblPos)
         if dSqr > (120 * 120) then
@@ -777,6 +819,7 @@ function VNPC_PreyCampCooking_AI(camp, now)
     for _, mem in ipairs(camp.members) do
         if not IsValid(mem) or mem:Health() <= 0 or mem.Vored or mem.VNPC_IsSleeping then continue end
         if IsValid(mem:GetEnemy()) or mem.VNPC_IsEatingMeal or mem.VNPC_IsCollectingScrap then continue end
+        if VNPC_IsBusyMating and VNPC_IsBusyMating(mem) then continue end
         local canCook = VNPC_IsFemalePreyCitizen(mem) or (VNPC_HasTownRole and (VNPC_HasTownRole(mem, "cook") or VNPC_HasTownRole(mem, "founder")))
         if not canCook then continue end
 
@@ -1281,14 +1324,15 @@ function VNPC_ConstructPreyCampCourtyardDefense(camp)
 end
 
 function VNPC_PreyCampLove_AI(camp, now)
-    if not love_enabled:GetBool() or not camp or not camp.fortified then return end
-    local maxMembers = camp_max_members:GetInt()
+    if not love_enabled:GetBool() or not camp then return end
+    local maxMembers = camp.maxMembers or camp_max_members:GetInt()
     if #camp.members >= maxMembers then return end
 
     local females = {}
     local males = {}
     for _, mem in ipairs(camp.members) do
-        if IsValid(mem) and mem:Health() > 0 and (not VNPC_IsAdultPreyCitizen or VNPC_IsAdultPreyCitizen(mem)) then
+        if IsValid(mem) and mem:Health() > 0 and not mem.Vored and not mem.VNPC_Vored and not mem:IsPlayer() then
+            if VNPC_IsAdultPreyCitizen and not VNPC_IsAdultPreyCitizen(mem) then continue end
             if VNPC_IsFemalePreyCitizen(mem) then
                 table.insert(females, mem)
             elseif VNPC_IsMalePreyCitizen(mem) then
@@ -1310,18 +1354,15 @@ function VNPC_PreyCampLove_AI(camp, now)
         return af > bf
     end)
 
-    -- 1. Check existing pregnancies for womb growth (value 10 to 50) and childbirth
     for _, f in ipairs(females) do
         if f.VNPC_IsPregnant then
             local dt = math.max(0.1, now - (f.VNPC_LastGrowthTime or now))
             f.VNPC_LastGrowthTime = now
             local gRate = GetConVar("vnpcs_prey_camp_baby_growth_rate") and GetConVar("vnpcs_prey_camp_baby_growth_rate"):GetFloat() or 1.0
             f.VNPC_BabyGrowthValue = (f.VNPC_BabyGrowthValue or 10.0) + (gRate * dt)
-
             if VNPC_ApplyPregnancyBellyBulge then
                 VNPC_ApplyPregnancyBellyBulge(f, f.VNPC_BabyGrowthValue)
             end
-
             if f.VNPC_BabyGrowthValue >= 50.0 then
                 if VNPC_StartChildbirthAnimation then
                     VNPC_StartChildbirthAnimation(f, f.VNPC_UnbornChild, camp)
@@ -1330,57 +1371,41 @@ function VNPC_PreyCampLove_AI(camp, now)
         end
     end
 
-    -- 2. Check if a couple falls in love or an existing monogamous couple mates inside the fort
-    if (camp.lastLoveTriggerTime or 0) <= now and #camp.members < maxMembers then
-        for _, f in ipairs(females) do
-            if not f.VNPC_IsPregnant then
-                local chosenMale = nil
-                if IsValid(f.VNPC_LovedPartner) and f.VNPC_LovedPartner:Health() > 0 then
-                    chosenMale = f.VNPC_LovedPartner
-                else
-                    for _, m in ipairs(males) do
-                        if not IsValid(m.VNPC_LovedPartner) or m.VNPC_LovedPartner:Health() <= 0 then
-                            chosenMale = m
-                            f.VNPC_LovedPartner = m
-                            m.VNPC_LovedPartner = f
-                            break
-                        end
-                    end
-                end
+    if (camp.lastLoveTriggerTime or 0) > now or #camp.members >= maxMembers then return end
 
-                if IsValid(chosenMale) then
-                    camp.lastLoveTriggerTime = now + 25.0
-                    if VNPC_InitiatePrivateMating then
-                        VNPC_InitiatePrivateMating(f, chosenMale, camp)
-                    else
-                        f.VNPC_IsPregnant = true
-                        f.VNPC_BabyGrowthValue = 10.0
-                        f.VNPC_LastGrowthTime = now
-                    end
-
-                    -- Immediately spawn small citizen baby inside the female belly
-                    local child = ents.Create("npc_citizen")
-                    if IsValid(child) then
-                        child:SetPos(f:GetPos() + Vector(0, 0, 32))
-                        child:SetAngles(Angle(0, f:GetAngles().y, 0))
-                        child:Spawn()
-                        child:Activate()
-                        child:SetModelScale(0.15, 0)
-                        child:SetNoDraw(true)
-                        child:SetSolid(0)
-                        child:SetMoveType(MOVETYPE_NONE)
-                        child:SetParent(f)
-                        child.VNPC_IsUnbornBaby = true
-                        child.VNPC_MotherRef = f
-                        f.VNPC_UnbornChild = child
-                    end
-
-                    if f.EmitSound then
-                        f:EmitSound("npc/citizen/vo/nice.wav", 75, math.random(105, 115))
-                    end
+    for _, f in ipairs(females) do
+        if f.VNPC_IsPregnant or VNPC_IsBusyMating(f) then continue end
+        local chosenMale = nil
+        if IsValid(f.VNPC_LovedPartner) and f.VNPC_LovedPartner:Health() > 0 and not f.VNPC_LovedPartner.Vored then
+            chosenMale = f.VNPC_LovedPartner
+        else
+            for _, m in ipairs(males) do
+                if m.VNPC_IsPregnant or VNPC_IsBusyMating(m) then continue end
+                if not IsValid(m.VNPC_LovedPartner) or m.VNPC_LovedPartner:Health() <= 0 or m.VNPC_LovedPartner == f then
+                    chosenMale = m
+                    f.VNPC_LovedPartner = m
+                    m.VNPC_LovedPartner = f
                     break
                 end
             end
+        end
+
+        if IsValid(chosenMale) then
+            camp.lastLoveTriggerTime = now + 12.0
+            if VNPC_EnsureUnbornChild then
+                VNPC_EnsureUnbornChild(f)
+            end
+            if VNPC_InitiatePrivateMating then
+                VNPC_InitiatePrivateMating(f, chosenMale, camp)
+            else
+                f.VNPC_IsPregnant = true
+                f.VNPC_BabyGrowthValue = f.VNPC_BabyGrowthValue or 10.0
+                f.VNPC_LastGrowthTime = now
+            end
+            if f.EmitSound then
+                f:EmitSound("npc/citizen/vo/nice.wav", 75, math.random(105, 115))
+            end
+            break
         end
     end
 end
@@ -1713,7 +1738,7 @@ hook.Add("Think", "VNPC_PreyCamps_AI_Loop", function()
         -- StormFox 2 Weather Compatibility: During rainstorms or freezing weather, citizens not on patrol seek shelter inside fort huts/house
         if (VNPC_IsStormFox2Raining and VNPC_IsStormFox2Raining()) or (VNPC_GetStormFox2Temperature and VNPC_GetStormFox2Temperature() < 8.0) then
             for _, mem in ipairs(camp.members) do
-                if IsValid(mem) and mem:Health() > 0 and not mem.Vored and not mem.VNPC_IsSleeping and not mem.VNPC_IsCollectingScrap and not IsValid(mem:GetEnemy()) then
+                if IsValid(mem) and mem:Health() > 0 and not mem.Vored and not mem.VNPC_IsSleeping and not mem.VNPC_IsCollectingScrap and not IsValid(mem:GetEnemy()) and not (VNPC_IsBusyMating and VNPC_IsBusyMating(mem)) then
                     if camp.huts and #camp.huts > 0 then
                         local hut = camp.huts[math.random(1, #camp.huts)]
                         local shelterPos = (VNPC_GetHutInteriorPos and VNPC_GetHutInteriorPos(hut)) or (hut and hut.pos) or nil
@@ -1761,7 +1786,7 @@ hook.Add("Think", "VNPC_PreyCamps_AI_Loop", function()
         -- Instruct idle prey members to take shelter inside/near built little huts
         if #camp.huts > 0 then
             for idx, mem in ipairs(camp.members) do
-                if IsValid(mem) and not IsValid(mem:GetEnemy()) then
+                if IsValid(mem) and not IsValid(mem:GetEnemy()) and not (VNPC_IsBusyMating and VNPC_IsBusyMating(mem)) and not mem.VNPC_IsPregnant then
                     local targetHut = camp.huts[((idx - 1) % #camp.huts) + 1]
                     local hutPos = (VNPC_GetHutInteriorPos and VNPC_GetHutInteriorPos(targetHut)) or (targetHut and targetHut.pos) or nil
                     if hutPos and mem:GetPos():DistToSqr(hutPos) > (90 * 90) then
@@ -1830,7 +1855,7 @@ hook.Add("Think", "VNPC_PreyCamps_AI_Loop", function()
         if (camp.territoryRadius or 450.0) > 500.0 and (camp.lastPatrolOrderTime or 0) <= now then
             camp.lastPatrolOrderTime = now + 15.0
             for idx, mem in ipairs(camp.members) do
-                if IsValid(mem) and mem:Health() > 0 and not mem.VNPC_IsPregnant and not IsValid(mem:GetEnemy()) then
+                if IsValid(mem) and mem:Health() > 0 and not mem.VNPC_IsPregnant and not IsValid(mem:GetEnemy()) and not (VNPC_IsBusyMating and VNPC_IsBusyMating(mem)) then
                     if mem.VNPC_PreyRole ~= "emissary" and not mem.VNPC_IsPermanentFortPredator then
                         local ang = math.rad(math.random(0, 360))
                         local r = math.random(300, camp.territoryRadius * 0.9)
