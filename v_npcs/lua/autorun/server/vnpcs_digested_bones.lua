@@ -9,10 +9,9 @@ local bone_alert_radius = CreateConVar("vnpcs_bone_alert_radius", "350", {FCVAR_
 
 local VNPC_BONE_MODELS = {
     "models/Gibs/HGIBS.mdl",         -- Human Skull
-    "models/Gibs/HGIBS_ribf.mdl",    -- Ribcage
+    "models/Gibs/HGIBS_rib.mdl",     -- Ribcage
     "models/Gibs/HGIBS_spine.mdl",   -- Spine
-    "models/Gibs/HGIBS_scapula.mdl", -- Scapula
-    "models/Gibs/HGIBS_bone.mdl",    -- Long bone
+    "models/Gibs/HGIBS_scapula.mdl"  -- Scapula
 }
 
 VNPC_ActiveDigestedBones = VNPC_ActiveDigestedBones or {}
@@ -80,7 +79,7 @@ function VNPC_SpitDigestedBones(pred, countOverride)
         local mdlIndex = ((i - 1) % #VNPC_BONE_MODELS) + 1
         local mdl = VNPC_BONE_MODELS[mdlIndex]
         if not util.IsValidModel(mdl) then
-            mdl = "models/Gibs/HGIBS_bone.mdl"
+            mdl = "models/Gibs/HGIBS.mdl"
         end
 
         bone:SetModel(mdl)
