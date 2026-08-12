@@ -18,7 +18,7 @@ VNPC_ActivePreyCamps = VNPC_ActivePreyCamps or {}
 
 local PREY_WALL_MODELS = {
     "models/props_wasteland/wood_fence01a.mdl",       -- Wide wooden fence barrier
-    "models/props_fortifications/barricade01a.mdl"    -- Sturdy military fortification barricade
+    "models/props_c17/fence01a.mdl"                   -- Metal chainlink fence barrier (base HL2)
 }
 
 local PREY_HUT_PIECE_MODELS = {
@@ -100,7 +100,7 @@ function VNPC_ConstructTownInfrastructure(camp, stage)
         local upgraded = 0
         for _, wall in ipairs(camp.walls or {}) do
             if IsValid(wall) and string.lower(wall:GetModel() or ""):find("wood_fence") then
-                wall:SetModel("models/props_fortifications/barricade01a.mdl")
+                wall:SetModel("models/props_c17/fence01a.mdl")
                 wall:SetHealth(450)
                 upgraded = upgraded + 1
                 if upgraded >= 4 then break end
@@ -157,9 +157,7 @@ function VNPC_ConstructTownInfrastructure(camp, stage)
             if tr.Hit and tr.HitNormal.z >= 0.70 then
                 local tower = ents.Create("prop_physics")
                 if IsValid(tower) then
-                    local mdl = "models/props_fortifications/barricade_tall01a.mdl"
-                    if not util.IsValidModel(mdl) then mdl = "models/props_fortifications/barricade01a.mdl" end
-                    tower:SetModel(mdl)
+                    tower:SetModel("models/props_c17/fence03a.mdl")
                     tower:SetPos(tr.HitPos)
                     tower:SetAngles(Angle(0, angDeg, 0))
                     tower:Spawn()
@@ -975,7 +973,7 @@ function VNPC_ConstructPreyCampWall(camp)
     if targetPlan.isGate then
         mdl = "models/props_wasteland/wood_fence01a.mdl"
     elseif targetPlan.isUpgrade then
-        mdl = "models/props_fortifications/barricade01a.mdl"
+        mdl = "models/props_c17/fence01a.mdl"
     else
         camp.wallModel = camp.wallModel or PREY_WALL_MODELS[math.random(1, #PREY_WALL_MODELS)]
         mdl = camp.wallModel
@@ -1404,7 +1402,7 @@ function VNPC_ConstructPreyCampCourtyardDefense(camp)
     if not IsValid(prop) then return false end
 
     local models = {
-        "models/props_fortifications/barricade01a.mdl",
+        "models/props_c17/fence01a.mdl",
         "models/props_c17/woodbarrel001.mdl",
         "models/props_junk/wood_crate001a.mdl",
         "models/props_wasteland/wood_fence01a.mdl"

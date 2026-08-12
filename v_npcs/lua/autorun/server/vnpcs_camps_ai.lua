@@ -11,9 +11,9 @@ VNPC_ActivePredatorCamps = VNPC_ActivePredatorCamps or {}
 
 local PRED_TENT_MODELS = {
     "models/props_wasteland/wood_room001a.mdl",       -- Wooden cabin / tent shelter
-    "models/props_c17/FurnitureShack001a.mdl",        -- Tin/wood shack shelter
     "models/props_c17/canister01a.mdl",               -- Compact shelter
-    "models/props_wasteland/cargo_container01.mdl"    -- Container shelter
+    "models/props_wasteland/cargo_container01.mdl",   -- Container shelter
+    "models/props_wasteland/wood_fence01a.mdl"        -- Wooden fence shelter
 }
 
 function VNPC_GetPredatorCamp(pred)
@@ -133,7 +133,7 @@ function VNPC_ConstructPredatorCampTent(camp)
 
     local mdl = PRED_TENT_MODELS[math.random(1, #PRED_TENT_MODELS)]
     if not util.IsValidModel(mdl) then
-        mdl = "models/props_c17/FurnitureShack001a.mdl"
+        mdl = "models/props_wasteland/wood_fence01a.mdl"
     end
 
     tent:SetModel(mdl)
@@ -275,7 +275,7 @@ function VNPC_ConstructPredatorCampBarricades(camp)
     local barricade = ents.Create("prop_physics")
     if not IsValid(barricade) then return false end
 
-    barricade:SetModel("models/props_fortifications/barricade01a.mdl")
+    barricade:SetModel("models/props_c17/fence01a.mdl")
     barricade:SetPos(tr.HitPos)
     local outwardDir = (tr.HitPos - camp.pos):GetNormalized()
     barricade:SetAngles(Angle(0, outwardDir:Angle().y + 90, 0))
