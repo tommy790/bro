@@ -1216,7 +1216,14 @@ VNPC_BreamSatelAnimatedBoneList = {
                 ["ValveBiped.Bip01_L_Clavicle"] = { pos = Vector(0, 0, 0), ang = Angle(0, -15, 0) },
                 ["ValveBiped.Bip01_L_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(-25, -20, -15) },
                 ["ValveBiped.Bip01_L_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(-40, -15, 0) },
-                ["ValveBiped.Bip01_L_Hand"] = { pos = Vector(0, 0, 0), ang = Angle(0, -10, 0) }
+                ["ValveBiped.Bip01_L_Hand"] = { pos = Vector(0, 0, 0), ang = Angle(0, -10, 0) },
+                ["ValveBiped.Bip01_R_Thigh"] = { pos = Vector(0, 0, 0), ang = Angle(0, -45, 0) },
+                ["ValveBiped.Bip01_R_Calf"] = { pos = Vector(2, 0, 0), ang = Angle(15, 110, 0) },
+                ["ValveBiped.Bip01_R_Foot"] = { pos = Vector(0, 0, 0), ang = Angle(0, 70, 0) },
+                ["ValveBiped.Bip01_L_Thigh"] = { pos = Vector(0, 0, 0), ang = Angle(0, -32, 0) },
+                ["ValveBiped.Bip01_L_Calf"] = { pos = Vector(2, 0, 0), ang = Angle(-15, 100, 0) },
+                ["ValveBiped.Bip01_L_Foot"] = { pos = Vector(0, 0, 0), ang = Angle(0, 70, 0) },
+                ["ValveBiped.Bip01_Pelvis"] = { pos = Vector(0, 0, -20), ang = Angle(0, 0, 10) }
             }
         }
     },
@@ -1274,7 +1281,14 @@ VNPC_BreamSatelAnimatedBoneList = {
                 ["ValveBiped.Bip01_L_Clavicle"] = { pos = Vector(0, 0, 0), ang = Angle(0, -15, 0) },
                 ["ValveBiped.Bip01_L_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(-20, -15, -10) },
                 ["ValveBiped.Bip01_L_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(-35, -15, 0) },
-                ["ValveBiped.Bip01_L_Hand"] = { pos = Vector(0, 0, 0), ang = Angle(0, -10, 0) }
+                ["ValveBiped.Bip01_L_Hand"] = { pos = Vector(0, 0, 0), ang = Angle(0, -10, 0) },
+                ["ValveBiped.Bip01_R_Thigh"] = { pos = Vector(0, 0, 0), ang = Angle(0, -45, 0) },
+                ["ValveBiped.Bip01_R_Calf"] = { pos = Vector(2, 0, 0), ang = Angle(15, 110, 0) },
+                ["ValveBiped.Bip01_R_Foot"] = { pos = Vector(0, 0, 0), ang = Angle(0, 70, 0) },
+                ["ValveBiped.Bip01_L_Thigh"] = { pos = Vector(0, 0, 0), ang = Angle(0, -32, 0) },
+                ["ValveBiped.Bip01_L_Calf"] = { pos = Vector(2, 0, 0), ang = Angle(-15, 100, 0) },
+                ["ValveBiped.Bip01_L_Foot"] = { pos = Vector(0, 0, 0), ang = Angle(0, 70, 0) },
+                ["ValveBiped.Bip01_Pelvis"] = { pos = Vector(0, 0, -20), ang = Angle(0, 0, 10) }
             }
         }
     },
@@ -2139,7 +2153,7 @@ function VNPC_AnimatedBoneOffsets(ent)
     local is_locomoting = false
     if ent.IsMoving and ent:IsMoving() then
         is_locomoting = true
-    elseif ent.GetVelocity and ent:GetVelocity():Length2DSqr() > 16 then
+    elseif ent.GetVelocity and ent:GetVelocity():Length2DSqr() > 100 then
         is_locomoting = true
     elseif ent.GetSchedule and pcall(ent.GetSchedule, ent) then
         local ok, sched = pcall(ent.GetSchedule, ent)
