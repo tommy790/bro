@@ -1,0 +1,16 @@
+// V-NPCs GPU belly deformer (reference HLSL).
+// Runtime deformation is applied in sh_vnpc_gpu_belly.lua by generating
+// virtual belly bones on any ValveBiped skeleton and skinning a GPU mesh
+// to those bones. This file documents the same displace function.
+
+float4 g_VoreStomachCenter : register(c190);
+float4 g_VoreParams        : register(c191); // x=radius y=intensity z=forward
+
+float3 ApplyVoreVertexDeformation(float3 worldPos, float3 worldNormal, float3 center, float radius, float intensity)
+{
+    float dist = length(worldPos - center);
+    float gaussian = exp(-((dist * dist) / (2.0 * radius * radius + 0.001)));
+    float factor = saturate(1.0 - dist / (radius * 1.35)) * gaussian;
+    float3 outDir = normalize(worldPos - center + worldNormal * 0.25);
+    return worldPos + outDir * (factor * intensity);
+}

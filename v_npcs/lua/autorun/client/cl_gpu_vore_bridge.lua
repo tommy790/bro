@@ -20,36 +20,44 @@ local WHITE_VECTOR = Vector(1, 1, 1)
 
 local function GetPredatorBellyData(predator)
     if not IsValid(predator) then return nil, 0, 0 end
-    
+
+    -- Prefer GPU-generated virtual belly bones so stock models need no belly bones.
+    if VNPC_UpdateVirtualBellyBones then
+        local chain = VNPC_UpdateVirtualBellyBones(predator)
+        if chain and chain.mid and chain.mid.pos then
+            return chain.mid.pos, chain.radius or 20, math.Clamp((chain.size or 0) * 14.0, 0.0, 80.0)
+        end
+    end
+
     local belly = predator.VNPC_Belly or predator.Belly
     if not IsValid(belly) and predator.GetNWEntity then
         belly = predator:GetNWEntity("Belly")
     end
-    
+
     local center = predator:WorldSpaceCenter()
     local radius = 30.0
     local intensity = 0.0
-    
+
     if IsValid(belly) then
-        local boneID = 1 -- Belly main bone anchor
+        local boneID = 1
         local matrix = belly:GetBoneMatrix(boneID)
         if matrix then
             center = matrix:GetTranslation()
         else
             center = belly:WorldSpaceCenter()
         end
-        
+
         local scale = 0
         if belly.GetBellySize and isfunction(belly.GetBellySize) then
             scale = belly:GetBellySize()
         elseif belly.GetNWFloat then
             scale = belly:GetNWFloat("BellySize", 0)
         end
-        
+
         radius = math.max(20.0, 35.0 * (scale + 1.0))
         intensity = math.Clamp(scale * 12.0, 0.0, 80.0)
     end
-    
+
     return center, radius, intensity
 end
 
@@ -87,21 +95,35 @@ hook.Add("PreDrawOpaqueRenderables", "VNPCS_GPU_Vore_UpdateUniforms", function()
     g_ActivePredator = activePredator
     g_UpdatedMaterialsCount = 0
 
+    -- Bind generated-bone uniforms on every nearby pred, not only the closest.
+    for _, npc in ipairs(ents.FindByClass("npc_*")) do
+        if IsValid(npc) and (npc.Predator or npc.VNPC_FemaleModelVore or npc.VNPC_Belly or npc.Belly) then
+            local c, r, i = GetPredatorBellyData(npc)
+            if c and (i or 0) > 0 then
+                for _, matName in ipairs(npc:GetMaterials() or {}) do
+                    local mat = Material(matName)
+                    if mat and not mat:IsError() then
+                        mat:SetVector("$gore_center", c)
+                        mat:SetFloat("$gore_radius", r)
+                        mat:SetFloat("$gore_intensity", i)
+                        g_UpdatedMaterialsCount = g_UpdatedMaterialsCount + 1
+                    end
+                end
+            end
+        end
+    end
+
     if IsValid(activePredator) then
         local center, radius, intensity = GetPredatorBellyData(activePredator)
         g_VoreStomachCenter = center
         g_VoreRadius = radius
         g_VoreIntensity = intensity
 
-        -- Directly bind shader parameters to active predator materials
-        for _, matName in ipairs(activePredator:GetMaterials() or {}) do
-            local mat = Material(matName)
-            if mat and not mat:IsError() then
-                mat:SetVector("$gore_center", center)
-                mat:SetFloat("$gore_radius", radius)
-                mat:SetFloat("$gore_intensity", intensity)
-                g_UpdatedMaterialsCount = g_UpdatedMaterialsCount + 1
-            end
+        local gpuMat = Material("vnpcs/gpu_belly")
+        if gpuMat and not gpuMat:IsError() then
+            gpuMat:SetVector("$gore_center", center)
+            gpuMat:SetFloat("$gore_radius", radius)
+            gpuMat:SetFloat("$gore_intensity", intensity)
         end
 
         -- Pass parameters to Source Engine lighting uniform registers and material variables

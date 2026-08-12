@@ -1,0 +1,23 @@
+"VertexLitGeneric"
+{
+	"$basetexture"		"vgui/white"
+	"$color"		"[0.78 0.58 0.48]"
+	"$model"		"1"
+	"$surfaceprop"		"flesh"
+	"$phong"		"1"
+	"$phongboost"		"1.6"
+	"$phongexponent"	"12"
+	"$phongfresnelranges"	"[0.1 0.5 1]"
+	"$halflambert"		"1"
+	"$nocull"		"0"
+
+	Proxies
+	{
+		VoreGPUDeformer
+		{
+			resultvar		"$gore_center"
+			radiusvar		"$gore_radius"
+			intensityvar		"$gore_intensity"
+		}
+	}
+}
