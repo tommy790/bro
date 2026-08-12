@@ -121,6 +121,27 @@ function VNPC_HasEnemy(ent)
     return false
 end
 
+function VNPC_IsRunningToDestination(ent)
+    if not IsValid(ent) then return false end
+    if ent.IsMoving and not ent:IsMoving() then return false end
+    if ent.GetSchedule and pcall(ent.GetSchedule, ent) then
+        local ok, sched = pcall(ent.GetSchedule, ent)
+        if ok and (sched == SCHED_FORCED_GO_RUN or sched == SCHED_CHASE_ENEMY) then
+            return true
+        end
+    end
+    if VNPC_HasEnemy(ent) then
+        return true
+    end
+    if ent.GetVelocity and pcall(ent.GetVelocity, ent) then
+        local ok, vel = pcall(ent.GetVelocity, ent)
+        if ok and vel and vel:Length2DSqr() > (150 * 150) then
+            return true
+        end
+    end
+    return false
+end
+
 function VNPC_IsPreyNPC(ent)
     if not IsValid(ent) or ent:IsPlayer() or ent:Health() <= 0 then return false end
     if not (ent:IsNPC() or ent:IsNextBot()) then return false end
@@ -438,7 +459,7 @@ if SERVER then
 
                 if GetConVar("vnpcs_prey_stamina_enabled"):GetBool() then
                     local curStam = VNPC_GetPreyStamina(ent)
-                    local isRunning = ent.IsMoving and ent:IsMoving() and (ent:GetSchedule() == SCHED_FORCED_GO_RUN or ent:GetSchedule() == SCHED_CHASE_ENEMY or VNPC_HasEnemy(ent))
+                    local isRunning = VNPC_IsRunningToDestination(ent)
                     if isRunning then
                         local newStam = math.max(0, curStam - 3.5)
                         VNPC_SetPreyStamina(ent, newStam)
