@@ -209,6 +209,149 @@ function VNPC_GetVirtualBellyBone(ent, name)
     return chain.byName[name]
 end
 
+-- 4 unique local-space struggle lumps per prey (head, torso, left limb, right limb).
+local STRUGGLE_SPOT_BASES = {
+    { kind = "head",  pos = Vector(0.10, 0.58,  0.46), radius = 0.28, freq = 5.4 },
+    { kind = "torso", pos = Vector(-0.08, 0.74,  0.04), radius = 0.36, freq = 3.7 },
+    { kind = "lleg",  pos = Vector(0.50, 0.36, -0.40), radius = 0.26, freq = 6.2 },
+    { kind = "rleg",  pos = Vector(-0.50, 0.40, -0.38), radius = 0.26, freq = 5.8 }
+}
+local GPU_STRUGGLE_MAX_PREY = 4
+
+local function gpuHash01(a, b)
+    local n = math.sin(a * 12.9898 + b * 78.233) * 43758.5453
+    return n - math.floor(n)
+end
+
+local function gpuClampLocal(v)
+    v.x = math.Clamp(v.x, -0.85, 0.85)
+    v.y = math.Clamp(v.y, 0.12, 0.95)
+    v.z = math.Clamp(v.z, -0.78, 0.72)
+    return v
+end
+
+function VNPC_SyncGPUBellyStruggle(pred)
+    if not IsValid(pred) then return 0 end
+    local belly = pred.VNPC_Belly or pred.Belly
+    if not IsValid(belly) and pred.GetNWEntity then
+        belly = pred:GetNWEntity("Belly")
+    end
+    local n = 0
+    if IsValid(belly) and istable(belly.Prey) then
+        for _, info in ipairs(belly.Prey) do
+            if n >= GPU_STRUGGLE_MAX_PREY then break end
+            local prey = info and info.Entity
+            if not IsValid(prey) then continue end
+            if info.Absorbing then continue end
+            if info.Alive == false and not prey.VNPC_IsBeingSwallowed then continue end
+            local mul = 1.0
+            if VNPC_GetPreyPersonality then
+                local _, data = VNPC_GetPreyPersonality(prey)
+                if data and data.struggle_multiplier then
+                    mul = data.struggle_multiplier
+                end
+            end
+            if prey.VNPC_IsBeingSwallowed then
+                mul = mul * 0.65
+            end
+            n = n + 1
+            if pred.SetNWInt then pred:SetNWInt("VNPC_GPUStruggleID" .. n, prey:EntIndex()) end
+            if pred.SetNWFloat then pred:SetNWFloat("VNPC_GPUStruggleMul" .. n, mul) end
+        end
+    end
+    if pred.VNPC_GPUStruggleTest then
+        for _, row in ipairs(pred.VNPC_GPUStruggleTest) do
+            if n >= GPU_STRUGGLE_MAX_PREY then break end
+            n = n + 1
+            if pred.SetNWInt then pred:SetNWInt("VNPC_GPUStruggleID" .. n, tonumber(row.id) or (pred:EntIndex() * 10 + n)) end
+            if pred.SetNWFloat then pred:SetNWFloat("VNPC_GPUStruggleMul" .. n, tonumber(row.mul) or 1.2) end
+        end
+    end
+    if pred.SetNWInt then pred:SetNWInt("VNPC_GPUStruggleN", n) end
+    return n
+end
+
+function VNPC_GetGPUBellyStruggleSpots(ent, chain)
+    if not IsValid(ent) then return {} end
+    local cv = GetConVar("vnpcs_gpu_belly_struggle")
+    if cv and not cv:GetBool() then return {} end
+    local ampMul = 1.0
+    local ampCv = GetConVar("vnpcs_gpu_belly_struggle_amp")
+    if ampCv then ampMul = ampCv:GetFloat() or 1.0 end
+    if ampMul <= 0 then return {} end
+
+    local count = (ent.GetNWInt and ent:GetNWInt("VNPC_GPUStruggleN", 0)) or 0
+    if count <= 0 and ent.VNPC_GPUStruggleTest then
+        count = math.min(GPU_STRUGGLE_MAX_PREY, #ent.VNPC_GPUStruggleTest)
+    end
+    if count <= 0 then return {} end
+
+    chain = chain or ent.VNPC_VirtualBellyBones
+    local now = CurTime()
+    local spots = {}
+    for p = 1, math.min(count, GPU_STRUGGLE_MAX_PREY) do
+        local preyId = (ent.GetNWInt and ent:GetNWInt("VNPC_GPUStruggleID" .. p, p * 17 + ent:EntIndex())) or (p * 17)
+        local mul = (ent.GetNWFloat and ent:GetNWFloat("VNPC_GPUStruggleMul" .. p, 1.0)) or 1.0
+        if mul <= 0.02 then continue end
+        local side = (p % 2 == 0) and -1 or 1
+        local slotShift = (p - 1) * 0.18
+        for s = 1, 4 do
+            local base = STRUGGLE_SPOT_BASES[s]
+            local jx = (gpuHash01(preyId, s * 3.1) - 0.5) * 0.38
+            local jy = (gpuHash01(preyId, s * 7.7) - 0.5) * 0.16
+            local jz = (gpuHash01(preyId, s * 11.3) - 0.5) * 0.28
+            local extraX = 0
+            if s == 3 then extraX = slotShift elseif s == 4 then extraX = -slotShift end
+            local lp = gpuClampLocal(Vector(
+                base.pos.x * side + jx + extraX,
+                base.pos.y + jy,
+                base.pos.z + jz
+            ))
+            local phase = preyId * 0.73 + s * 1.31 + p * 0.41
+            local kick = math.max(0, math.sin(now * base.freq + phase))
+            kick = kick * kick
+            local pulse = 0.35 + 0.65 * kick
+            local amp = mul * ampMul * pulse * ((s == 2) and 0.34 or 0.26)
+            local world = nil
+            if chain and chain.mid then
+                world = chain.mid.pos
+                    + chain.right * (lp.x * chain.width * 0.5)
+                    + chain.forward * (lp.y * chain.depth * 0.5)
+                    + chain.up * (lp.z * chain.height * 0.5)
+            end
+            table.insert(spots, {
+                kind = base.kind,
+                preyId = preyId,
+                lp = lp,
+                radius = base.radius,
+                amp = amp,
+                world = world
+            })
+        end
+    end
+    ent.VNPC_GPUStruggleSpots = spots
+    return spots
+end
+
+function VNPC_ApplyGPUBellyStruggleDeform(lp, spots)
+    if not spots or #spots == 0 then return 0 end
+    local push = 0
+    for i = 1, #spots do
+        local spot = spots[i]
+        if (spot.amp or 0) <= 0.001 then continue end
+        local dx = lp.x - spot.lp.x
+        local dy = lp.y - spot.lp.y
+        local dz = lp.z - spot.lp.z
+        local d = math.sqrt(dx * dx + dy * dy + dz * dz)
+        local r = spot.radius or 0.28
+        if d < r then
+            local g = math.exp(-(d * d) / (2 * r * r + 0.0001))
+            push = push + spot.amp * (1 - d / r) * g
+        end
+    end
+    return push
+end
+
 function VNPC_ApplyGeneratedBellyBoneScale(ent, chain)
     if not IsValid(ent) or not ent.ManipulateBoneScale then return end
     local cv = GetConVar("vnpcs_gpu_belly_bonescale")
