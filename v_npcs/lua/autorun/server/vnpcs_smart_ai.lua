@@ -58,8 +58,14 @@ function VNPC_SelectSmartPreyTarget(pred, search_radius)
         if ent.VNPC_PreyCampID then
             score = score + 75 -- Prioritize prey camp members!
         end
+        if ent.VNPC_IsExhausted then
+            score = score + 90 -- Prioritize exhausted prey!
+        end
         if ent:Health() > 0 and ent:Health() <= 40 then
             score = score + 45 -- Prioritize wounded targets
+        end
+        if pred.VNPC_DesperateSurvival then
+            score = score + 120 - dist * 0.2 -- Desperate survival: prioritize nearest prey to swallow immediately and heal!
         end
 
         -- Check if target has their back turned (ambush opportunity)

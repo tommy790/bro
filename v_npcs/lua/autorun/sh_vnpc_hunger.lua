@@ -482,20 +482,22 @@ if SERVER then
                     local curStam = VNPC_GetPreyStamina(ent)
                     local isRunning = VNPC_IsRunningToDestination(ent)
                     if isRunning then
-                        local newStam = math.max(0, curStam - 3.5)
+                        local hpPercent = (ent.GetMaxHealth and ent:GetMaxHealth() > 0) and (ent:Health() / ent:GetMaxHealth()) or 1.0
+                        local drainMult = (hpPercent < 0.45) and 1.35 or 1.0
+                        local newStam = math.max(0, curStam - (3.5 * drainMult))
                         VNPC_SetPreyStamina(ent, newStam)
                         if newStam <= 0 and not ent.VNPC_IsExhausted then
                             ent.VNPC_IsExhausted = true
-                            if ent.SetSchedule then pcall(ent.SetSchedule, ent, SCHED_FORCED_GO) end
+                            if ent.SetSchedule then pcall(ent.SetSchedule, ent, SCHED_IDLE_STAND) end
                             if ent.EmitSound and (ent.VNPC_NextExhaustSound or 0) <= now then
                                 ent.VNPC_NextExhaustSound = now + 12.0
                                 ent:EmitSound("npc/alyx/sigh01.wav", 75, math.random(90, 98))
                             end
                         end
                     else
-                        local newStam = math.min(100, curStam + 2.5)
+                        local newStam = math.min(100, curStam + 2.8)
                         VNPC_SetPreyStamina(ent, newStam)
-                        if newStam >= 30.0 then
+                        if newStam >= 35.0 then
                             ent.VNPC_IsExhausted = nil
                         end
                     end
@@ -699,6 +701,9 @@ function VNPC_PredatorLevelUp(pred)
             belly.VNPC_LevelCapacityBonus = math.floor((pred.VNPC_Level - 1) * 0.5)
         end
 
+        -- 4. Veteran Hunt Reach & Thick Hide Resilience
+        pred.VNPC_VeteranHuntReachBonus = math.Clamp((pred.VNPC_Level - 1) * 3.0, 0.0, 45.0)
+
         if pred.EmitSound then
             pred:EmitSound("belly/snd_digeststart.wav", 85, math.Clamp(100 + pred.VNPC_Level * 2, 100, 130))
         end
@@ -712,6 +717,51 @@ function VNPC_PredatorLevelUp(pred)
         pred:SetNWInt("VNPC_XP", pred.VNPC_XP)
     end
 end
+
+function VNPC_GetPredatorDamageResistance(pred)
+    if not IsValid(pred) then return 0 end
+    local level = VNPC_GetPredatorLevel(pred)
+    return math.Clamp((level - 1) * 0.02, 0.0, 0.30)
+end
+
+if SERVER then
+    hook.Add("EntityTakeDamage", "VNPC_PredatorVeteran_DamageResistance", function(target, dmginfo)
+        if not IsValid(target) or not (target.IsDrGNextbot or target.VNPC_FemaleModelVore or target.Predator) then return end
+        local resist = VNPC_GetPredatorDamageResistance(target)
+        if resist > 0 then
+            dmginfo:ScaleDamage(1.0 - resist)
+        end
+    end)
+end
+
+concommand.Add("vnpcs_overhaul_status", function(ply)
+    print("===============================================================")
+    print("            V-NPCS MASTER ADDON OVERHAUL STATUS                ")
+    print("===============================================================")
+    print(" [1] ENVIRONMENTAL & WEATHER OVERHAUL")
+    print(string.format("     - StormFox 2 Compatible: YES | Raining: %s | Night: %s | Temp: %.1f°C", tostring(VNPC_IsStormFox2Raining()), tostring(VNPC_IsStormFox2Night()), VNPC_GetStormFox2Temperature()))
+    print(" [2] PREY TOWN EVOLUTION & CAMP ENGINEERING OVERHAUL")
+    local preyCamps = VNPC_ActivePreyCamps or {}
+    print("     - Total Active Prey Camps: " .. #preyCamps)
+    for _, camp in ipairs(preyCamps) do
+        local stageData = VNPC_TownDevelopmentStages and VNPC_TownDevelopmentStages[camp.townStage or 1]
+        print(string.format("       * Camp #%d: Stage %d [%s] | Members: %d | Dev Pts: %d/%d | Fortified: %s",
+            camp.id, camp.townStage or 1, stageData and stageData.name or "OUTPOST", #(camp.members or {}), math.floor(camp.townDevPoints or 0), stageData and stageData.ptsRequired or 0, tostring(camp.fortified)))
+    end
+    print(" [3] VETERAN PREDATOR LEVELING & COMBAT RESILIENCE OVERHAUL")
+    local predCount = 0
+    for _, ent in ipairs(ents.GetAll()) do
+        if IsValid(ent) and (ent.IsDrGNextbot or ent.VNPC_FemaleModelVore or ent.Predator) and not ent:IsPlayer() then
+            predCount = predCount + 1
+            local lvl = VNPC_GetPredatorLevel(ent)
+            local res = VNPC_GetPredatorDamageResistance(ent) * 100
+            print(string.format("       * Predator #%d [%s]: Level %d (XP: %d) | Thick Hide Resist: %.1f%% | Reach Bonus: +%.1f units",
+                ent:EntIndex(), ent.PrintName or ent:GetClass(), lvl, VNPC_GetPredatorXP(ent), res, ent.VNPC_VeteranHuntReachBonus or 0))
+        end
+    end
+    if predCount == 0 then print("       * No active predators currently spawned.") end
+    print("===============================================================")
+end)
 
 function VNPC_AddPredatorXP(pred, amount, reason)
     if not IsValid(pred) then return end

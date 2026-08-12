@@ -839,6 +839,16 @@ function VNPC_WildFamilyDefense_AI(now)
                     if w.SetLastPosition then pcall(w.SetLastPosition, w, threat:GetPos()) end
                     if w.SetSchedule then pcall(w.SetSchedule, w, SCHED_FORCED_GO_RUN) end
 
+                    -- Alert nearby wild allies to converge and defend the family!
+                    for _, ally in ipairs(ents.FindInSphere(wPos, 1400)) do
+                        if IsValid(ally) and ally ~= w and ally ~= threat and (ally:IsNPC() or ally.IsDrGNextbot) and not ally.Vored then
+                            if ally.VNPC_WildType == w.VNPC_WildType and not IsValid(ally:GetEnemy()) then
+                                if ally.SetEnemy then pcall(ally.SetEnemy, ally, threat) end
+                                if ally.SetSchedule then pcall(ally.SetSchedule, ally, SCHED_FORCED_GO_RUN) end
+                            end
+                        end
+                    end
+
                     -- If protector is a predator and within grab distance, swallow or fight the threat!
                     if (w.VNPC_WildType == "predator" or w.VNPC_FemaleModelVore or w.Predator) and wPos:Distance(threat:GetPos()) <= 165 then
                         if w.EatEntity and w:EatEntity(threat) then
@@ -914,6 +924,14 @@ hook.Add("Think", "VNPC_WildEcology_AI_Loop", function()
         local pos = ent:GetPos()
         if ent.VNPC_WildType == "predator" then
             VNPC_RecordWildHotspot(pos)
+            if (VNPC_IsStormFox2Night and VNPC_IsStormFox2Night()) or (VNPC_IsStormFox2Raining and VNPC_IsStormFox2Raining()) then
+                ent:AddFlags(FL_NOTARGET)
+                if ent.SightRange and not ent.VNPC_BaseWildSight then ent.VNPC_BaseWildSight = ent.SightRange end
+                if ent.VNPC_BaseWildSight then ent.SightRange = ent.VNPC_BaseWildSight * 1.35 end
+            else
+                ent:RemoveFlags(FL_NOTARGET)
+                if ent.VNPC_BaseWildSight then ent.SightRange = ent.VNPC_BaseWildSight end
+            end
         end
 
         if not IsValid(ent:GetEnemy()) then

@@ -432,6 +432,11 @@ function VNPC_AssignPreyToCamp(npc, force)
         end
     end
 
+    if not npc.VNPC_TownRole then
+        local roles = { "builder", "sentry", "forager", "cook" }
+        npc.VNPC_TownRole = roles[math.random(1, #roles)]
+    end
+
     if bestCamp then
         table.insert(bestCamp.members, npc)
         npc.VNPC_PreyCampID = bestCamp.id
@@ -690,6 +695,7 @@ function VNPC_EnsurePreyCampLeader(camp)
     if IsValid(candidate) then
         camp.leader = candidate
         candidate.VNPC_IsCampLeader = true
+        candidate.VNPC_TownRole = "leader"
         candidate.VNPC_PreyCampLeader = camp.id
         print(string.format("[V-NPCs] Prey Camp #%d elected Leader: #%d [%s]!", camp.id, candidate:EntIndex(), candidate.PrintName or candidate:GetClass()))
     end
@@ -852,6 +858,44 @@ function VNPC_PreyCampLeaderDecision_AI(camp, now)
     end
 
     print(string.format("[V-NPCs] Prey Camp #%d Leader #%d [%s] at Leader Hut Table decided strategy: [%s]!", camp.id, leader:EntIndex(), leader.PrintName or leader:GetClass(), decision))
+end
+
+function VNPC_PreyTownBuilderRepair_AI(camp, now)
+    if not camp or not camp.members then return end
+    if (camp.nextBuilderRepairTime or 0) > now then return end
+    camp.nextBuilderRepairTime = now + 4.0
+
+    for _, mem in ipairs(camp.members) do
+        if not IsValid(mem) or mem:Health() <= 0 or mem.Vored or mem.VNPC_IsSleeping or mem:IsPlayer() then continue end
+        if mem.VNPC_TownRole == "builder" and not IsValid(mem:GetEnemy()) and not mem.VNPC_IsCookingMeal and not mem.VNPC_IsEatingMeal then
+            local bestTarget = nil
+            local bestDistSqr = 1200 * 1200
+            for _, wall in ipairs(camp.walls or {}) do
+                if IsValid(wall) and wall:Health() < (wall:GetMaxHealth() * 0.90) then
+                    local dSqr = mem:GetPos():DistToSqr(wall:GetPos())
+                    if dSqr < bestDistSqr then
+                        bestDistSqr = dSqr
+                        bestTarget = wall
+                    end
+                end
+            end
+
+            if IsValid(bestTarget) then
+                if bestDistSqr > (120 * 120) then
+                    if mem.SetLastPosition then pcall(mem.SetLastPosition, mem, bestTarget:GetPos()) end
+                    if mem.SetSchedule then pcall(mem.SetSchedule, mem, SCHED_FORCED_GO) end
+                else
+                    local curHP = bestTarget:Health()
+                    local maxHP = bestTarget:GetMaxHealth() or 450
+                    bestTarget:SetHealth(math.min(maxHP, curHP + 35))
+                    camp.townDevPoints = (camp.townDevPoints or 0) + 5.0
+                    if mem.SetSchedule then pcall(mem.SetSchedule, mem, SCHED_IDLE_STAND) end
+                    print(string.format("[V-NPCs] Town Builder #%d repaired wall/fortification in Prey Camp #%d! (+5 Town Dev Pts)", mem:EntIndex(), camp.id))
+                end
+                break
+            end
+        end
+    end
 end
 
 function VNPC_PreyCampCooking_AI(camp, now)
@@ -1881,6 +1925,9 @@ hook.Add("Think", "VNPC_PreyCamps_AI_Loop", function()
         end
         if VNPC_PreyCampLeaderDecision_AI then
             VNPC_PreyCampLeaderDecision_AI(camp, now)
+        end
+        if VNPC_PreyTownBuilderRepair_AI then
+            VNPC_PreyTownBuilderRepair_AI(camp, now)
         end
 
         if VNPC_PreyCampCooking_AI then

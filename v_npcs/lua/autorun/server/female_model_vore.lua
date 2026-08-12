@@ -635,6 +635,13 @@ hook.Add("Think", "VNPC_FemaleModelVore_AI", function()
         if VNPC_GetPredatorPersonality then
             pers, pers_data = VNPC_GetPredatorPersonality(npc)
         end
+        local levelBonus = (VNPC_GetPredatorLevel and (VNPC_GetPredatorLevel(npc) - 1) * 3.0) or 0
+        if npc.GetMaxHealth and npc:GetMaxHealth() > 0 and (npc:Health() / npc:GetMaxHealth()) < 0.35 then
+            npc.VNPC_DesperateSurvival = true
+            levelBonus = levelBonus + 25.0
+        else
+            npc.VNPC_DesperateSurvival = nil
+        end
         local eff_grab = grab_dist * (pers_data and pers_data.grab_multiplier or 1.0)
         local eff_detect = detect_dist * (pers_data and pers_data.range_multiplier or 1.0)
 
@@ -644,7 +651,7 @@ hook.Add("Think", "VNPC_FemaleModelVore_AI", function()
         if IsValid(enemy) and enemy ~= npc and not enemy.Vored then
             local targetRad = (enemy.OBBMaxs and enemy:OBBMaxs():Length2D() or 30)
             local dist = npc:GetPos():Distance(enemy:GetPos())
-            local battle_grab = math.max(140, eff_grab * 1.5) + targetRad
+            local battle_grab = math.max(140, eff_grab * 1.5) + targetRad + levelBonus
             if dist <= battle_grab then
                 if npc.CapabilitiesAdd and npc.VNPC_RemovedRangeAttack then
                     pcall(npc.CapabilitiesAdd, npc, CAP_WEAPON_RANGE_ATTACK1)
