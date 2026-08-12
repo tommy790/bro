@@ -132,6 +132,13 @@ function VNPC_ScanBonePoseNoclip(ent)
     local hits = {}
     local phase = (ent.GetNWInt and ent:GetNWInt("FacialPhase", -1)) or -1
     local handsOnBodyOK = (phase == 2 or phase == 3 or ent.VNPC_IsSleeping or ((ent.VNPC_InChildbirthPose or 0) > CurTime()))
+    local parts = VNPC_MeasureBodyParts and VNPC_MeasureBodyParts(ent) or nil
+    local torsoR = (parts and parts.torso and parts.torso.radius) or 7
+    local handR = (parts and parts.hand and parts.hand.radius) or 3
+    local footH = (parts and parts.foot and parts.foot.height) or 3
+    local armMax = (parts and parts.arm and parts.arm.length * 1.28) or 58
+    local legMax = (parts and parts.leg and parts.leg.length * 1.28) or 72
+    local selfDist = torsoR + handR + 2
 
     -- 1. Extreme ManipulateBonePosition offsets (teleport the mesh through world/body)
     if istable(ent.BoneBlendState) then
@@ -181,7 +188,7 @@ function VNPC_ScanBonePoseNoclip(ent)
                         pushHit(hits, "world", chain[i + 1], tr.HitPos, string.format("%s -> %s cuts world", stripBoneName(chain[i]), stripBoneName(chain[i + 1])), 1.6)
                     end
                 end
-                local maxLen = (chain[i]:find("Thigh") or chain[i]:find("Calf") or chain[i + 1]:find("Foot")) and 72 or 58
+                local maxLen = (chain[i]:find("Thigh") or chain[i]:find("Calf") or chain[i + 1]:find("Foot")) and legMax or armMax
                 if span > maxLen then
                     pushHit(hits, "stretch", chain[i + 1], b, string.format("%s stretched to %.1f units", stripBoneName(chain[i + 1]), span), math.min(span / maxLen, 3))
                 end
@@ -204,9 +211,10 @@ function VNPC_ScanBonePoseNoclip(ent)
                 mask = MASK_SOLID_BRUSHONLY,
                 filter = ent
             })
-            if tr.Hit and not tr.HitSky and pos.z < (tr.HitPos.z - 7) then
+            local sinkTol = math.max(6, footH * 0.9)
+            if tr.Hit and not tr.HitSky and pos.z < (tr.HitPos.z - sinkTol) then
                 local sunk = tr.HitPos.z - pos.z
-                pushHit(hits, "ground", name, pos, string.format("sunk %.1f units under floor", sunk), math.min(sunk / 10, 3))
+                pushHit(hits, "ground", name, pos, string.format("sunk %.1f units under floor (part H %.1f)", sunk, footH), math.min(sunk / 10, 3))
             end
         end
     end
@@ -218,11 +226,11 @@ function VNPC_ScanBonePoseNoclip(ent)
         local head = boneWorldPos(ent, "ValveBiped.Bip01_Head1")
         for _, name in ipairs({ "ValveBiped.Bip01_R_Hand", "ValveBiped.Bip01_L_Hand", "ValveBiped.Bip01_R_Forearm", "ValveBiped.Bip01_L_Forearm" }) do
             local pos = boneWorldPos(ent, name)
-            if pos and torso and pos:DistToSqr(torso) < (7 * 7) then
-                pushHit(hits, "self", name, pos, "limb inside torso", 1.2)
-            elseif pos and pelvis and name:find("Hand") and pos:DistToSqr(pelvis) < (6 * 6) then
+            if pos and torso and pos:DistToSqr(torso) < (selfDist * selfDist) then
+                pushHit(hits, "self", name, pos, string.format("limb inside torso (need %.1f wide)", selfDist), 1.2)
+            elseif pos and pelvis and name:find("Hand") and pos:DistToSqr(pelvis) < ((selfDist * 0.85) * (selfDist * 0.85)) then
                 pushHit(hits, "self", name, pos, "hand inside pelvis", 1.1)
-            elseif pos and head and name:find("Hand") and phase ~= 1 and phase ~= 4 and pos:DistToSqr(head) < (5 * 5) then
+            elseif pos and head and name:find("Hand") and phase ~= 1 and phase ~= 4 and pos:DistToSqr(head) < ((handR + 3) * (handR + 3)) then
                 pushHit(hits, "self", name, pos, "hand inside head", 1.0)
             end
         end
@@ -257,6 +265,23 @@ function VNPC_DetectBonePoseNoclip(ent)
 
     if #hits > 0 then
         recordLog(ent, hits)
+        local autoFix = GetConVar("vnpcs_bone_pose_fixed_on_noclip")
+        if autoFix and autoFix:GetBool() and not ent.VNPC_UseFixedBonePose and VNPC_ApplyFixedBonePose then
+            local serious = false
+            for _, hit in ipairs(hits) do
+                if hit.kind == "world" or hit.kind == "solid" or hit.kind == "ground" or hit.kind == "offset" or hit.kind == "self" then
+                    serious = true
+                    break
+                end
+            end
+            if serious then
+                VNPC_ApplyFixedBonePose(ent)
+                if (ent.VNPC_NextBonePoseNoclipPrint or 0) <= now then
+                    print(string.format("[V-NPCs] Switched #%d [%s] to generated fixed bone pose after noclip (used measured W/H)",
+                        ent:EntIndex(), ent.PrintName or ent:GetClass()))
+                end
+            end
+        end
         local debug = GetConVar("vnpcs_bone_pose_noclip_debug")
         if debug and debug:GetBool() and (ent.VNPC_NextBonePoseNoclipPrint or 0) <= now then
             ent.VNPC_NextBonePoseNoclipPrint = now + 2.5

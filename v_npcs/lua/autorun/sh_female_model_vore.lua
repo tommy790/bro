@@ -1880,11 +1880,22 @@ concommand.Add("vnpcs_set_moveset", function(ply, cmd, args)
         print("[V-NPCs] Entity #" .. tostring(id) .. " not found.")
         return
     end
+    if name == "fixed" then
+        target.VNPC_AssignedMoveset = "fixed"
+        if VNPC_ApplyFixedBonePose then
+            VNPC_ApplyFixedBonePose(target)
+        else
+            target.VNPC_UseFixedBonePose = true
+        end
+        print("[V-NPCs] Set entity #" .. id .. " moveset to generated fixed pose")
+        return
+    end
     if not VNPC_BoneMovesets[name] then
         print("[V-NPCs] Moveset '" .. name .. "' not found. Use vnpcs_movesets_list to view available movesets.")
         return
     end
     target.VNPC_AssignedMoveset = name
+    target.VNPC_UseFixedBonePose = nil
     print("[V-NPCs] Set entity #" .. id .. " moveset to: " .. name)
 end)
 
@@ -1942,6 +1953,10 @@ end
 
 function VNPC_GetAnimatedBoneList(ent)
     if not IsValid(ent) then return VNPC_DefaultAnimatedBoneList end
+    if ent.VNPC_UseFixedBonePose or ent.VNPC_AssignedMoveset == "fixed" then
+        local generated = VNPC_GetFixedBonePose and VNPC_GetFixedBonePose(ent)
+        if generated then return generated end
+    end
     if ent.AnimatedBoneList and istable(ent.AnimatedBoneList) then
         return ent.AnimatedBoneList
     end
@@ -2193,8 +2208,13 @@ function VNPC_AnimatedBoneOffsets(ent)
     local phase = ent:GetNWInt("FacialPhase", -1)
     local animList = VNPC_GetAnimatedBoneList(ent)
     local data = animList[phase] or animList[0]
-    if (ent.VNPC_IsHumanOralSwallow or (ent.GetNWBool and ent:GetNWBool("VNPC_IsHumanOralSwallow"))) and VNPC_Calm5SecSwallowKeyframes then
-        data = VNPC_Calm5SecSwallowKeyframes
+    if (ent.VNPC_IsHumanOralSwallow or (ent.GetNWBool and ent:GetNWBool("VNPC_IsHumanOralSwallow"))) then
+        local generated = VNPC_GetFixedBonePose and VNPC_GetFixedBonePose(ent)
+        if generated and generated[1] then
+            data = generated[1]
+        elseif VNPC_Calm5SecSwallowKeyframes then
+            data = VNPC_Calm5SecSwallowKeyframes
+        end
     elseif (ent.VNPC_IsMatingBonePose or (ent.GetNWBool and ent:GetNWBool("VNPC_IsMatingBonePose"))) and VNPC_MatingBonePose then
         data = VNPC_MatingBonePose
     elseif (ent.VNPC_IsWillingUnbirthCrawl or (ent.GetNWBool and ent:GetNWBool("VNPC_IsWillingUnbirthCrawl"))) and VNPC_UnbirthWillingReceiveBonePose then
