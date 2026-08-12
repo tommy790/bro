@@ -67,9 +67,7 @@ function VNPC_TriggerCampWar(campA, campB)
     local key = VNPC_GetTensionKey(campA.id, campB.id)
     VNPC_CampTensions[key] = 0
 
-    for _, p in ipairs(player.GetAll()) do
-        p:EmitSound("ambient/alarms/siren.wav", 80, 100)
-    end
+    print(string.format("[V-NPCs] Faction War Triggered: Camp #%d [%s] vs Camp #%d [%s]!", campA.id, tostring(campA.faction), campB.id, tostring(campB.faction)))
 end
 
 hook.Add("Think", "VNPC_PredatorCampFactions_Loop", function()
