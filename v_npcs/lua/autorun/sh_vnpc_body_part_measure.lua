@@ -610,8 +610,6 @@ function VNPC_IsBellyHoldPoseActive(ent, phase)
         return false, nil
     end
     phase = phase or ((ent.GetNWInt and ent:GetNWInt("FacialPhase", -1)) or -1)
-    local moveset = string.lower(tostring(ent.VNPC_AssignedMoveset or ""))
-    if moveset == "shy" then return false, nil end
     if ent.VNPC_IsSleeping or ent.VNPC_IsSleepCrawled then
         return true, "sleep"
     end

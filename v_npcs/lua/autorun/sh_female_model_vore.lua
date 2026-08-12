@@ -913,42 +913,14 @@ VNPC_DefaultAnimatedBoneList = {
     }
 }
 
-VNPC_EmbarrassedPoseKeyframe = {
-    -- 1. Head / Neck tilted shyly down and toward her right shoulder
-    ["ValveBiped.Bip01_Head1"] = { pos = Vector(0, 0, 0), ang = Angle(-15, 20, -10) },
-    ["ValveBiped.Bip01_Neck1"] = { pos = Vector(0, 0, 0), ang = Angle(-5, 8, -5) },
-    -- 2. Right Arm raised to ear / cheek / hair
-    ["ValveBiped.Bip01_R_Clavicle"] = { pos = Vector(0, 0, 0), ang = Angle(0, 15, 10) },
-    ["ValveBiped.Bip01_R_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(-70, -45, 50) },
-    ["ValveBiped.Bip01_R_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(-135, -55, -30) },
-    ["ValveBiped.Bip01_R_Hand"] = { pos = Vector(0, 0, 0), ang = Angle(0, 25, -45) },
-    -- 3. Left Arm reaching down / tucked behind back / hip
-    ["ValveBiped.Bip01_L_Clavicle"] = { pos = Vector(0, 0, 0), ang = Angle(0, -10, -5) },
-    ["ValveBiped.Bip01_L_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(25, -25, -20) },
-    ["ValveBiped.Bip01_L_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(-45, 15, 30) },
-    ["ValveBiped.Bip01_L_Hand"] = { pos = Vector(0, 0, 0), ang = Angle(10, 0, 20) },
-    -- 4. Torso / Spine shy contrapposto curve
-    ["ValveBiped.Bip01_Spine"] = { pos = Vector(0, 0, 0), ang = Angle(-6, 8, -4) },
-    ["ValveBiped.Bip01_Spine1"] = { pos = Vector(0, 0, 0), ang = Angle(-4, 4, 0) },
-    ["ValveBiped.Bip01_Spine2"] = { pos = Vector(0, 0, 0), ang = Angle(-3, 4, 0) },
-    ["ValveBiped.Bip01_Pelvis"] = { pos = Vector(0, 0, 0), ang = Angle(0, 0, -4) },
-    -- 5. Legs / Feet in shy inward-knee cross-legged stance
-    ["ValveBiped.Bip01_R_Thigh"] = { pos = Vector(0, 0, 0), ang = Angle(8, 15, -10) },
-    ["ValveBiped.Bip01_R_Calf"] = { pos = Vector(0, 0, 0), ang = Angle(15, 0, 0) },
-    ["ValveBiped.Bip01_R_Foot"] = { pos = Vector(0, 0, 0), ang = Angle(0, 0, 0) },
-    ["ValveBiped.Bip01_L_Thigh"] = { pos = Vector(0, 0, 0), ang = Angle(-8, -15, 12) },
-    ["ValveBiped.Bip01_L_Calf"] = { pos = Vector(0, 0, 0), ang = Angle(25, 0, 0) },
-    ["ValveBiped.Bip01_L_Foot"] = { pos = Vector(0, 0, 0), ang = Angle(0, 0, 0) }
-}
-
 VNPC_ShyAnimatedBoneList = {
-    [0] = { -- rest (shy/cautious stance)
-        ["ValveBiped.Bip01_Head1"] = { pos = Vector(0, 0, 0), ang = Angle(-5, 12, -5) },
-        ["ValveBiped.Bip01_Spine"] = { pos = Vector(0, 0, 0), ang = Angle(-5, 0, 0) },
-        ["ValveBiped.Bip01_R_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(25, -20, 15) },
-        ["ValveBiped.Bip01_L_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(25, 20, -15) },
-        ["ValveBiped.Bip01_R_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(-50, 30, -10) },
-        ["ValveBiped.Bip01_L_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(-50, -30, 10) }
+    [0] = { -- rest (shy/cautious stance, arms kept outside the torso)
+        ["ValveBiped.Bip01_Head1"] = { pos = Vector(0, 0, 0), ang = Angle(-5, 8, -4) },
+        ["ValveBiped.Bip01_Spine"] = { pos = Vector(0, 0, 0), ang = Angle(-4, 0, 0) },
+        ["ValveBiped.Bip01_R_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(18, -16, 10) },
+        ["ValveBiped.Bip01_L_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(18, 16, -10) },
+        ["ValveBiped.Bip01_R_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(-28, 12, -6) },
+        ["ValveBiped.Bip01_L_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(-28, -12, 6) }
     },
     [1] = { -- swallow (quick shy swallow)
         ["ValveBiped.Bip01_Head1"] = { pos = Vector(0, 0, 0), ang = Angle(15, 0, 0) },
@@ -958,7 +930,17 @@ VNPC_ShyAnimatedBoneList = {
         ["ValveBiped.Bip01_R_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(-40, 20, 0) },
         ["ValveBiped.Bip01_L_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(-40, -20, 0) }
     },
-    [2] = VNPC_EmbarrassedPoseKeyframe,
+    [2] = { -- full belly (clip-safe hold; arms stay outside the torso)
+        ["ValveBiped.Bip01_Head1"] = { pos = Vector(0, 0, 0), ang = Angle(-10, 8, -4) },
+        ["ValveBiped.Bip01_Spine"] = { pos = Vector(0, 0, 0), ang = Angle(-6, 0, 0) },
+        ["ValveBiped.Bip01_Spine1"] = { pos = Vector(0, 0, 0), ang = Angle(-4, 0, 0) },
+        ["ValveBiped.Bip01_R_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(32, -22, 16) },
+        ["ValveBiped.Bip01_L_UpperArm"] = { pos = Vector(0, 0, 0), ang = Angle(32, 22, -16) },
+        ["ValveBiped.Bip01_R_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(-70, 24, -14) },
+        ["ValveBiped.Bip01_L_Forearm"] = { pos = Vector(0, 0, 0), ang = Angle(-70, -24, 14) },
+        ["ValveBiped.Bip01_R_Hand"] = { pos = Vector(0, 0, 0), ang = Angle(12, 6, 28) },
+        ["ValveBiped.Bip01_L_Hand"] = { pos = Vector(0, 0, 0), ang = Angle(12, -6, -28) }
+    },
     [3] = { -- burp (shy muffled burp, hand over mouth / belly)
         ["ValveBiped.Bip01_Head1"] = { pos = Vector(0, 0, 0), ang = Angle(-20, 15, -5) },
         ["ValveBiped.Bip01_Spine"] = { pos = Vector(0, 0, 0), ang = Angle(-15, 0, 0) },
