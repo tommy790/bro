@@ -104,8 +104,26 @@ function VNPC_GetStormFox2EcologyMultiplier()
     return 1.0
 end
 
+function VNPC_HasEnemy(ent)
+    if not IsValid(ent) then return false end
+    if ent.GetEnemy and pcall(ent.GetEnemy, ent) then
+        local ok, enemy = pcall(ent.GetEnemy, ent)
+        if ok and IsValid(enemy) then
+            return true
+        end
+    end
+    if ent.GetTarget and pcall(ent.GetTarget, ent) then
+        local ok, target = pcall(ent.GetTarget, ent)
+        if ok and IsValid(target) then
+            return true
+        end
+    end
+    return false
+end
+
 function VNPC_IsPreyNPC(ent)
     if not IsValid(ent) or ent:IsPlayer() or ent:Health() <= 0 then return false end
+    if not (ent:IsNPC() or ent:IsNextBot()) then return false end
     if ent.IsDrGNextbot or ent.VNPC_FemaleModelVore or ent.Predator or ent.EatEntity then return false end
     if ent.Vored or ent.VNPC_Vored or ent.VNPC_Surrendered then return false end
     local cls = string.lower(ent:GetClass() or "")
@@ -347,7 +365,7 @@ if SERVER then
                 end
 
                 -- Thirst & Water Drinking Engine: dynamically expand belly as they drink water
-                if GetConVar("vnpcs_thirst_enabled"):GetBool() and not ent.VNPC_IsSleeping and not IsValid(ent:GetEnemy()) then
+                if GetConVar("vnpcs_thirst_enabled"):GetBool() and not ent.VNPC_IsSleeping and not VNPC_HasEnemy(ent) then
                     local curThirst = VNPC_GetThirst(ent)
                     if ent.VNPC_IsDrinkingWater then
                         ent.VNPC_WaterDrank = (ent.VNPC_WaterDrank or 0) + 6.0
@@ -399,11 +417,11 @@ if SERVER then
                     VNPC_PredatorMonsterGrowth(ent, 0)
                 end
             elseif VNPC_IsPreyNPC(ent) then
-                if GetConVar("vnpcs_prey_hunger_enabled"):GetBool() and not ent.VNPC_IsSleeping and not IsValid(ent:GetEnemy()) and not ent.VNPC_IsEatingMeal then
+                if GetConVar("vnpcs_prey_hunger_enabled"):GetBool() and not ent.VNPC_IsSleeping and not VNPC_HasEnemy(ent) and not ent.VNPC_IsEatingMeal then
                     local preyHungerRate = (GetConVar("vnpcs_prey_hunger_rate"):GetFloat() or 0.8) * VNPC_GetStormFox2HungerMultiplier()
                     VNPC_SetHunger(ent, VNPC_GetHunger(ent) + preyHungerRate)
                 end
-                if GetConVar("vnpcs_prey_thirst_enabled"):GetBool() and not ent.VNPC_IsSleeping and not IsValid(ent:GetEnemy()) and not ent.VNPC_IsEatingMeal then
+                if GetConVar("vnpcs_prey_thirst_enabled"):GetBool() and not ent.VNPC_IsSleeping and not VNPC_HasEnemy(ent) and not ent.VNPC_IsEatingMeal then
                     local preyThirstRate = (GetConVar("vnpcs_prey_thirst_rate"):GetFloat() or 0.5) * VNPC_GetStormFox2ThirstMultiplier()
                     VNPC_SetThirst(ent, VNPC_GetThirst(ent) + preyThirstRate)
                 end
@@ -420,7 +438,7 @@ if SERVER then
 
                 if GetConVar("vnpcs_prey_stamina_enabled"):GetBool() then
                     local curStam = VNPC_GetPreyStamina(ent)
-                    local isRunning = ent.IsMoving and ent:IsMoving() and (ent:GetSchedule() == SCHED_FORCED_GO_RUN or ent:GetSchedule() == SCHED_CHASE_ENEMY or IsValid(ent:GetEnemy()))
+                    local isRunning = ent.IsMoving and ent:IsMoving() and (ent:GetSchedule() == SCHED_FORCED_GO_RUN or ent:GetSchedule() == SCHED_CHASE_ENEMY or VNPC_HasEnemy(ent))
                     if isRunning then
                         local newStam = math.max(0, curStam - 3.5)
                         VNPC_SetPreyStamina(ent, newStam)
