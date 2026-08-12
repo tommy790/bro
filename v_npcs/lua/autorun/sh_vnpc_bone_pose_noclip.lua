@@ -131,7 +131,8 @@ function VNPC_ScanBonePoseNoclip(ent)
 
     local hits = {}
     local phase = (ent.GetNWInt and ent:GetNWInt("FacialPhase", -1)) or -1
-    local handsOnBodyOK = (phase == 2 or phase == 3 or ent.VNPC_IsSleeping or ((ent.VNPC_InChildbirthPose or 0) > CurTime()))
+    local holdingBelly = VNPC_IsBellyHoldPoseActive and select(1, VNPC_IsBellyHoldPoseActive(ent, phase))
+    local handsOnBodyOK = (phase == 2 or phase == 3 or ent.VNPC_IsSleeping or ((ent.VNPC_InChildbirthPose or 0) > CurTime()) or holdingBelly)
     local parts = VNPC_MeasureBodyParts and VNPC_MeasureBodyParts(ent) or nil
     local torsoR = (parts and parts.torso and parts.torso.radius) or 7
     local handR = (parts and parts.hand and parts.hand.radius) or 3

@@ -665,8 +665,20 @@ function VNPC_PlayBonePoseAnimation(ent, anim_type)
     end
 
     local applied_bones = {}
-    if anim.bone_angles then
-        for bone_name, ang in pairs(anim.bone_angles) do
+    local bone_angles = anim.bone_angles
+    if anim_type == "rub_belly" and VNPC_BuildBellyHoldPose then
+        local hold = VNPC_BuildBellyHoldPose(ent, "hold")
+        if hold then
+            bone_angles = {}
+            for bone_name, data in pairs(hold) do
+                if istable(data) and data.ang then
+                    bone_angles[bone_name] = data.ang
+                end
+            end
+        end
+    end
+    if bone_angles then
+        for bone_name, ang in pairs(bone_angles) do
             local boneID = ent:LookupBone(bone_name)
             if boneID and boneID >= 0 then
                 ent:ManipulateBoneAngles(boneID, ang)
@@ -2234,6 +2246,18 @@ function VNPC_AnimatedBoneOffsets(ent)
     if phase ~= ent.LastFacialPhase then
         ent.FacialPhaseStartTime = CurTime()
         ent.LastFacialPhase = phase
+        ent.VNPC_BellyHoldTune = nil
+    end
+
+    local holdPose = nil
+    if VNPC_IsBellyHoldPoseActive then
+        local shouldHold, holdStyle = VNPC_IsBellyHoldPoseActive(ent, phase)
+        if shouldHold then
+            holdPose = VNPC_BuildBellyHoldPose and VNPC_BuildBellyHoldPose(ent, holdStyle)
+        else
+            ent.VNPC_BellyHoldTune = nil
+            ent.VNPC_BellyHoldGap = nil
+        end
     end
 
     local boneCount = ent:GetBoneCount() or 0
@@ -2266,8 +2290,14 @@ function VNPC_AnimatedBoneOffsets(ent)
             end
         end
 
-        if phase == 0 then
+        if phase == 0 and not holdPose and not ent.VNPC_IsSleeping and not ent.VNPC_IsSleepCrawled and not ((ent.VNPC_InChildbirthPose or 0) > CurTime()) then
             tgtPos, tgtAng = vector_origin, angle_zero
+        elseif holdPose then
+            local hb = VNPC_GetBellyHoldBoneTarget and VNPC_GetBellyHoldBoneTarget(holdPose, boneName) or holdPose[boneName]
+            if hb then
+                tgtPos = hb.pos or tgtPos
+                tgtAng = hb.ang or tgtAng
+            end
         end
 
         local cur = ent.BoneBlendState[boneName]
@@ -2279,6 +2309,9 @@ function VNPC_AnimatedBoneOffsets(ent)
         cur.ang = VNPC_LerpAngle(FrameTime() * speed, cur.ang, tgtAng)
         ent:ManipulateBonePosition(i, cur.pos)
         ent:ManipulateBoneAngles(i, cur.ang)
+    end
+    if holdPose and VNPC_TuneBellyHold then
+        VNPC_TuneBellyHold(ent, VNPC_GetBellyWorldMeasure and VNPC_GetBellyWorldMeasure(ent))
     end
     if VNPC_DetectBonePoseNoclip then
         VNPC_DetectBonePoseNoclip(ent)

@@ -379,6 +379,18 @@ function VNPC_GenerateFixedBonePose(ent, parts)
         }
     }
 
+    local seedHold = VNPC_BuildBellyHoldPose(ent, "hold", parts)
+    if seedHold then
+        for boneName, boneData in pairs(seedHold) do
+            if istable(boneData) and boneData.ang then
+                full[boneName] = boneData
+                if boneName:find("UpperArm") or boneName:find("Forearm") or boneName:find("Hand") or boneName:find("Clavicle") then
+                    burp[boneName] = boneData
+                end
+            end
+        end
+    end
+
     return {
         [0] = rest,
         [1] = swallowShot,
@@ -424,6 +436,302 @@ function VNPC_GetBodyPartClearance(ent, partName)
     return part.width or 8, part.height or 8
 end
 
+CreateConVar("vnpcs_belly_hold_pose", "1", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Scale belly-holding bone poses so hands actually touch the current belly size")
+CreateConVar("vnpcs_belly_hold_rub", "1", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Add a slow rub motion while hands rest on a full belly")
+CreateConVar("vnpcs_belly_hold_debug", "0", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Overlay the measured belly sphere and hand contact points")
+
+VNPC_BELLY_HOLD_BONES = {
+    ["ValveBiped.Bip01_R_Clavicle"] = true,
+    ["ValveBiped.Bip01_L_Clavicle"] = true,
+    ["ValveBiped.Bip01_R_UpperArm"] = true,
+    ["ValveBiped.Bip01_L_UpperArm"] = true,
+    ["ValveBiped.Bip01_R_Forearm"] = true,
+    ["ValveBiped.Bip01_L_Forearm"] = true,
+    ["ValveBiped.Bip01_R_Hand"] = true,
+    ["ValveBiped.Bip01_L_Hand"] = true,
+    ["R_Clavicle"] = true,
+    ["L_Clavicle"] = true,
+    ["R_UpperArm"] = true,
+    ["L_UpperArm"] = true,
+    ["R_Forearm"] = true,
+    ["L_Forearm"] = true,
+    ["R_Hand"] = true,
+    ["L_Hand"] = true
+}
+
+function VNPC_GetPredBelly(ent)
+    if not IsValid(ent) then return nil end
+    local belly = ent.VNPC_Belly or ent.Belly or ent.belly
+    if not IsValid(belly) and ent.GetNWEntity then
+        belly = ent:GetNWEntity("Belly")
+    end
+    if not IsValid(belly) and ent.GetBelly then
+        local ok, got = pcall(ent.GetBelly, ent)
+        if ok then belly = got end
+    end
+    if IsValid(belly) then return belly end
+    return nil
+end
+
+function VNPC_GetLiveBellySize(ent)
+    local belly = VNPC_GetPredBelly(ent)
+    if not IsValid(belly) then return 0 end
+    if belly.GetBellySize then
+        local ok, sz = pcall(belly.GetBellySize, belly)
+        if ok and tonumber(sz) then
+            return math.max(0, tonumber(sz))
+        end
+    end
+    local nw = (belly.GetNWFloat and belly:GetNWFloat("BellySize", 0)) or 0
+    local last = belly.VNPC_LastSetBellySize or 0
+    local base = belly.BaseScale or 0
+    return math.max(0, tonumber(nw) or 0, tonumber(last) or 0, tonumber(base) or 0)
+end
+
+function VNPC_GetPregnancyBellyRadius(ent)
+    if not IsValid(ent) then return 0 end
+    if not (ent.VNPC_IsPregnant or ent.VNPC_BabyGrowthValue or ((ent.VNPC_InChildbirthPose or 0) > CurTime())) then
+        return 0
+    end
+    local val = tonumber(ent.VNPC_BabyGrowthValue) or 10
+    local factor = math.Clamp((val - 10) / 40, 0, 1)
+    if (ent.VNPC_InChildbirthPose or 0) > CurTime() then
+        factor = math.max(factor, 0.85)
+    end
+    local litter = math.max(1, tonumber(ent.VNPC_LitterSize) or 1)
+    if istable(ent.VNPC_UnbornChildren) then
+        local living = 0
+        for _, c in ipairs(ent.VNPC_UnbornChildren) do
+            if IsValid(c) then living = living + 1 end
+        end
+        if living > 0 then litter = math.max(litter, living) end
+    end
+    local litterMult = 1.0 + (litter - 1) * 0.28
+    return (6 + factor * 14 * litterMult)
+end
+
+function VNPC_GetBellyWorldMeasure(ent)
+    if not IsValid(ent) then return nil end
+    local parts = VNPC_MeasureBodyParts(ent)
+    local mdlScale = (ent.GetModelScale and ent:GetModelScale()) or 1
+    local scale = VNPC_GetLiveBellySize(ent)
+    -- animations.lua treats the visual belly as about 36 * BellySize across
+    local radius = 18 * math.max(scale, 0)
+    local pregR = VNPC_GetPregnancyBellyRadius(ent)
+    if pregR > radius then
+        radius = pregR
+        if scale < 0.04 then scale = math.Clamp(pregR / 18, 0.05, 1.4) end
+    end
+    radius = radius * math.max(mdlScale, 0.25)
+
+    local belly = VNPC_GetPredBelly(ent)
+    local center = nil
+    if IsValid(belly) then
+        center = belly:GetPos()
+        if belly.SetupBones then pcall(belly.SetupBones, belly) end
+        if belly.GetBoneMatrix then
+            local ok, mat = pcall(belly.GetBoneMatrix, belly, 1)
+            if ok and mat and mat.GetTranslation then
+                local pos = mat:GetTranslation()
+                if pos then center = pos end
+                if mat.GetScale then
+                    local sc = mat:GetScale()
+                    if sc then
+                        local boneR = math.max(sc.x, sc.y, sc.z) * 18
+                        if boneR > radius then radius = boneR end
+                    end
+                end
+            end
+        end
+        if belly.OBBMaxs and belly.OBBMins then
+            local mins, maxs = belly:OBBMins(), belly:OBBMaxs()
+            if mins and maxs then
+                local extent = maxs - mins
+                local obbR = math.max(math.abs(extent.x), math.abs(extent.y), math.abs(extent.z)) * 0.5
+                if obbR > 8 then
+                    radius = math.max(radius, obbR * math.max(scale, 0.2))
+                end
+            end
+        end
+    end
+    if not center then
+        local pelvis = bonePos(ent, "ValveBiped.Bip01_Pelvis") or (ent.WorldSpaceCenter and ent:WorldSpaceCenter()) or ent:GetPos()
+        local fwd = (ent.GetForward and ent:GetForward()) or Vector(1, 0, 0)
+        center = pelvis + fwd * (6 + radius * 0.35) + Vector(0, 0, 3)
+    end
+
+    local abdomen = 5
+    if parts and parts.torso then
+        abdomen = math.max(4, (parts.torso.width or 14) * 0.28)
+    end
+    if radius < abdomen and scale > 0.02 then
+        radius = abdomen
+    elseif radius < 1 then
+        radius = abdomen
+    end
+
+    local handPad = 2.2
+    if parts and parts.hand then
+        handPad = math.max(1.4, (parts.hand.radius or 2) * 0.7)
+    end
+
+    local info = {
+        scale = scale,
+        radius = radius,
+        width = radius * 2,
+        height = radius * 1.7,
+        center = center,
+        handPad = handPad,
+        surface = radius + handPad,
+        belly = belly,
+        parts = parts
+    }
+    ent.VNPC_BellyWorldMeasure = info
+    return info
+end
+
+function VNPC_IsBellyHoldPoseActive(ent, phase)
+    if not IsValid(ent) then return false, nil end
+    local cv = GetConVar("vnpcs_belly_hold_pose")
+    if cv and not cv:GetBool() then return false, nil end
+    if ent.VNPC_IsHumanOralSwallow or (ent.GetNWBool and ent:GetNWBool("VNPC_IsHumanOralSwallow")) then
+        return false, nil
+    end
+    if ent.VNPC_IsMatingBonePose or (ent.GetNWBool and ent:GetNWBool("VNPC_IsMatingBonePose")) then
+        return false, nil
+    end
+    if ent.VNPC_IsDrinkingWater or (ent.GetNWBool and ent:GetNWBool("VNPC_IsDrinkingWater")) then
+        return false, nil
+    end
+    if ent.VNPC_IsMountingHeavyPrey or (ent.GetNWBool and ent:GetNWBool("VNPC_IsMountingHeavyPrey")) then
+        return false, nil
+    end
+    if ent.VNPC_IsWillingUnbirthCrawl or (ent.GetNWBool and ent:GetNWBool("VNPC_IsWillingUnbirthCrawl")) then
+        return false, nil
+    end
+    phase = phase or ((ent.GetNWInt and ent:GetNWInt("FacialPhase", -1)) or -1)
+    local moveset = string.lower(tostring(ent.VNPC_AssignedMoveset or ""))
+    if moveset == "shy" then return false, nil end
+    if ent.VNPC_IsSleeping or ent.VNPC_IsSleepCrawled then
+        return true, "sleep"
+    end
+    if (ent.VNPC_InChildbirthPose or 0) > CurTime() then
+        return true, "hold"
+    end
+    if phase == 2 then return true, "hold" end
+    if phase == 3 then return true, "burp" end
+    return false, nil
+end
+
+function VNPC_TuneBellyHold(ent, info)
+    local tune = ent.VNPC_BellyHoldTune
+    if not tune then
+        tune = { bend = 0, out = 0, lift = 0 }
+        ent.VNPC_BellyHoldTune = tune
+    end
+    if not info or not info.center then
+        return tune
+    end
+    local handR = bonePos(ent, "ValveBiped.Bip01_R_Hand")
+    local handL = bonePos(ent, "ValveBiped.Bip01_L_Hand")
+    local target = info.surface or ((info.radius or 8) + (info.handPad or 2))
+    local sum, n = 0, 0
+    if handR then
+        sum = sum + (handR:Distance(info.center) - target)
+        n = n + 1
+    end
+    if handL then
+        sum = sum + (handL:Distance(info.center) - target)
+        n = n + 1
+    end
+    if n == 0 then return tune end
+    local gap = sum / n
+    local step = math.Clamp(gap * 0.4, -5, 5)
+    -- gap > 0: hands float off the belly, open the arms; gap < 0: hands sink in, curl tighter
+    tune.bend = math.Clamp((tune.bend or 0) + step, -40, 42)
+    tune.out = math.Clamp((tune.out or 0) + step * 0.5, -14, 24)
+    tune.lift = math.Clamp((tune.lift or 0) + step * 0.18, -12, 16)
+    ent.VNPC_BellyHoldGap = gap
+    return tune
+end
+
+function VNPC_BuildBellyHoldPose(ent, style, parts)
+    if not IsValid(ent) then return nil end
+    local enabled = GetConVar("vnpcs_belly_hold_pose")
+    if enabled and not enabled:GetBool() then return nil end
+
+    parts = parts or VNPC_MeasureBodyParts(ent)
+    local info = VNPC_GetBellyWorldMeasure(ent)
+    if not info then return nil end
+
+    local radius = info.radius or 8
+    local armL = 23
+    if parts and parts.arm then armL = math.max(parts.arm.length or 23, 8) end
+    local torsoW = 14
+    if parts and parts.torso then torsoW = parts.torso.width or 14 end
+
+    local shoulderToCenter = (torsoW * 0.32) + 4 + radius * 0.18
+    local surfaceDist = shoulderToCenter + radius * 0.62
+    local reachN = math.Clamp(surfaceDist / armL, 0.22, 1.08)
+
+    local tune = ent.VNPC_BellyHoldTune or { bend = 0, out = 0, lift = 0 }
+    local styleName = tostring(style or "hold")
+
+    local foreBend = -math.Clamp(120 - reachN * 78 - (tune.bend or 0), 30, 122)
+    local armOut = math.Clamp(10 + radius * 0.9 + (tune.out or 0), 8, 44)
+    local armLift = math.Clamp(28 + radius * 0.38 + (tune.lift or 0), 18, 52)
+    local armRoll = math.Clamp(16 + radius * 0.22, 14, 34)
+    local foreYaw = math.Clamp(28 + radius * 0.45, 22, 48)
+    local handCupP = math.Clamp(14 + radius * 0.28, 12, 30)
+    local handCupR = math.Clamp(26 + radius * 0.55, 20, 52)
+    local clav = math.Clamp(4 + radius * 0.12, 3, 12)
+
+    if styleName == "sleep" then
+        armLift = armLift - 6
+        foreBend = foreBend + 8
+        armOut = armOut - 2
+    elseif styleName == "burp" then
+        armLift = armLift + 3
+        clav = clav + 2
+    end
+
+    local rub = 0
+    local rubCv = GetConVar("vnpcs_belly_hold_rub")
+    if (not rubCv or rubCv:GetBool()) and styleName == "hold" then
+        rub = math.sin(CurTime() * 1.55) * math.Clamp(3.5 + radius * 0.08, 3, 6)
+    end
+
+    local pose = {
+        ["ValveBiped.Bip01_R_Clavicle"] = poseBone(nil, Angle(0, clav, 4)),
+        ["ValveBiped.Bip01_L_Clavicle"] = poseBone(nil, Angle(0, -clav, -4)),
+        ["ValveBiped.Bip01_R_UpperArm"] = poseBone(nil, Angle(armLift, -armOut, armRoll)),
+        ["ValveBiped.Bip01_L_UpperArm"] = poseBone(nil, Angle(armLift, armOut, -armRoll)),
+        ["ValveBiped.Bip01_R_Forearm"] = poseBone(nil, Angle(foreBend, foreYaw + rub, -22)),
+        ["ValveBiped.Bip01_L_Forearm"] = poseBone(nil, Angle(foreBend, -(foreYaw + rub), 22)),
+        ["ValveBiped.Bip01_R_Hand"] = poseBone(nil, Angle(handCupP, 6 + rub * 0.4, handCupR)),
+        ["ValveBiped.Bip01_L_Hand"] = poseBone(nil, Angle(handCupP, -6 - rub * 0.4, -handCupR))
+    }
+    pose.radius = radius
+    pose.scale = info.scale
+    pose.style = styleName
+    ent.VNPC_BellyHoldPose = pose
+    return pose
+end
+
+function VNPC_GetBellyHoldBoneTarget(holdPose, boneName)
+    if not holdPose or not boneName then return nil end
+    local function asBone(tgt)
+        if istable(tgt) and (tgt.pos or tgt.ang) then return tgt end
+        return nil
+    end
+    local tgt = asBone(holdPose[boneName])
+    if tgt then return tgt end
+    if not boneName:find("ValveBiped%.") then
+        return asBone(holdPose["ValveBiped." .. boneName])
+    end
+    return asBone(holdPose[boneName:gsub("ValveBiped%.", "")])
+end
+
 if VNPC_RegisterBoneMoveset then
     -- Placeholder so vnpcs_set_moveset fixed works; real pose is generated per model.
     VNPC_RegisterBoneMoveset("fixed", { [0] = {}, [1] = {}, [2] = {}, [3] = {}, [4] = {} })
@@ -452,6 +760,7 @@ concommand.Add("vnpcs_body_parts_status", function(ply)
             end
         end
     end
+    print(" - Belly hold pose: " .. tostring(GetConVar("vnpcs_belly_hold_pose"):GetBool()) .. " | rub=" .. tostring(GetConVar("vnpcs_belly_hold_rub"):GetBool()))
     print("Measured entities: " .. count .. " | Cached models: " .. table.Count(VNPC_BodyPartCache))
     print("===============================================================")
     if IsValid(ply) then
@@ -499,3 +808,90 @@ concommand.Add("vnpcs_test_fixed_pose", function(ply)
         ply:ChatPrint("[V-NPCs] Failed to generate a fixed bone pose on " .. tostring(target))
     end
 end)
+
+concommand.Add("vnpcs_belly_hold_status", function(ply)
+    print("===============================================================")
+    print("     V-NPCs BELLY-HOLD POSE (TOUCH CURRENT BELLY SIZE)         ")
+    print("===============================================================")
+    print(" - Hold Enabled: " .. tostring(GetConVar("vnpcs_belly_hold_pose"):GetBool()))
+    print(" - Rub Motion: " .. tostring(GetConVar("vnpcs_belly_hold_rub"):GetBool()))
+    print(" - Debug Overlay: " .. tostring(GetConVar("vnpcs_belly_hold_debug"):GetBool()))
+    print("-----------------------------------------")
+    local count = 0
+    for _, ent in ipairs(ents.FindByClass("npc_*")) do
+        if IsValid(ent) and (ent.IsDrGNextbot or ent.VNPC_FemaleModelVore or ent.Predator or ent:IsNPC()) then
+            local info = VNPC_GetBellyWorldMeasure(ent)
+            local active, style = VNPC_IsBellyHoldPoseActive(ent)
+            if info and (info.scale > 0.02 or active) then
+                count = count + 1
+                local gap = ent.VNPC_BellyHoldGap
+                print(string.format(" -> #%d [%s] scale=%.3f radius=%.1f W/H %.1f/%.1f hold=%s style=%s gap=%s",
+                    ent:EntIndex(), ent.PrintName or ent:GetClass(), info.scale, info.radius, info.width, info.height,
+                    tostring(active), tostring(style or "-"),
+                    gap and string.format("%.1f", gap) or "n/a"))
+            end
+        end
+    end
+    print("Belly-hold candidates: " .. count)
+    print("===============================================================")
+    if IsValid(ply) then
+        ply:ChatPrint("[V-NPCs] Belly-hold pose status printed to console. Candidates: " .. count)
+    end
+end)
+
+concommand.Add("vnpcs_test_belly_hold", function(ply)
+    if not IsValid(ply) then return end
+    local target = ply:GetEyeTrace().Entity
+    if not IsValid(target) or not (target:IsNPC() or target:IsNextBot() or target.IsDrGNextbot) then
+        ply:ChatPrint("[V-NPCs] Aim at a predator to generate a belly-size hold pose!")
+        return
+    end
+    target.VNPC_BellyHoldTune = nil
+    local info = VNPC_GetBellyWorldMeasure(target)
+    local pose = VNPC_BuildBellyHoldPose(target, "hold")
+    if not pose or not info then
+        ply:ChatPrint("[V-NPCs] Could not build a belly-hold pose on " .. tostring(target))
+        return
+    end
+    if target.SetFacialExpression then
+        target:SetFacialExpression(2)
+    elseif target.SetNWInt then
+        target:SetNWInt("FacialPhase", 2)
+    end
+    target.FacialPhaseStartTime = CurTime()
+    target.LastFacialPhase = 2
+    ply:ChatPrint(string.format("[V-NPCs] Belly-hold pose on %s: size=%.3f radius=%.1f W/H %.1f/%.1f (hands should rest on the belly)",
+        tostring(target), info.scale, info.radius, info.width, info.height))
+    print(string.format("[V-NPCs] Belly hold for #%d size=%.3f radius=%.1f surface=%.1f",
+        target:EntIndex(), info.scale, info.radius, info.surface))
+end)
+
+if CLIENT then
+    hook.Add("PostDrawTranslucentRenderables", "VNPC_BellyHold_Overlay", function()
+        local dbg = GetConVar("vnpcs_belly_hold_debug")
+        if not dbg or not dbg:GetBool() then return end
+        for _, ent in ipairs(ents.FindByClass("npc_*")) do
+            if not IsValid(ent) then continue end
+            local info = VNPC_GetBellyWorldMeasure and VNPC_GetBellyWorldMeasure(ent)
+            if not info or not info.center then continue end
+            if (info.scale or 0) < 0.02 and not (VNPC_IsBellyHoldPoseActive and VNPC_IsBellyHoldPoseActive(ent)) then
+                continue
+            end
+            render.SetColorMaterial()
+            render.DrawWireframeSphere(info.center, info.radius or 8, 14, 14, Color(255, 140, 220, 180), true)
+            render.DrawWireframeSphere(info.center, info.surface or ((info.radius or 8) + 2), 10, 10, Color(120, 220, 255, 120), true)
+            for _, name in ipairs({ "ValveBiped.Bip01_R_Hand", "ValveBiped.Bip01_L_Hand" }) do
+                local id = ent.LookupBone and ent:LookupBone(name)
+                if id and ent.GetBonePosition then
+                    local pos = ent:GetBonePosition(id)
+                    if pos then
+                        local gap = pos:Distance(info.center) - (info.surface or info.radius)
+                        local col = (math.abs(gap) <= 3) and Color(80, 255, 120, 200) or Color(255, 80, 80, 200)
+                        render.DrawSphere(pos, 2.4, 8, 8, col)
+                    end
+                end
+            end
+        end
+    end)
+end
+
