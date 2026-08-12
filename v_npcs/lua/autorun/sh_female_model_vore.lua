@@ -2136,6 +2136,17 @@ function VNPC_AnimatedBoneOffsets(ent)
 
     local is_in_battle = is_hunting_or_moving or is_armed
     local is_special_stationary_pose = (ent.VNPC_IsMatingBonePose or ent.VNPC_IsWillingUnbirthCrawl or ent.VNPC_IsMountingHeavyPrey or ent.VNPC_IsDrinkingWater or ent.VNPC_IsSleepCrawled or ent.VNPC_IsSleeping or ((ent.VNPC_InChildbirthPose or 0) > CurTime()))
+    local is_locomoting = false
+    if ent.IsMoving and ent:IsMoving() then
+        is_locomoting = true
+    elseif ent.GetVelocity and ent:GetVelocity():Length2DSqr() > 16 then
+        is_locomoting = true
+    elseif ent.GetSchedule and pcall(ent.GetSchedule, ent) then
+        local ok, sched = pcall(ent.GetSchedule, ent)
+        if ok and (sched == SCHED_FORCED_GO or sched == SCHED_FORCED_GO_RUN or sched == SCHED_CHASE_ENEMY or sched == SCHED_PATROL_WALK) then
+            is_locomoting = true
+        end
+    end
 
     for i = 0, boneCount - 1 do
         local boneName = ent:GetBoneName(i)
@@ -2165,8 +2176,8 @@ function VNPC_AnimatedBoneOffsets(ent)
 
         if phase == 0 then
             tgtPos, tgtAng = vector_origin, angle_zero
-        elseif is_leg_or_pelvis and not is_special_stationary_pose then
-            -- Never apply static moveset posing to leg or pelvis bones during normal movesets so legs can walk and run freely
+        elseif is_leg_or_pelvis and is_locomoting and not is_special_stationary_pose then
+            -- Only release leg and pelvis bones to zero when actively walking or running so idle sitting movesets can pose freely
             tgtPos, tgtAng = vector_origin, angle_zero
         end
 
