@@ -1,235 +1,162 @@
--- V-NPCs Predator Prey-Type Attraction
--- Each predator is attracted to specific prey types and hunts those first.
+-- V-NPCs Prey Mate Attraction
+-- Prey are attracted to specific female predator types and seek those preds to mate.
 
-CreateConVar("vnpcs_prey_attraction_enabled", "1", {FCVAR_REPLICATED, FCVAR_ARCHIVE}, "Enable predator attraction to preferred prey types")
-CreateConVar("vnpcs_prey_attraction_threshold", "35", {FCVAR_REPLICATED, FCVAR_ARCHIVE}, "Minimum attraction (0-100) required to hunt a prey type when not desperate")
-CreateConVar("vnpcs_prey_attraction_desperate_hunger", "75", {FCVAR_REPLICATED, FCVAR_ARCHIVE}, "Hunger percent at which predators ignore type preferences")
-CreateConVar("vnpcs_prey_attraction_debug", "0", {FCVAR_REPLICATED, FCVAR_ARCHIVE}, "Draw prey-type attraction overlay above predators")
+CreateConVar("vnpcs_mate_attraction_enabled", "1", {FCVAR_REPLICATED, FCVAR_ARCHIVE}, "Enable prey attraction to female predator types for mating")
+CreateConVar("vnpcs_mate_attraction_threshold", "50", {FCVAR_REPLICATED, FCVAR_ARCHIVE}, "Minimum attraction (0-100) for prey to seek a female pred type to mate")
+CreateConVar("vnpcs_mate_attraction_debug", "0", {FCVAR_REPLICATED, FCVAR_ARCHIVE}, "Draw mate-attraction overlay above prey")
+CreateConVar("vnpcs_mate_attraction_range", "1100", {FCVAR_REPLICATED, FCVAR_ARCHIVE}, "How far prey look for a female pred type they want to mate with")
 
-VNPC_PREY_TYPE_ORDER = {
-    "human",
+-- Keep old hunt cvars so leftover menus/saves do not error.
+CreateConVar("vnpcs_prey_attraction_enabled", "0", {FCVAR_REPLICATED, FCVAR_ARCHIVE}, "Deprecated. Predators no longer have preferred hunt prey types")
+CreateConVar("vnpcs_prey_attraction_threshold", "0", {FCVAR_REPLICATED, FCVAR_ARCHIVE}, "Deprecated hunt threshold")
+CreateConVar("vnpcs_prey_attraction_desperate_hunger", "75", {FCVAR_REPLICATED, FCVAR_ARCHIVE}, "Deprecated hunt hunger override")
+CreateConVar("vnpcs_prey_attraction_debug", "0", {FCVAR_REPLICATED, FCVAR_ARCHIVE}, "Deprecated hunt overlay")
+
+VNPC_FEMALE_PRED_TYPE_ORDER = {
+    "citizen",
+    "alyx",
+    "mossman",
     "combine",
-    "zombie",
-    "headcrab",
-    "antlion",
     "vortigaunt",
-    "animal",
-    "player",
-    "predator",
-    "corpse",
+    "rebel",
+    "zombie",
     "other"
 }
 
-VNPC_PREY_TYPES = {
-    human = {
-        name = "Human",
-        description = "Citizens, rebels, refugees, and humanoids"
+VNPC_FEMALE_PRED_TYPES = {
+    citizen = {
+        name = "Citizen",
+        description = "Female citizen predators"
+    },
+    alyx = {
+        name = "Alyx",
+        description = "Alyx-type female predators"
+    },
+    mossman = {
+        name = "Mossman",
+        description = "Mossman-type female predators"
     },
     combine = {
         name = "Combine",
-        description = "Combine soldiers, metrocops, and synths"
-    },
-    zombie = {
-        name = "Zombie",
-        description = "Zombies and zombines"
-    },
-    headcrab = {
-        name = "Headcrab",
-        description = "Headcrabs"
-    },
-    antlion = {
-        name = "Antlion",
-        description = "Antlions and antlion guards"
+        description = "Female combine and metrocop predators"
     },
     vortigaunt = {
         name = "Vortigaunt",
-        description = "Vortigaunts"
+        description = "Female vortigaunt predators"
     },
-    animal = {
-        name = "Animal",
-        description = "Birds, dogs, and wildlife"
+    rebel = {
+        name = "Rebel",
+        description = "Female rebel and refugee predators"
     },
-    player = {
-        name = "Player",
-        description = "Human players"
-    },
-    predator = {
-        name = "Predator",
-        description = "Other V-NPC predators"
-    },
-    corpse = {
-        name = "Corpse",
-        description = "Ragdolls and corpses"
+    zombie = {
+        name = "Zombie",
+        description = "Female zombie predators"
     },
     other = {
         name = "Other",
-        description = "Unclassified prey"
+        description = "Other female predator models"
     }
 }
 
-local PERSONALITY_FAVORITES = {
-    aggressive = { "human", "combine", "zombie" },
-    opportunistic = { "human", "corpse", "animal" },
-    glutton = { "human", "combine", "zombie", "headcrab", "antlion", "vortigaunt", "animal", "player", "predator", "corpse", "other" },
-    shy = { "human", "player" },
-    selective = { "human" },
-    gentle = { "human", "animal" },
-    loving = { "human" }
+local PREY_PERS_FAVORITES = {
+    willing = { "citizen", "alyx", "mossman" },
+    desire = { "citizen", "alyx", "mossman" },
+    desirous = { "citizen", "alyx", "mossman" },
+    passive = { "citizen", "mossman", "alyx" },
+    fighter = { "combine", "vortigaunt", "rebel" },
+    stubborn = { "combine", "vortigaunt", "rebel" },
+    panicked = { "citizen", "mossman", "alyx" }
 }
 
-local function isPreyAttractionEnabled()
-    local cv = GetConVar("vnpcs_prey_attraction_enabled")
+local function mateAttractionEnabled()
+    local cv = GetConVar("vnpcs_mate_attraction_enabled")
     return not cv or cv:GetBool()
 end
 
-local function attractionThreshold()
-    local cv = GetConVar("vnpcs_prey_attraction_threshold")
-    return cv and cv:GetFloat() or 35
+local function mateThreshold()
+    local cv = GetConVar("vnpcs_mate_attraction_threshold")
+    return cv and cv:GetFloat() or 50
 end
 
-local function desperateHunger()
-    local cv = GetConVar("vnpcs_prey_attraction_desperate_hunger")
-    return cv and cv:GetFloat() or 75
+local function mateRange()
+    local cv = GetConVar("vnpcs_mate_attraction_range")
+    return cv and cv:GetFloat() or 1100
 end
 
-function VNPC_NormalizePreyType(typeId)
+function VNPC_NormalizeFemalePredType(typeId)
     typeId = string.lower(tostring(typeId or ""))
-    if VNPC_PREY_TYPES[typeId] then return typeId end
+    if VNPC_FEMALE_PRED_TYPES[typeId] then return typeId end
     return nil
 end
 
-function VNPC_GetPreyType(ent)
-    if not IsValid(ent) then return "other" end
-    if ent.VNPC_PreyType and VNPC_PREY_TYPES[ent.VNPC_PreyType] then
-        return ent.VNPC_PreyType
+function VNPC_IsFemalePredator(ent)
+    if not IsValid(ent) or ent:Health() <= 0 then return false end
+    if ent.Vored or ent.VNPC_Vored then return false end
+    if not (ent.IsDrGNextbot or ent.VNPC_FemaleModelVore or ent.Predator or ent.VNPC_WildType == "predator") then
+        return false
     end
+    if VNPC_ModelLooksFemale and VNPC_ModelLooksFemale(ent) then return true end
+    if VNPC_IsFemaleModelNPC and VNPC_IsFemaleModelNPC(ent) then return true end
+    return true
+end
 
-    if ent:IsPlayer() then return "player" end
+function VNPC_GetFemalePredType(ent)
+    if not IsValid(ent) then return "other" end
+    if ent.VNPC_FemalePredType and VNPC_FEMALE_PRED_TYPES[ent.VNPC_FemalePredType] then
+        return ent.VNPC_FemalePredType
+    end
 
     local cls = string.lower(ent:GetClass() or "")
     local mdl = string.lower(ent:GetModel() or "")
+    local name = string.lower(tostring(ent.PrintName or ""))
 
-    if cls == "prop_ragdoll" or ent.VNPC_IsCorpse then
-        return "corpse"
-    end
-
-    if cls:find("headcrab") or mdl:find("headcrab") then
-        return "headcrab"
-    elseif cls:find("antlion") or mdl:find("antlion") then
-        return "antlion"
+    if cls:find("alyx") or mdl:find("alyx") or name:find("alyx") then
+        return "alyx"
+    elseif cls:find("mossman") or mdl:find("mossman") or name:find("mossman") then
+        return "mossman"
+    elseif cls:find("vortigaunt") or mdl:find("vortigaunt") or name:find("vort") then
+        return "vortigaunt"
     elseif cls:find("zombie") or mdl:find("zombie") or cls:find("zombine") then
         return "zombie"
-    elseif cls:find("vortigaunt") or mdl:find("vortigaunt") then
-        return "vortigaunt"
-    elseif cls:find("combine") or cls:find("metropolice") or cls:find("hunter") or cls:find("strider")
-        or cls:find("manhack") or cls:find("scanner") or cls:find("turret") or cls:find("apc")
-        or mdl:find("combine") or mdl:find("police") then
+    elseif cls:find("combine") or cls:find("metropolice") or mdl:find("combine") or mdl:find("police") then
         return "combine"
-    elseif cls:find("crow") or cls:find("pigeon") or cls:find("seagull") or cls:find("bird")
-        or cls:find("dog") or cls == "npc_barnacle" or cls:find("ichthyosaur")
-        or mdl:find("crow") or mdl:find("pigeon") or mdl:find("seagull") then
-        return "animal"
+    elseif cls:find("rebel") or mdl:find("group03") or mdl:find("rebel") then
+        return "rebel"
+    elseif cls:find("refugee") or mdl:find("group02") then
+        return "rebel"
+    elseif cls:find("citizen") or mdl:find("group01") or mdl:find("human") or mdl:find("female") then
+        return "citizen"
     end
-
-    local isPred = (ent.IsDrGNextbot or ent.VNPC_FemaleModelVore or ent.Predator or ent.VNPC_WildType == "predator") and true or false
-    local isCitizenPrey = false
-    if VNPC_IsPreyNPC then
-        isCitizenPrey = VNPC_IsPreyNPC(ent) and true or false
-    else
-        isCitizenPrey = (cls:find("citizen") or cls:find("rebel") or cls:find("refugee") or ent.VNPC_PreyCampID) and true or false
-    end
-    if isPred and not isCitizenPrey then
-        return "predator"
-    end
-
-    if cls:find("citizen") or cls:find("rebel") or cls:find("refugee") or cls:find("alyx")
-        or cls:find("mossman") or cls:find("eli") or cls:find("barney") or cls:find("monk")
-        or mdl:find("human") or mdl:find("alyx") or mdl:find("mossman") or mdl:find("female")
-        or mdl:find("male") or mdl:find("group0") then
-        return "human"
-    end
-
-    if isPred then return "predator" end
     return "other"
-end
-
-function VNPC_IsPredatorDesperateForPrey(pred)
-    if not IsValid(pred) then return false end
-    if pred.VNPC_DesperateSurvival then return true end
-    if pred.GetMaxHealth and pred:GetMaxHealth() > 0 and pred:Health() / pred:GetMaxHealth() < 0.35 then
-        return true
-    end
-    if VNPC_GetHunger then
-        local hunger = VNPC_GetHunger(pred) or 0
-        if hunger >= desperateHunger() then return true end
-    end
-    return false
-end
-
-function VNPC_GetFavoritePreyTypes(pred)
-    local scores = VNPC_GetAttractedPreyTypes(pred)
-    local favs = {}
-    for _, typeId in ipairs(VNPC_PREY_TYPE_ORDER) do
-        if (scores[typeId] or 0) >= 55 then
-            table.insert(favs, typeId)
-        end
-    end
-    return favs
-end
-
-function VNPC_FormatPreyAttraction(pred)
-    local favs = VNPC_GetFavoritePreyTypes(pred)
-    if #favs == 0 then return "none" end
-    local names = {}
-    for _, typeId in ipairs(favs) do
-        local info = VNPC_PREY_TYPES[typeId]
-        table.insert(names, info and info.name or typeId)
-    end
-    return table.concat(names, ", ")
-end
-
-function VNPC_SyncPreyAttractionNW(pred)
-    if not IsValid(pred) or not pred.SetNWString then return end
-    pred:SetNWString("VNPC_AttractedTypes", table.concat(VNPC_GetFavoritePreyTypes(pred), ","))
 end
 
 local function emptyScores()
     local scores = {}
-    for _, typeId in ipairs(VNPC_PREY_TYPE_ORDER) do
-        scores[typeId] = 12
+    for _, typeId in ipairs(VNPC_FEMALE_PRED_TYPE_ORDER) do
+        scores[typeId] = 14
     end
     return scores
 end
 
-function VNPC_AssignPreyAttraction(pred)
-    if not IsValid(pred) then return emptyScores() end
+function VNPC_SyncMateAttractionNW(prey)
+    if not IsValid(prey) or not prey.SetNWString then return end
+    prey:SetNWString("VNPC_AttractedPredTypes", table.concat(VNPC_GetFavoritePredTypes(prey), ","))
+end
+
+function VNPC_AssignMateAttraction(prey)
+    if not IsValid(prey) then return emptyScores() end
 
     local scores = emptyScores()
-    local pers = "opportunistic"
-    if VNPC_GetPredatorPersonality then
-        pers = select(1, VNPC_GetPredatorPersonality(pred)) or "opportunistic"
+    local pers = "fighter"
+    if VNPC_GetPreyPersonality then
+        pers = select(1, VNPC_GetPreyPersonality(prey)) or "fighter"
     else
-        pers = pred.VNPC_PredatorPersonality or (pred.VoreSettings and pred.VoreSettings.PredatorPersonality) or "opportunistic"
+        pers = prey.VNPC_PreyPersonality or prey.PreyPersonality or "fighter"
     end
     pers = string.lower(tostring(pers))
 
-    local pool = PERSONALITY_FAVORITES[pers]
-    if not pool or #pool == 0 then
-        pool = PERSONALITY_FAVORITES.opportunistic
-    end
-
-    local pickCount = 2
-    if pers == "glutton" then
-        pickCount = #pool
-    elseif pers == "selective" or pers == "loving" then
-        pickCount = 1
-    elseif pers == "aggressive" then
-        pickCount = math.random(2, 3)
-    elseif pers == "shy" or pers == "gentle" then
-        pickCount = 2
-    else
-        pickCount = math.random(1, 3)
-    end
+    local pool = PREY_PERS_FAVORITES[pers] or PREY_PERS_FAVORITES.fighter
+    local pickCount = (pers == "willing" or pers == "desire" or pers == "desirous") and 2 or math.random(1, 2)
     pickCount = math.Clamp(pickCount, 1, #pool)
 
     local shuffled = {}
@@ -245,160 +172,237 @@ function VNPC_AssignPreyAttraction(pred)
     for i = 1, pickCount do
         local typeId = shuffled[i]
         picked[typeId] = true
-        if pers == "glutton" then
-            scores[typeId] = math.random(82, 100)
-        elseif pers == "selective" then
-            scores[typeId] = math.random(88, 100)
-        else
-            scores[typeId] = math.random(70, 98)
+        scores[typeId] = math.random(72, 98)
+    end
+    for _, typeId in ipairs(VNPC_FEMALE_PRED_TYPE_ORDER) do
+        if not picked[typeId] then
+            scores[typeId] = math.random(8, 32)
         end
     end
 
-    if pers == "glutton" then
-        for _, typeId in ipairs(VNPC_PREY_TYPE_ORDER) do
-            if not picked[typeId] then
-                scores[typeId] = math.random(70, 90)
-            end
-        end
-    elseif pers == "selective" then
-        for _, typeId in ipairs(VNPC_PREY_TYPE_ORDER) do
-            if not picked[typeId] then
-                scores[typeId] = math.random(4, 14)
-            end
-        end
-    else
-        for _, typeId in ipairs(VNPC_PREY_TYPE_ORDER) do
-            if not picked[typeId] then
-                scores[typeId] = math.random(8, 28)
-            end
-        end
-    end
-
-    if pers == "loving" then
-        scores.human = math.max(scores.human or 0, 86)
-        scores.player = math.max(scores.player or 0, 40)
-    end
-
-    pred.VNPC_AttractedPreyTypes = scores
-    VNPC_SyncPreyAttractionNW(pred)
+    prey.VNPC_AttractedPredTypes = scores
+    VNPC_SyncMateAttractionNW(prey)
     return scores
 end
 
-function VNPC_GetAttractedPreyTypes(pred)
-    if not IsValid(pred) then return emptyScores() end
-    if not istable(pred.VNPC_AttractedPreyTypes) then
-        return VNPC_AssignPreyAttraction(pred)
+function VNPC_GetAttractedPredTypes(prey)
+    if not IsValid(prey) then return emptyScores() end
+    if not istable(prey.VNPC_AttractedPredTypes) then
+        return VNPC_AssignMateAttraction(prey)
     end
-    return pred.VNPC_AttractedPreyTypes
+    return prey.VNPC_AttractedPredTypes
 end
 
-function VNPC_SetPreyAttraction(pred, typeId, score)
-    if not IsValid(pred) then return false end
-    typeId = VNPC_NormalizePreyType(typeId)
+function VNPC_GetFavoritePredTypes(prey)
+    local scores = VNPC_GetAttractedPredTypes(prey)
+    local favs = {}
+    for _, typeId in ipairs(VNPC_FEMALE_PRED_TYPE_ORDER) do
+        if (scores[typeId] or 0) >= 55 then
+            table.insert(favs, typeId)
+        end
+    end
+    return favs
+end
+
+function VNPC_FormatMateAttraction(prey)
+    local favs = VNPC_GetFavoritePredTypes(prey)
+    if #favs == 0 then return "none" end
+    local names = {}
+    for _, typeId in ipairs(favs) do
+        local info = VNPC_FEMALE_PRED_TYPES[typeId]
+        table.insert(names, info and info.name or typeId)
+    end
+    return table.concat(names, ", ")
+end
+
+function VNPC_SetMateAttraction(prey, typeId, score)
+    if not IsValid(prey) then return false end
+    typeId = VNPC_NormalizeFemalePredType(typeId)
     if not typeId then return false end
-    local scores = VNPC_GetAttractedPreyTypes(pred)
+    local scores = VNPC_GetAttractedPredTypes(prey)
     scores[typeId] = math.Clamp(tonumber(score) or 0, 0, 100)
-    pred.VNPC_AttractedPreyTypes = scores
-    VNPC_SyncPreyAttractionNW(pred)
+    prey.VNPC_AttractedPredTypes = scores
+    VNPC_SyncMateAttractionNW(prey)
     return true
 end
 
-function VNPC_GetPreyTypeAttraction(pred, typeId)
-    if not IsValid(pred) then return 0 end
-    typeId = VNPC_NormalizePreyType(typeId) or "other"
-    local scores = VNPC_GetAttractedPreyTypes(pred)
-    return tonumber(scores[typeId]) or 12
+function VNPC_GetPredTypeAttraction(prey, typeId)
+    if not IsValid(prey) then return 0 end
+    typeId = VNPC_NormalizeFemalePredType(typeId) or "other"
+    local scores = VNPC_GetAttractedPredTypes(prey)
+    return tonumber(scores[typeId]) or 14
 end
 
-function VNPC_GetPreyAttraction(pred, prey)
-    if not IsValid(pred) or not IsValid(prey) then return 0 end
-    return VNPC_GetPreyTypeAttraction(pred, VNPC_GetPreyType(prey))
+function VNPC_GetMateAttraction(prey, pred)
+    if not IsValid(prey) or not IsValid(pred) then return 0 end
+    return VNPC_GetPredTypeAttraction(prey, VNPC_GetFemalePredType(pred))
+end
+
+function VNPC_IsPreyAttractedToPred(prey, pred)
+    if not IsValid(prey) or not IsValid(pred) then return false end
+    if not mateAttractionEnabled() then return true end
+    if prey.VNPC_LovedPartner == pred or prey.VNPC_LovedMate == pred or prey.VNPC_MatingPartner == pred then
+        return true
+    end
+    return VNPC_GetMateAttraction(prey, pred) >= mateThreshold()
+end
+
+function VNPC_GetMateAttractionMultiplier(prey, pred)
+    if not mateAttractionEnabled() then return 1.0 end
+    if not IsValid(prey) or not IsValid(pred) then return 1.0 end
+    local attraction = VNPC_GetMateAttraction(prey, pred)
+    return 0.20 + (attraction / 100) * 2.10
+end
+
+-- Deprecated hunt helpers: predators no longer filter prey types while hunting.
+function VNPC_ShouldHuntPreyType(pred, prey)
+    return IsValid(pred) and IsValid(prey)
 end
 
 function VNPC_GetPreyAttractionMultiplier(pred, prey)
-    if not isPreyAttractionEnabled() then return 1.0 end
-    if not IsValid(pred) or not IsValid(prey) then return 1.0 end
-    if VNPC_IsPredatorDesperateForPrey(pred) then
-        return 1.15
+    return 1.0
+end
+
+function VNPC_AssignPreyAttraction(ent)
+    if not IsValid(ent) then return emptyScores() end
+    if ent.IsDrGNextbot or ent.VNPC_FemaleModelVore or ent.Predator then
+        return emptyScores()
     end
-    local attraction = VNPC_GetPreyAttraction(pred, prey)
-    return 0.18 + (attraction / 100) * 2.05
+    return VNPC_AssignMateAttraction(ent)
 end
 
-function VNPC_IsAttractedToPreyType(pred, typeId)
-    if not isPreyAttractionEnabled() then return true end
-    if not IsValid(pred) then return false end
-    if VNPC_IsPredatorDesperateForPrey(pred) then return true end
-    return VNPC_GetPreyTypeAttraction(pred, typeId) >= attractionThreshold()
-end
-
-function VNPC_IsAttractedToPrey(pred, prey)
-    if not IsValid(pred) or not IsValid(prey) then return false end
-    if not isPreyAttractionEnabled() then return true end
-    if VNPC_IsPredatorDesperateForPrey(pred) then return true end
-    if pred.GetEnemy and pred:GetEnemy() == prey then return true end
-    return VNPC_IsAttractedToPreyType(pred, VNPC_GetPreyType(prey))
-end
-
-function VNPC_ShouldHuntPreyType(pred, prey)
-    if not IsValid(pred) or not IsValid(prey) then return false end
-    if not isPreyAttractionEnabled() then return true end
-    return VNPC_IsAttractedToPrey(pred, prey)
-end
-
-hook.Add("OnEntityCreated", "VNPC_AutoAssignPreyAttraction", function(ent)
-    timer.Simple(0.2, function()
+hook.Add("OnEntityCreated", "VNPC_AutoAssignMateAttraction", function(ent)
+    timer.Simple(0.25, function()
         if not IsValid(ent) then return end
-        if ent.IsDrGNextbot or ent.VNPC_FemaleModelVore or ent.Predator or (VNPC_IsFemaleModelNPC and VNPC_IsFemaleModelNPC(ent)) then
-            VNPC_AssignPreyAttraction(ent)
+        if ent:IsNPC() or ent:IsNextBot() or ent:IsPlayer() then
+            if not (ent.IsDrGNextbot or ent.VNPC_FemaleModelVore or ent.Predator) then
+                VNPC_AssignMateAttraction(ent)
+            end
         end
     end)
 end)
 
-concommand.Add("vnpcs_prey_attraction_status", function(ply)
-    print("===============================================================")
-    print("          V-NPCs PREDATOR PREY-TYPE ATTRACTION STATUS          ")
-    print("===============================================================")
-    print(" - Attraction Enabled: " .. tostring(isPreyAttractionEnabled()))
-    print(" - Hunt Threshold: " .. tostring(attractionThreshold()))
-    print(" - Desperate Hunger: " .. tostring(desperateHunger()) .. "%")
-    local count = 0
-    for _, ent in ipairs(ents.FindByClass("npc_*")) do
-        if IsValid(ent) and (ent.IsDrGNextbot or ent.VNPC_FemaleModelVore or ent.Predator) then
-            count = count + 1
-            local pers = VNPC_GetPredatorPersonality and select(1, VNPC_GetPredatorPersonality(ent)) or "opportunistic"
-            local parts = {}
-            local scores = VNPC_GetAttractedPreyTypes(ent)
-            for _, typeId in ipairs(VNPC_PREY_TYPE_ORDER) do
-                local score = scores[typeId] or 0
-                if score >= 55 then
-                    table.insert(parts, string.format("%s=%.0f", typeId, score))
+if SERVER then
+    local function canPreySeekMate(ent)
+        if not IsValid(ent) or ent:Health() <= 0 then return false end
+        if ent.Vored or ent.VNPC_Vored or ent.VNPC_IsPregnant then return false end
+        if ent:IsPlayer() then return false end
+        if VNPC_IsBusyMating and VNPC_IsBusyMating(ent) then return false end
+        if VNPC_IsAdultPreyCitizen and not VNPC_IsAdultPreyCitizen(ent) then return false end
+        if VNPC_IsMalePreyCitizen then
+            return VNPC_IsMalePreyCitizen(ent)
+        end
+        if VNPC_IsMaleWildWanderer then
+            return VNPC_IsMaleWildWanderer(ent)
+        end
+        return false
+    end
+
+    local function canPredAcceptMate(pred)
+        if not VNPC_IsFemalePredator(pred) then return false end
+        if pred.VNPC_IsPregnant or pred.VNPC_IsPregnantWithSister then return false end
+        if VNPC_IsBusyMating and VNPC_IsBusyMating(pred) then return false end
+        if pred.Swallowing or pred.VNPC_IsCarryingMateForCamp or pred.VNPC_IsInfiltratingFort then return false end
+        if pred.VNPC_IsSleeping then return false end
+        return true
+    end
+
+    hook.Add("Think", "VNPC_PreySeekFemalePredMate_AI", function()
+        if not mateAttractionEnabled() then return end
+        local now = CurTime()
+        if (VNPC_NextMateAttractionThink or 0) > now then return end
+        VNPC_NextMateAttractionThink = now + 0.8
+
+        local range = mateRange()
+        for _, prey in ipairs(ents.FindByClass("npc_*")) do
+            if not canPreySeekMate(prey) then continue end
+            if (prey.VNPC_NextMateSeekTime or 0) > now then continue end
+            prey.VNPC_NextMateSeekTime = now + 2.4
+
+            local partner = prey.VNPC_LovedPartner or prey.VNPC_LovedMate or prey.VNPC_MatingPartner
+            local bestPred = nil
+            local bestScore = -1e9
+            if IsValid(partner) and canPredAcceptMate(partner) and VNPC_IsPreyAttractedToPred(prey, partner) then
+                bestPred = partner
+                bestScore = 1000
+            else
+                for _, pred in ipairs(ents.FindInSphere(prey:GetPos(), range)) do
+                    if not canPredAcceptMate(pred) then continue end
+                    if not VNPC_IsPreyAttractedToPred(prey, pred) then continue end
+                    local dist = prey:GetPos():Distance(pred:GetPos())
+                    local score = (100 / (dist + 40)) * VNPC_GetMateAttractionMultiplier(prey, pred)
+                    if score > bestScore then
+                        bestPred = pred
+                        bestScore = score
+                    end
                 end
             end
-            print(string.format(" - Pred #%d [%s] pers=%s attracted=%s",
+
+            if not IsValid(bestPred) then continue end
+
+            local dist = prey:GetPos():Distance(bestPred:GetPos())
+            if dist <= 160 then
+                if VNPC_AddMateLove then
+                    VNPC_AddMateLove(bestPred, prey, 4.0)
+                end
+                if VNPC_InitiatePrivateMating then
+                    VNPC_InitiatePrivateMating(bestPred, prey, VNPC_GetPredatorCamp and VNPC_GetPredatorCamp(bestPred) or nil)
+                end
+            else
+                if prey.SetEnemy then pcall(prey.SetEnemy, prey, nil) end
+                if prey.SetTarget then pcall(prey.SetTarget, prey, bestPred) end
+                if prey.SetLastPosition then pcall(prey.SetLastPosition, prey, bestPred:GetPos()) end
+                if prey.SetSchedule then pcall(prey.SetSchedule, prey, SCHED_FORCED_GO_RUN) end
+                if (bestPred.VNPC_NextMateAnswerTime or 0) <= now then
+                    bestPred.VNPC_NextMateAnswerTime = now + 2.0
+                    if bestPred.SetLastPosition then pcall(bestPred.SetLastPosition, bestPred, prey:GetPos()) end
+                    if bestPred.SetSchedule then pcall(bestPred.SetSchedule, bestPred, SCHED_FORCED_GO) end
+                end
+            end
+        end
+    end)
+end
+
+concommand.Add("vnpcs_mate_attraction_status", function(ply)
+    print("===============================================================")
+    print("     V-NPCs PREY ATTRACTION TO FEMALE PREDATOR TYPES           ")
+    print("===============================================================")
+    print(" - Mate Attraction Enabled: " .. tostring(mateAttractionEnabled()))
+    print(" - Seek Threshold: " .. tostring(mateThreshold()))
+    print(" - Seek Range: " .. tostring(mateRange()))
+    local count = 0
+    for _, ent in ipairs(ents.FindByClass("npc_*")) do
+        if IsValid(ent) and not (ent.IsDrGNextbot or ent.VNPC_FemaleModelVore or ent.Predator) then
+            count = count + 1
+            local pers = VNPC_GetPreyPersonality and select(1, VNPC_GetPreyPersonality(ent)) or "fighter"
+            print(string.format(" - Prey #%d [%s] pers=%s wants to mate with: %s",
                 ent:EntIndex(),
                 ent.PrintName or ent:GetClass(),
                 tostring(pers),
-                #parts > 0 and table.concat(parts, ", ") or "none"))
+                VNPC_FormatMateAttraction(ent)))
         end
     end
     if count == 0 then
-        print(" - Active Predators: NONE currently spawned")
+        print(" - Active Prey: NONE currently spawned")
     end
     print("===============================================================")
     if IsValid(ply) then
-        ply:ChatPrint("[V-NPCs] Prey-type attraction status printed to console. Predators: " .. count)
+        ply:ChatPrint("[V-NPCs] Mate attraction status printed to console. Prey: " .. count)
     end
 end)
 
-concommand.Add("vnpcs_set_prey_attraction", function(ply, cmd, args)
+concommand.Add("vnpcs_prey_attraction_status", function(ply, cmd, args)
+    RunConsoleCommand("vnpcs_mate_attraction_status")
+end)
+
+concommand.Add("vnpcs_set_mate_attraction", function(ply, cmd, args)
     if #args < 2 then
-        print("[V-NPCs] Usage: vnpcs_set_prey_attraction <ent_index> <type> [score]")
-        print("[V-NPCs] Types: " .. table.concat(VNPC_PREY_TYPE_ORDER, ", "))
+        print("[V-NPCs] Usage: vnpcs_set_mate_attraction <ent_index> <female_pred_type> [score]")
+        print("[V-NPCs] Types: " .. table.concat(VNPC_FEMALE_PRED_TYPE_ORDER, ", "))
         return
     end
     local id = tonumber(args[1])
-    local typeId = VNPC_NormalizePreyType(args[2])
+    local typeId = VNPC_NormalizeFemalePredType(args[2])
     local score = tonumber(args[3]) or 90
     local target = id and Entity(id) or nil
     if not IsValid(target) then
@@ -406,77 +410,81 @@ concommand.Add("vnpcs_set_prey_attraction", function(ply, cmd, args)
         return
     end
     if not typeId then
-        print("[V-NPCs] Unknown prey type '" .. tostring(args[2]) .. "'. Types: " .. table.concat(VNPC_PREY_TYPE_ORDER, ", "))
+        print("[V-NPCs] Unknown female pred type '" .. tostring(args[2]) .. "'. Types: " .. table.concat(VNPC_FEMALE_PRED_TYPE_ORDER, ", "))
         return
     end
-    VNPC_SetPreyAttraction(target, typeId, score)
-    local msg = string.format("[V-NPCs] Set %s attraction to %s = %.0f. Favorites: %s",
-        tostring(target), typeId, score, VNPC_FormatPreyAttraction(target))
+    VNPC_SetMateAttraction(target, typeId, score)
+    local msg = string.format("[V-NPCs] Set %s mate attraction to %s = %.0f. Wants: %s",
+        tostring(target), typeId, score, VNPC_FormatMateAttraction(target))
     print(msg)
     if IsValid(ply) then ply:ChatPrint(msg) end
 end)
 
-concommand.Add("vnpcs_test_prey_attraction", function(ply)
+concommand.Add("vnpcs_test_mate_attraction", function(ply)
     if not IsValid(ply) then return end
     local tr = ply:GetEyeTrace()
     local target = tr.Entity
     if not IsValid(target) then
-        ply:ChatPrint("[V-NPCs] Aim at a predator or prey NPC to inspect prey-type attraction!")
+        ply:ChatPrint("[V-NPCs] Aim at prey or a female predator to inspect mate attraction!")
         return
     end
 
-    if target.IsDrGNextbot or target.VNPC_FemaleModelVore or target.Predator then
-        VNPC_GetAttractedPreyTypes(target)
-        local pers = VNPC_GetPredatorPersonality and select(1, VNPC_GetPredatorPersonality(target)) or "opportunistic"
-        ply:ChatPrint(string.format("[V-NPCs] Predator %s (%s) is attracted to: %s",
-            tostring(target), tostring(pers), VNPC_FormatPreyAttraction(target)))
-        local scores = VNPC_GetAttractedPreyTypes(target)
-        for _, typeId in ipairs(VNPC_PREY_TYPE_ORDER) do
-            local score = scores[typeId] or 0
-            if score >= 20 then
-                print(string.format("   %s = %.0f%s", typeId, score, score >= attractionThreshold() and " [hunts]" or ""))
+    if VNPC_IsFemalePredator(target) then
+        local predType = VNPC_GetFemalePredType(target)
+        ply:ChatPrint(string.format("[V-NPCs] Female pred %s is type [%s]. Nearby prey attraction:",
+            tostring(target), string.upper(predType)))
+        local shown = 0
+        for _, prey in ipairs(ents.FindInSphere(target:GetPos(), 1600)) do
+            if IsValid(prey) and prey ~= target and not (prey.IsDrGNextbot or prey.VNPC_FemaleModelVore or prey.Predator) then
+                shown = shown + 1
+                local score = VNPC_GetMateAttraction(prey, target)
+                local wants = VNPC_IsPreyAttractedToPred(prey, target)
+                ply:ChatPrint(string.format(" - Prey #%d %s: %s=%.0f %s",
+                    prey:EntIndex(), prey.PrintName or prey:GetClass(), predType, score, wants and "[wants to mate]" or "[not attracted]"))
             end
         end
+        if shown == 0 then
+            ply:ChatPrint("[V-NPCs] No nearby prey found.")
+        end
         return
     end
 
-    local preyType = VNPC_GetPreyType(target)
-    ply:ChatPrint(string.format("[V-NPCs] %s is prey type [%s]. Nearby predator attraction:",
-        tostring(target), string.upper(preyType)))
-    local shown = 0
-    for _, pred in ipairs(ents.FindInSphere(target:GetPos(), 1600)) do
-        if IsValid(pred) and pred ~= target and (pred.IsDrGNextbot or pred.VNPC_FemaleModelVore or pred.Predator) then
-            shown = shown + 1
-            local score = VNPC_GetPreyAttraction(pred, target)
-            local hunts = VNPC_ShouldHuntPreyType(pred, target)
-            ply:ChatPrint(string.format(" - Pred #%d %s: %s=%.0f %s",
-                pred:EntIndex(), pred.PrintName or pred:GetClass(), preyType, score, hunts and "[will hunt]" or "[ignores]"))
-        end
-    end
-    if shown == 0 then
-        ply:ChatPrint("[V-NPCs] No nearby predators found.")
-    end
+    VNPC_GetAttractedPredTypes(target)
+    local pers = VNPC_GetPreyPersonality and select(1, VNPC_GetPreyPersonality(target)) or "fighter"
+    ply:ChatPrint(string.format("[V-NPCs] Prey %s (%s) wants to mate with: %s",
+        tostring(target), tostring(pers), VNPC_FormatMateAttraction(target)))
+end)
+
+concommand.Add("vnpcs_test_prey_attraction", function(ply)
+    RunConsoleCommand("vnpcs_test_mate_attraction")
 end)
 
 if CLIENT then
-    hook.Add("PostDrawTranslucentRenderables", "VNPC_PreyAttraction_DebugOverlay", function()
-        local debug_cv = GetConVar("vnpcs_prey_attraction_debug")
+    hook.Add("PostDrawTranslucentRenderables", "VNPC_MateAttraction_DebugOverlay", function()
+        local debug_cv = GetConVar("vnpcs_mate_attraction_debug")
         if not debug_cv or not debug_cv:GetBool() then return end
 
         for _, npc in ipairs(ents.FindByClass("npc_*")) do
             if not IsValid(npc) then continue end
-            if not (npc.IsDrGNextbot or npc.VNPC_FemaleModelVore or npc.Predator) then continue end
-            local label = npc:GetNWString("VNPC_AttractedTypes", "")
-            if label == "" and VNPC_FormatPreyAttraction then
-                label = VNPC_FormatPreyAttraction(npc)
+            local label
+            if npc.IsDrGNextbot or npc.VNPC_FemaleModelVore or npc.Predator then
+                label = "Type: " .. (VNPC_GetFemalePredType and VNPC_GetFemalePredType(npc) or "?")
+            else
+                label = npc:GetNWString("VNPC_AttractedPredTypes", "")
+                if label == "" and VNPC_FormatMateAttraction then
+                    label = VNPC_FormatMateAttraction(npc)
+                end
+                if label ~= "" then
+                    label = "Wants: " .. label
+                end
             end
-            if label == "" then continue end
+            if not label or label == "" then continue end
             local pos = npc:WorldSpaceCenter() + Vector(0, 0, 42)
             local ang = EyeAngles()
             ang:RotateAroundAxis(ang:Forward(), 90)
             ang:RotateAroundAxis(ang:Right(), 90)
             cam.Start3D2D(pos, ang, 0.16)
-                draw.SimpleText("Attracted: " .. label, "DermaDefaultBold", 0, 0, Color(255, 190, 120), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
+                draw.SimpleText(label, "DermaDefaultBold", 0, 0, Color(255, 170, 200), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
             cam.End3D2D()
         end
     end)

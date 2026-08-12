@@ -775,10 +775,6 @@ if CLIENT then
                 draw.SimpleText(string.format("Belly Size: %.2f", bsize), "DermaDefault", 0, 16, Color(255, 150, 255), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
                 local prey_count = (IsValid(npc.VNPC_Belly) and npc.VNPC_Belly.Prey) and #npc.VNPC_Belly.Prey or 0
                 draw.SimpleText(string.format("Prey Count: %d", prey_count), "DermaDefault", 0, 32, Color(255, 100, 100), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-                local attracted = npc:GetNWString("VNPC_AttractedTypes", "")
-                if attracted ~= "" then
-                    draw.SimpleText("Attracted: " .. attracted, "DermaDefault", 0, 48, Color(255, 190, 120), TEXT_ALIGN_CENTER, TEXT_ALIGN_CENTER)
-                end
             cam.End3D2D()
         end
     end)
@@ -1920,9 +1916,6 @@ function VNPC_IsPredatorCalm(pred)
 
         local isPrey = (ent:IsPlayer() or ent:IsNPC() or ent.IsDrGNextbot or ent:GetClass() == "prop_ragdoll" or ent.VNPC_IsCorpse)
         if isPrey then
-            if VNPC_ShouldHuntPreyType and not VNPC_ShouldHuntPreyType(pred, ent) then
-                continue
-            end
             if ent:IsPlayer() then
                 return false
             elseif pred.GetRelationship and (pred:GetRelationship(ent) == D_HT or pred:GetRelationship(ent) == D_FR) then

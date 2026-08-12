@@ -814,10 +814,16 @@ function VNPC_WildMating_AI(now)
                 local bestDistSqr = 2000 * 2000
                 local wPos = w:GetPos()
 
-                -- Scan all NPCs on the map for an eligible male citizen prey
+                -- Scan all NPCs on the map for an eligible male who wants this female pred type
                 for _, m in ipairs(ents.FindByClass("npc_*")) do
                     if VNPC_IsMaleWildWanderer(m) and m ~= w then
                         local dSqr = m:GetPos():DistToSqr(wPos)
+                        if VNPC_GetMateAttractionMultiplier then
+                            dSqr = dSqr / math.max(0.35, VNPC_GetMateAttractionMultiplier(m, w))
+                        end
+                        if VNPC_IsPreyAttractedToPred and not VNPC_IsPreyAttractedToPred(m, w) then
+                            dSqr = dSqr * 2.4
+                        end
                         if dSqr <= bestDistSqr then
                             bestMale = m
                             bestDistSqr = dSqr
@@ -1024,17 +1030,18 @@ concommand.Add("vnpcs_wild_ecology_status", function(ply)
                 local mateStr = IsValid(w.VNPC_WildMate) and (" | Mate: [" .. w.VNPC_WildMate:EntIndex() .. "]") or ""
                 local loveStr = (w.VNPC_MateLove and w.VNPC_MateLove > 0) and string.format(" | Love: %.0f", w.VNPC_MateLove) or ""
                 local pregStr = w.VNPC_IsPregnant and string.format(" | Pregnant: %.1f/50 x%d", w.VNPC_BabyGrowthValue or 40, math.max(1, tonumber(w.VNPC_LitterSize) or 1)) or ""
-                local dietStr = (VNPC_FormatPreyAttraction and (" | Attracted: " .. VNPC_FormatPreyAttraction(w))) or ""
+                local typeStr = (VNPC_GetFemalePredType and (" | Type: " .. VNPC_GetFemalePredType(w))) or ""
                 print(string.format(" -> Wild Predator [#%d] %s | Pers: %s | HP: %d%s%s%s%s",
-                    w:EntIndex(), w:GetClass(), string.upper(pers), w:Health(), mateStr, loveStr, pregStr, dietStr))
+                    w:EntIndex(), w:GetClass(), string.upper(pers), w:Health(), mateStr, loveStr, pregStr, typeStr))
             else
                 wPrey = wPrey + 1
                 local pers = w.VNPC_PreyPersonality or w.PreyPersonality or "fighter"
                 local mateStr = IsValid(w.VNPC_WildMate) and (" | Mate: [" .. w.VNPC_WildMate:EntIndex() .. "]") or ""
                 local loveStr = (w.VNPC_MateLove and w.VNPC_MateLove > 0) and string.format(" | Love: %.0f", w.VNPC_MateLove) or ""
                 local pregStr = w.VNPC_IsPregnant and string.format(" | Pregnant: %.1f/50 x%d", w.VNPC_BabyGrowthValue or 40, math.max(1, tonumber(w.VNPC_LitterSize) or 1)) or ""
-                print(string.format(" -> Wild Prey [#%d] %s | Pers: %s | HP: %d%s%s%s",
-                    w:EntIndex(), w:GetClass(), string.upper(pers), w:Health(), mateStr, loveStr, pregStr))
+                local wantStr = (VNPC_FormatMateAttraction and (" | Wants: " .. VNPC_FormatMateAttraction(w))) or ""
+                print(string.format(" -> Wild Prey [#%d] %s | Pers: %s | HP: %d%s%s%s%s",
+                    w:EntIndex(), w:GetClass(), string.upper(pers), w:Health(), mateStr, loveStr, pregStr, wantStr))
             end
         end
     end

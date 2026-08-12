@@ -46,14 +46,10 @@ function VNPC_SelectSmartPreyTarget(pred, search_radius)
         end
         if not isHostile then continue end
         if pred.EatCondition and not pred:EatCondition(ent) then continue end
-        if VNPC_ShouldHuntPreyType and not VNPC_ShouldHuntPreyType(pred, ent) then continue end
 
         local dist = predPos:Distance(ent:GetPos())
         local val = VNPC_CalculatePreyValue and VNPC_CalculatePreyValue(ent) or 75
         local score = (val * (1.0 + hunger * 0.02)) / (dist + 50) * 100
-        if VNPC_GetPreyAttractionMultiplier then
-            score = score * VNPC_GetPreyAttractionMultiplier(pred, ent)
-        end
 
         -- Tactical bonuses
         if ent:IsPlayer() then

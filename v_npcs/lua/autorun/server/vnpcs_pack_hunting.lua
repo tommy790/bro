@@ -27,7 +27,6 @@ function VNPC_CallSisterPredators(caller, enemy)
         -- Must not already be full
         local belly = sister.VNPC_Belly or sister.Belly
         if IsValid(belly) and ((belly.Prey and #belly.Prey > 0) or belly.DigestionPhase == 2) then continue end
-        if VNPC_ShouldHuntPreyType and not VNPC_ShouldHuntPreyType(sister, enemy) then continue end
 
         -- Command sister to converge on target
         if sister.SetEnemy then pcall(sister.SetEnemy, sister, enemy) end

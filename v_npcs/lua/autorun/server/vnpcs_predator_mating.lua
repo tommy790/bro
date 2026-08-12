@@ -157,6 +157,12 @@ hook.Add("Think", "VNPC_PredatorMating_AI_Loop", function()
                         for _, ent in ipairs(ents.FindInSphere(pred:GetPos(), 900)) do
                             if VNPC_IsMalePreyCitizen and VNPC_IsMalePreyCitizen(ent) then
                                 local dSqr = pred:GetPos():DistToSqr(ent:GetPos())
+                                if VNPC_GetMateAttractionMultiplier then
+                                    dSqr = dSqr / math.max(0.35, VNPC_GetMateAttractionMultiplier(ent, pred))
+                                end
+                                if VNPC_IsPreyAttractedToPred and not VNPC_IsPreyAttractedToPred(ent, pred) then
+                                    dSqr = dSqr * 2.4
+                                end
                                 if dSqr < bestDist then
                                     bestMale = ent
                                     bestDist = dSqr
