@@ -124,6 +124,19 @@ hook.Add("PreDrawOpaqueRenderables", "VNPCS_GPU_Vore_UpdateUniforms", function()
             gpuMat:SetVector("$gore_center", center)
             gpuMat:SetFloat("$gore_radius", radius)
             gpuMat:SetFloat("$gore_intensity", intensity)
+            local spots = VNPC_GetGPUBellyStruggleSpots and VNPC_GetGPUBellyStruggleSpots(activePredator) or {}
+            for i = 1, 4 do
+                local spot = spots[i]
+                if spot and spot.world then
+                    gpuMat:SetVector("$gore_spot" .. i, spot.world)
+                    gpuMat:SetFloat("$gore_spotamp" .. i, spot.amp or 0)
+                    gpuMat:SetFloat("$gore_spotradius" .. i, (spot.radius or 0.28) * math.max(radius, 8))
+                else
+                    gpuMat:SetVector("$gore_spot" .. i, center)
+                    gpuMat:SetFloat("$gore_spotamp" .. i, 0)
+                    gpuMat:SetFloat("$gore_spotradius" .. i, 0)
+                end
+            end
         end
 
         -- Pass parameters to Source Engine lighting uniform registers and material variables
@@ -190,7 +203,8 @@ hook.Add("HUDPaint", "VNPCS_GPU_Vore_DebugHUD", function()
     draw.SimpleText("Active Predator: " .. predName, "DermaDefault", x + 10, y + 30, Color(255, 255, 255))
     draw.SimpleText(string.format("Stomach Center: %.1f, %.1f, %.1f", g_VoreStomachCenter.x, g_VoreStomachCenter.y, g_VoreStomachCenter.z), "DermaDefault", x + 10, y + 50, Color(200, 255, 200))
     draw.SimpleText(string.format("Radius: %.1f | Intensity: %.1f", g_VoreRadius, g_VoreIntensity), "DermaDefault", x + 10, y + 70, Color(200, 220, 255))
-    draw.SimpleText("Bound Materials: " .. g_UpdatedMaterialsCount, "DermaDefault", x + 10, y + 90, Color(255, 200, 255))
+    local preyN = (IsValid(g_ActivePredator) and g_ActivePredator.GetNWInt) and g_ActivePredator:GetNWInt("VNPC_GPUStruggleN", 0) or 0
+    draw.SimpleText("Bound Materials: " .. g_UpdatedMaterialsCount .. " | Struggle spots: " .. (preyN * 4), "DermaDefault", x + 10, y + 90, Color(255, 200, 255))
 end)
 
 concommand.Add("vnpcs_gpu_vore_status", function()

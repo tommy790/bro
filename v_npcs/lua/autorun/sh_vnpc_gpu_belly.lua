@@ -6,6 +6,8 @@ CreateConVar("vnpcs_gpu_belly_enabled", "1", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, 
 CreateConVar("vnpcs_gpu_belly_mesh", "1", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Draw the GPU-skinned belly mesh generated from virtual bones")
 CreateConVar("vnpcs_gpu_belly_bonescale", "1", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Scale existing spine/pelvis/thigh bones so the character mesh itself grows a belly")
 CreateConVar("vnpcs_gpu_belly_debug", "0", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Draw generated belly bones and the GPU mesh wireframe")
+CreateConVar("vnpcs_gpu_belly_struggle", "1", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Procedural 4-spot mesh deformations on the GPU belly per struggling prey")
+CreateConVar("vnpcs_gpu_belly_struggle_amp", "1.0", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Amplitude multiplier for GPU belly struggle lumps")
 
 VNPC_GPU_BELLY_BONE_NAMES = {
     "VNPC_Belly_Root",
@@ -298,11 +300,24 @@ if CLIENT then
         local ry = chain.depth * 0.5
         local rz = chain.height * 0.5
         local right, fwd, up = chain.right, chain.forward, chain.up
+        local spots = VNPC_GetGPUBellyStruggleSpots(ent, chain)
         local mat = bellyMaterial(ent)
         if mat and chain.mid then
             mat:SetVector("$gore_center", mid.pos)
             mat:SetFloat("$gore_radius", chain.radius or 8)
             mat:SetFloat("$gore_intensity", math.Clamp((chain.size or 0) * 14, 0, 80))
+            for i = 1, 4 do
+                local spot = spots[i]
+                if spot and spot.world then
+                    mat:SetVector("$gore_spot" .. i, spot.world)
+                    mat:SetFloat("$gore_spotamp" .. i, spot.amp or 0)
+                    mat:SetFloat("$gore_spotradius" .. i, (spot.radius or 0.28) * (chain.radius or 8))
+                else
+                    mat:SetVector("$gore_spot" .. i, mid.pos)
+                    mat:SetFloat("$gore_spotamp" .. i, 0)
+                    mat:SetFloat("$gore_spotradius" .. i, 0)
+                end
+            end
         end
         render.SetMaterial(mat)
         mesh.Begin(MATERIAL_TRIANGLES, #UNIT_TRIS)
@@ -326,6 +341,10 @@ if CLIENT then
                 end
                 local nrm = (right * v.nrm.x + fwd * v.nrm.y + up * v.nrm.z)
                 nrm:Normalize()
+                local push = VNPC_ApplyGPUBellyStruggleDeform(lp, spots)
+                if push > 0 then
+                    world = world + nrm * (push * (chain.radius or 8))
+                end
                 mesh.Position(world)
                 mesh.Normal(nrm)
                 mesh.TexCoord(0, v.u, v.v)
@@ -389,6 +408,29 @@ if CLIENT then
                 render.DrawLine(chain.mid.pos, chain.lower.pos, Color(255, 180, 120), true)
                 render.DrawLine(chain.left.pos, chain.right.pos, Color(120, 255, 180), true)
             end
+            local spots = VNPC_GetGPUBellyStruggleSpots(ent, chain)
+            for _, spot in ipairs(spots) do
+                if spot.world then
+                    local r = math.max(2.2, (spot.radius or 0.28) * (chain.radius or 8) * (0.45 + (spot.amp or 0)))
+                    render.DrawWireframeSphere(spot.world, r, 8, 8, Color(255, 80, 140, 200), true)
+                    render.DrawSphere(spot.world, 1.4 + (spot.amp or 0) * 3, 7, 7, Color(255, 60, 120, 220))
+                end
+            end
+        end
+    end)
+end
+
+if SERVER then
+    hook.Add("Think", "VNPC_GPUBelly_SyncStruggle", function()
+        local now = CurTime()
+        if (VNPC_NextGPUStruggleSync or 0) > now then return end
+        VNPC_NextGPUStruggleSync = now + 0.2
+        local enabled = GetConVar("vnpcs_gpu_belly_struggle")
+        if enabled and not enabled:GetBool() then return end
+        for _, ent in ipairs(ents.FindByClass("npc_*")) do
+            if isPredCandidate(ent) then
+                VNPC_SyncGPUBellyStruggle(ent)
+            end
         end
     end)
 end
@@ -443,6 +485,7 @@ concommand.Add("vnpcs_gpu_belly_status", function(ply)
     print(" - GPU Mesh: " .. tostring(GetConVar("vnpcs_gpu_belly_mesh"):GetBool()))
     print(" - Bone Scale: " .. tostring(GetConVar("vnpcs_gpu_belly_bonescale"):GetBool()))
     print(" - Debug: " .. tostring(GetConVar("vnpcs_gpu_belly_debug"):GetBool()))
+    print(" - Struggle Deform: " .. tostring(GetConVar("vnpcs_gpu_belly_struggle"):GetBool()) .. " amp=" .. tostring(GetConVar("vnpcs_gpu_belly_struggle_amp"):GetFloat()))
     print("-----------------------------------------")
     local count = 0
     for _, ent in ipairs(ents.FindByClass("npc_*")) do
@@ -450,9 +493,10 @@ concommand.Add("vnpcs_gpu_belly_status", function(ply)
             local chain = VNPC_UpdateVirtualBellyBones(ent)
             if chain then
                 count = count + 1
-                print(string.format(" -> #%d [%s] size=%.3f radius=%.1f W/H %.1f/%.1f modelBellyBones=%s generated=%s",
+                local preyN = (ent.GetNWInt and ent:GetNWInt("VNPC_GPUStruggleN", 0)) or 0
+                print(string.format(" -> #%d [%s] size=%.3f radius=%.1f W/H %.1f/%.1f modelBellyBones=%s strugglePrey=%d spots=%d",
                     ent:EntIndex(), ent.PrintName or ent:GetClass(), chain.size, chain.radius,
-                    chain.width, chain.height, tostring(chain.hasModelBellyBones), "true"))
+                    chain.width, chain.height, tostring(chain.hasModelBellyBones), preyN, preyN * 4))
             end
         end
     end
@@ -489,4 +533,27 @@ concommand.Add("vnpcs_test_gpu_belly", function(ply)
             print(string.format("   %-18s  (%.1f, %.1f, %.1f)  r=%.1f", name, b.pos.x, b.pos.y, b.pos.z, b.radius))
         end
     end
+end)
+
+concommand.Add("vnpcs_test_gpu_struggle", function(ply)
+    if not IsValid(ply) then return end
+    local target = ply:GetEyeTrace().Entity
+    if not IsValid(target) or not (target:IsNPC() or target:IsNextBot() or target.IsDrGNextbot) then
+        ply:ChatPrint("[V-NPCs] Aim at a predator to test 4-spot GPU belly struggle deformations!")
+        return
+    end
+    target.VNPC_GPUStruggleTest = {
+        { id = target:EntIndex() * 13 + 1, mul = 1.35 },
+        { id = target:EntIndex() * 17 + 2, mul = 1.10 }
+    }
+    if VNPC_SyncGPUBellyStruggle then
+        VNPC_SyncGPUBellyStruggle(target)
+    end
+    if target.SetFacialExpression then
+        target:SetFacialExpression(2)
+    elseif target.SetNWInt then
+        target:SetNWInt("FacialPhase", 2)
+    end
+    local spots = VNPC_GetGPUBellyStruggleSpots and VNPC_GetGPUBellyStruggleSpots(target, target.VNPC_VirtualBellyBones) or {}
+    ply:ChatPrint(string.format("[V-NPCs] Forced 2 prey / %d unique GPU struggle lumps on %s. Enable vnpcs_gpu_belly_debug 1 to see them.", #spots, tostring(target)))
 end)

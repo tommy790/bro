@@ -11,13 +11,29 @@
 	"$halflambert"		"1"
 	"$nocull"		"0"
 
+	"$gore_center"		"[0 0 0]"
+	"$gore_radius"		"0"
+	"$gore_intensity"	"0"
+	"$gore_spot1"		"[0 0 0]"
+	"$gore_spot2"		"[0 0 0]"
+	"$gore_spot3"		"[0 0 0]"
+	"$gore_spot4"		"[0 0 0]"
+	"$gore_spotamp1"	"0"
+	"$gore_spotamp2"	"0"
+	"$gore_spotamp3"	"0"
+	"$gore_spotamp4"	"0"
+	"$gore_spotradius1"	"0"
+	"$gore_spotradius2"	"0"
+	"$gore_spotradius3"	"0"
+	"$gore_spotradius4"	"0"
+
 	Proxies
 	{
 		VoreGPUDeformer
 		{
 			resultvar		"$gore_center"
 			radiusvar		"$gore_radius"
-			intensityvar		"$gore_intensity"
+			intensityvar	"$gore_intensity"
 		}
 	}
 }

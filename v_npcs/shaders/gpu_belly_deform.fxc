@@ -1,10 +1,14 @@
 // V-NPCs GPU belly deformer (reference HLSL).
-// Runtime deformation is applied in sh_vnpc_gpu_belly.lua by generating
-// virtual belly bones on any ValveBiped skeleton and skinning a GPU mesh
-// to those bones. This file documents the same displace function.
+// Runtime deformation is applied in sh_vnpc_gpu_belly.lua:
+//   1) virtual belly bones on any ValveBiped skeleton
+//   2) a GPU mesh skinned to those bones
+//   3) 4 unique struggle lumps per prey (head / torso / L limb / R limb)
+// This file documents the same displace functions.
 
 float4 g_VoreStomachCenter : register(c190);
 float4 g_VoreParams        : register(c191); // x=radius y=intensity z=forward
+float4 g_VoreSpot[4]       : register(c192); // xyz=world pos  w=radius
+float4 g_VoreSpotAmp       : register(c196); // x/y/z/w = amp of spots 1-4
 
 float3 ApplyVoreVertexDeformation(float3 worldPos, float3 worldNormal, float3 center, float radius, float intensity)
 {
@@ -13,4 +17,26 @@ float3 ApplyVoreVertexDeformation(float3 worldPos, float3 worldNormal, float3 ce
     float factor = saturate(1.0 - dist / (radius * 1.35)) * gaussian;
     float3 outDir = normalize(worldPos - center + worldNormal * 0.25);
     return worldPos + outDir * (factor * intensity);
+}
+
+float3 ApplyPreyStruggleSpots(float3 worldPos, float3 worldNormal)
+{
+    float3 pos = worldPos;
+    float amps[4] = { g_VoreSpotAmp.x, g_VoreSpotAmp.y, g_VoreSpotAmp.z, g_VoreSpotAmp.w };
+    [unroll] for (int i = 0; i < 4; i++)
+    {
+        float amp = amps[i];
+        if (amp <= 0.001) continue;
+        float3 spot = g_VoreSpot[i].xyz;
+        float radius = max(g_VoreSpot[i].w, 0.5);
+        float dist = length(worldPos - spot);
+        if (dist < radius)
+        {
+            float gaussian = exp(-((dist * dist) / (2.0 * radius * radius + 0.001)));
+            float factor = saturate(1.0 - dist / radius) * gaussian;
+            float3 outDir = normalize(worldPos - spot + worldNormal * 0.35);
+            pos += outDir * (factor * amp * radius);
+        }
+    }
+    return pos;
 }
