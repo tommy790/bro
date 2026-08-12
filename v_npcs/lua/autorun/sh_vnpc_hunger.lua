@@ -154,6 +154,27 @@ function VNPC_IsPreyNPC(ent)
     return false
 end
 
+if SERVER then
+    hook.Add("EntityTakeDamage", "VNPC_CampFire_NoDamage", function(target, dmginfo)
+        if not IsValid(target) then return end
+        if target.VNPC_PreyCampID or target.VNPC_CampID or target.VNPC_IsCitizenPrey or VNPC_IsPreyNPC(target) or target.VNPC_FemaleModelVore or target.IsDrGNextbot then
+            if dmginfo:IsDamageType(DMG_BURN) or dmginfo:IsDamageType(DMG_SLOWBURN) then
+                dmginfo:SetDamage(0)
+                if target.Extinguish then pcall(target.Extinguish, target) end
+                return true
+            end
+            local inf = dmginfo:GetInflictor()
+            local att = dmginfo:GetAttacker()
+            if (IsValid(inf) and (inf.VNPC_IsPreyCampFire or inf.VNPC_IsPredatorCampFire or inf:GetClass() == "entityflame" or string.find(string.lower(inf:GetClass()), "fire"))) or
+               (IsValid(att) and (att.VNPC_IsPreyCampFire or att.VNPC_IsPredatorCampFire or att:GetClass() == "entityflame" or string.find(string.lower(att:GetClass()), "fire"))) then
+                dmginfo:SetDamage(0)
+                if target.Extinguish then pcall(target.Extinguish, target) end
+                return true
+            end
+        end
+    end)
+end
+
 VNPC_PreyCookedMealModels = VNPC_PreyCookedMealModels or {
     hotdog = {
         model = "models/food/hotdog.mdl",
