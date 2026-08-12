@@ -8,6 +8,8 @@ CreateConVar("vnpcs_gpu_belly_bonescale", "1", {FCVAR_ARCHIVE, FCVAR_REPLICATED}
 CreateConVar("vnpcs_gpu_belly_debug", "0", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Draw generated belly bones and the GPU mesh wireframe")
 CreateConVar("vnpcs_gpu_belly_struggle", "1", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Procedural 4-spot mesh deformations on the GPU belly per struggling prey")
 CreateConVar("vnpcs_gpu_belly_struggle_amp", "1.0", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Amplitude multiplier for GPU belly struggle lumps")
+CreateConVar("vnpcs_gpu_belly_gulp", "1", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "GPU mesh gulp bulge on the upper torso near the neck, sized by the swallowed prey scale")
+CreateConVar("vnpcs_gpu_belly_gulp_amp", "1.0", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Amplitude multiplier for GPU neck/upper-torso gulp bulges")
 
 VNPC_GPU_BELLY_BONE_NAMES = {
     "VNPC_Belly_Root",
@@ -23,6 +25,8 @@ local ANCHOR_ALTS = {
     spine = { "ValveBiped.Bip01_Spine", "Spine", "spine", "bip_spine_0" },
     spine1 = { "ValveBiped.Bip01_Spine1", "Spine1", "spine1", "bip_spine_1" },
     spine2 = { "ValveBiped.Bip01_Spine2", "Spine2", "spine2", "bip_spine_2", "ValveBiped.Bip01_Spine4" },
+    neck = { "ValveBiped.Bip01_Neck1", "Neck1", "Neck", "neck", "bip_neck" },
+    head = { "ValveBiped.Bip01_Head1", "Head1", "Head", "head" },
     lthigh = { "ValveBiped.Bip01_L_Thigh", "L_Thigh", "l_thigh" },
     rthigh = { "ValveBiped.Bip01_R_Thigh", "R_Thigh", "r_thigh" }
 }
@@ -115,6 +119,8 @@ function VNPC_UpdateVirtualBellyBones(ent)
     local spine = boneWorld(ent, ANCHOR_ALTS.spine)
     local spine1 = boneWorld(ent, ANCHOR_ALTS.spine1)
     local spine2 = boneWorld(ent, ANCHOR_ALTS.spine2)
+    local neck = boneWorld(ent, ANCHOR_ALTS.neck)
+    local head = boneWorld(ent, ANCHOR_ALTS.head)
     local lthigh = boneWorld(ent, ANCHOR_ALTS.lthigh)
     local rthigh = boneWorld(ent, ANCHOR_ALTS.rthigh)
 
@@ -154,6 +160,8 @@ function VNPC_UpdateVirtualBellyBones(ent)
     end
     local left = root - right * (radius * 0.52) + fwd * (radius * 0.22)
     local rightB = root + right * (radius * 0.52) + fwd * (radius * 0.22)
+    local gulpNeck = (neck or head or spine2 or (pelvis + up * 28)) + fwd * (3.0 + radius * 0.06)
+    local gulpChest = (spine2 or spine1 or (gulpNeck - up * 8)) + fwd * (4.2 + radius * 0.10)
     local ang = fwd:Angle()
 
     local function bone(name, pos, r, parent)
@@ -176,13 +184,16 @@ function VNPC_UpdateVirtualBellyBones(ent)
         depth = radius * 1.55,
         forward = fwd,
         up = up,
+        rightDir = right,
         right = right,
         root = bone("VNPC_Belly_Root", root, radius * 0.55, nil),
         upper = bone("VNPC_Belly_Upper", upper, radius * 0.42, "VNPC_Belly_Root"),
         mid = bone("VNPC_Belly_Mid", mid, radius, "VNPC_Belly_Root"),
         lower = bone("VNPC_Belly_Lower", lower, radius * 0.62, "VNPC_Belly_Root"),
         left = bone("VNPC_Belly_L", left, radius * 0.48, "VNPC_Belly_Root"),
-        right = bone("VNPC_Belly_R", rightB, radius * 0.48, "VNPC_Belly_Root")
+        right = bone("VNPC_Belly_R", rightB, radius * 0.48, "VNPC_Belly_Root"),
+        gulpNeck = bone("VNPC_Gulp_Neck", gulpNeck, math.max(3.4, 5.2), "VNPC_Belly_Upper"),
+        gulpChest = bone("VNPC_Gulp_Chest", gulpChest, math.max(4.0, 6.0), "VNPC_Gulp_Neck")
     }
     chain.byName = {
         VNPC_Belly_Root = chain.root,
@@ -190,7 +201,9 @@ function VNPC_UpdateVirtualBellyBones(ent)
         VNPC_Belly_Mid = chain.mid,
         VNPC_Belly_Lower = chain.lower,
         VNPC_Belly_L = chain.left,
-        VNPC_Belly_R = chain.right
+        VNPC_Belly_R = chain.right,
+        VNPC_Gulp_Neck = chain.gulpNeck,
+        VNPC_Gulp_Chest = chain.gulpChest
     }
 
     ent.VNPC_VirtualBellyBones = chain
@@ -314,8 +327,9 @@ function VNPC_GetGPUBellyStruggleSpots(ent, chain)
             local amp = mul * ampMul * pulse * ((s == 2) and 0.34 or 0.26)
             local world = nil
             if chain and chain.mid then
+                local rdir = chain.rightDir or chain.right
                 world = chain.mid.pos
-                    + chain.right * (lp.x * chain.width * 0.5)
+                    + rdir * (lp.x * chain.width * 0.5)
                     + chain.forward * (lp.y * chain.depth * 0.5)
                     + chain.up * (lp.z * chain.height * 0.5)
             end
@@ -347,6 +361,245 @@ function VNPC_ApplyGPUBellyStruggleDeform(lp, spots)
         if d < r then
             local g = math.exp(-(d * d) / (2 * r * r + 0.0001))
             push = push + spot.amp * (1 - d / r) * g
+        end
+    end
+    return push
+end
+
+local GPU_GULP_MAX = 4
+
+function VNPC_GuessPreySpeciesName(prey)
+    if not IsValid(prey) then return "human" end
+    if VNPC_GetPreySpecies then
+        local ok, sp = pcall(VNPC_GetPreySpecies, prey)
+        if ok and isstring(sp) and sp ~= "" then return sp end
+    end
+    local cls = string.lower(prey:GetClass() or "")
+    local mdl = string.lower(prey:GetModel() or "")
+    if cls:find("antlionguard") or mdl:find("antlion_guard") or mdl:find("antlionguard") then
+        return "antlionguard"
+    elseif cls:find("antlion") or mdl:find("antlion") then
+        return "antlion"
+    elseif cls:find("headcrab") or mdl:find("headcrab") then
+        return "headcrab"
+    elseif cls:find("zombie") or mdl:find("zombie") then
+        return "zombie"
+    elseif cls:find("vortigaunt") or mdl:find("vortigaunt") then
+        return "vortigaunt"
+    end
+    return "human"
+end
+
+function VNPC_GetPreyGulpScale(prey)
+    if not IsValid(prey) then return 1.0 end
+    local mdlScale = (prey.GetModelScale and prey:GetModelScale()) or 1
+    if not isnumber(mdlScale) or mdlScale <= 0 then mdlScale = 1 end
+    local fromParts = mdlScale
+    if VNPC_MeasureBodyParts then
+        local parts = VNPC_MeasureBodyParts(prey)
+        if parts then
+            local torso = ((parts.torso and parts.torso.width) or 14) / 14
+            local head = ((parts.head and parts.head.width) or 7.2) / 7.2
+            local body = (parts.bodyHeight or 72) / 72
+            fromParts = math.max(torso, head * 0.9, body, mdlScale)
+        end
+    elseif prey.GetModelBounds then
+        local mins, maxs = prey:GetModelBounds()
+        if mins and maxs then
+            local h = math.abs(maxs.z - mins.z) * mdlScale
+            local w = math.max(math.abs(maxs.x - mins.x), math.abs(maxs.y - mins.y)) * mdlScale
+            fromParts = math.max(mdlScale, h / 72, w / 32)
+        end
+    end
+    local speciesMul = 1.0
+    local sp = VNPC_GuessPreySpeciesName(prey)
+    if sp == "headcrab" then
+        speciesMul = 0.42
+    elseif sp == "antlion" then
+        speciesMul = 0.82
+    elseif sp == "antlionguard" then
+        speciesMul = 1.85
+    elseif sp == "vortigaunt" then
+        speciesMul = 1.12
+    elseif sp == "zombie" then
+        speciesMul = 1.06
+    end
+    return math.Clamp(fromParts * speciesMul, 0.28, 2.8)
+end
+
+function VNPC_SyncGPUBellyGulp(pred)
+    if not IsValid(pred) then return 0 end
+    local cv = GetConVar("vnpcs_gpu_belly_gulp")
+    if cv and not cv:GetBool() then
+        if pred.SetNWInt then pred:SetNWInt("VNPC_GPUGulpN", 0) end
+        return 0
+    end
+    local belly = pred.VNPC_Belly or pred.Belly
+    if not IsValid(belly) and pred.GetNWEntity then
+        belly = pred:GetNWEntity("Belly")
+    end
+    local n = 0
+    local function writeGulp(prey, scale, prog)
+        if n >= GPU_GULP_MAX then return end
+        n = n + 1
+        if pred.SetNWFloat then
+            pred:SetNWFloat("VNPC_GPUGulpScale" .. n, scale)
+            pred:SetNWFloat("VNPC_GPUGulpProg" .. n, math.Clamp(prog, 0, 1))
+        end
+        if pred.SetNWInt then pred:SetNWInt("VNPC_GPUGulpID" .. n, IsValid(prey) and prey:EntIndex() or (pred:EntIndex() * 20 + n)) end
+    end
+    if IsValid(belly) and istable(belly.Prey) then
+        for _, info in ipairs(belly.Prey) do
+            if n >= GPU_GULP_MAX then break end
+            local prey = info and info.Entity
+            if not IsValid(prey) then continue end
+            if info.Absorbing then continue end
+            local depth = tonumber(prey.VNPC_IngestionDepth)
+            local swallowing = prey.VNPC_IsBeingSwallowed and true or false
+            if not swallowing and (not depth or depth >= 0.98) then continue end
+            if not depth then depth = swallowing and 0.45 or 1 end
+            if depth >= 0.98 then continue end
+            writeGulp(prey, VNPC_GetPreyGulpScale(prey), depth)
+        end
+    end
+    if n == 0 and (pred.VNPC_IsHumanOralSwallow or pred.Swallowing or (pred.GetNWBool and pred:GetNWBool("VNPC_IsHumanOralSwallow"))) then
+        for _, ent in ipairs(ents.FindInSphere(pred:GetPos(), 140)) do
+            if n >= GPU_GULP_MAX then break end
+            if not IsValid(ent) or ent == pred then continue end
+            if not ent.VNPC_IsBeingSwallowed then continue end
+            writeGulp(ent, VNPC_GetPreyGulpScale(ent), tonumber(ent.VNPC_IngestionDepth) or 0.45)
+        end
+    end
+    if pred.VNPC_GPUGulpTest then
+        for _, row in ipairs(pred.VNPC_GPUGulpTest) do
+            if n >= GPU_GULP_MAX then break end
+            writeGulp(nil, tonumber(row.scale) or 1.0, tonumber(row.prog) or 0.5)
+            if pred.SetNWInt then pred:SetNWInt("VNPC_GPUGulpID" .. n, tonumber(row.id) or (pred:EntIndex() * 20 + n)) end
+        end
+    end
+    if pred.SetNWInt then pred:SetNWInt("VNPC_GPUGulpN", n) end
+    return n
+end
+
+function VNPC_GetGPUBellyGulpSpots(ent, chain)
+    if not IsValid(ent) then return {} end
+    local cv = GetConVar("vnpcs_gpu_belly_gulp")
+    if cv and not cv:GetBool() then return {} end
+    local ampMul = 1.0
+    local ampCv = GetConVar("vnpcs_gpu_belly_gulp_amp")
+    if ampCv then ampMul = ampCv:GetFloat() or 1.0 end
+    if ampMul <= 0 then return {} end
+
+    local count = (ent.GetNWInt and ent:GetNWInt("VNPC_GPUGulpN", 0)) or 0
+    if count <= 0 and ent.VNPC_GPUGulpTest then
+        count = math.min(GPU_GULP_MAX, #ent.VNPC_GPUGulpTest)
+    end
+    if count <= 0 then return {} end
+
+    local frameKey = (CLIENT and FrameNumber and FrameNumber()) or math.floor(CurTime() * 40)
+    if ent.VNPC_GPUGulpSpotFrame == frameKey and ent.VNPC_GPUGulpSpots then
+        return ent.VNPC_GPUGulpSpots
+    end
+    ent.VNPC_GPUGulpSpotFrame = frameKey
+
+    chain = chain or ent.VNPC_VirtualBellyBones
+    if not chain and VNPC_UpdateVirtualBellyBones then
+        chain = VNPC_UpdateVirtualBellyBones(ent)
+    end
+    if not chain then return {} end
+
+    local neckPos = chain.gulpNeck and chain.gulpNeck.pos
+    local chestPos = chain.gulpChest and chain.gulpChest.pos
+    local upperPos = chain.upper and chain.upper.pos
+    local midPos = chain.mid and chain.mid.pos
+    if not neckPos then
+        neckPos = ent:GetPos() + Vector(0, 0, 62)
+    end
+    if not chestPos then chestPos = LerpVector(0.42, neckPos, midPos or neckPos) end
+    if not upperPos then upperPos = LerpVector(0.72, neckPos, midPos or chestPos) end
+    if not midPos then midPos = chestPos end
+
+    local now = CurTime()
+    local spots = {}
+    ent.VNPC_GPUGulpSmooth = ent.VNPC_GPUGulpSmooth or {}
+    for p = 1, math.min(count, GPU_GULP_MAX) do
+        local scale = (ent.GetNWFloat and ent:GetNWFloat("VNPC_GPUGulpScale" .. p, 1)) or 1
+        local prog = (ent.GetNWFloat and ent:GetNWFloat("VNPC_GPUGulpProg" .. p, 0.5)) or 0.5
+        if ent.VNPC_GPUGulpTest and ent.VNPC_GPUGulpTest[p] then
+            local row = ent.VNPC_GPUGulpTest[p]
+            scale = tonumber(row.scale) or scale
+            if row.animate then
+                prog = 0.32 + 0.50 * (0.5 + 0.5 * math.sin(now * 0.85 + p))
+            else
+                prog = tonumber(row.prog) or prog
+            end
+        else
+            local sm = ent.VNPC_GPUGulpSmooth[p]
+            if sm == nil then sm = prog end
+            sm = Lerp(math.Clamp(FrameTime() * 10, 0, 1), sm, prog)
+            ent.VNPC_GPUGulpSmooth[p] = sm
+            prog = sm
+        end
+        scale = math.Clamp(tonumber(scale) or 1, 0.28, 2.8)
+        prog = math.Clamp(tonumber(prog) or 0.5, 0, 1)
+
+        local vis = 0
+        if prog < 0.28 then
+            vis = 0
+        elseif prog < 0.40 then
+            vis = (prog - 0.28) / 0.12
+        elseif prog < 0.82 then
+            vis = 1
+        else
+            vis = math.max(0, 1 - (prog - 0.82) / 0.18)
+        end
+        if vis <= 0.02 then continue end
+
+        local world
+        if prog < 0.48 then
+            world = LerpVector(math.Clamp((prog - 0.28) / 0.20, 0, 1), neckPos, chestPos)
+        elseif prog < 0.78 then
+            world = LerpVector(math.Clamp((prog - 0.48) / 0.30, 0, 1), chestPos, upperPos)
+        else
+            world = LerpVector(math.Clamp((prog - 0.78) / 0.22, 0, 1), upperPos, midPos)
+        end
+
+        local wriggle = 1 + 0.08 * math.sin(now * 9.5 + p * 2.1)
+        local radius = (4.6 + scale * 5.4) * wriggle
+        local amp = vis * ampMul * (0.42 + scale * 0.38)
+        table.insert(spots, {
+            kind = "gulp",
+            preyScale = scale,
+            prog = prog,
+            vis = vis,
+            world = world,
+            radius = radius,
+            length = 7.5 + scale * 8.5,
+            amp = amp
+        })
+    end
+    ent.VNPC_GPUGulpSpots = spots
+    return spots
+end
+
+function VNPC_ApplyGPUBellyGulpDeform(world, spots)
+    if not spots or #spots == 0 or not world then return Vector(0, 0, 0) end
+    local push = Vector(0, 0, 0)
+    for i = 1, #spots do
+        local spot = spots[i]
+        if not spot.world or (spot.amp or 0) <= 0.001 then continue end
+        local delta = world - spot.world
+        local d = delta:Length()
+        local r = spot.radius or 8
+        if d < r then
+            local g = math.exp(-(d * d) / (2 * r * r + 0.0001))
+            local nrm = delta
+            if nrm:LengthSqr() < 0.001 then
+                nrm = Vector(0, 1, 0)
+            else
+                nrm:Normalize()
+            end
+            push = push + nrm * (spot.amp * (1 - d / r) * g * r * 0.55)
         end
     end
     return push
@@ -444,6 +697,7 @@ if CLIENT then
         local rz = chain.height * 0.5
         local right, fwd, up = chain.right, chain.forward, chain.up
         local spots = VNPC_GetGPUBellyStruggleSpots(ent, chain)
+        local gulps = VNPC_GetGPUBellyGulpSpots(ent, chain)
         local mat = bellyMaterial(ent)
         if mat and chain.mid then
             mat:SetVector("$gore_center", mid.pos)
@@ -488,6 +742,10 @@ if CLIENT then
                 if push > 0 then
                     world = world + nrm * (push * (chain.radius or 8))
                 end
+                local gpush = VNPC_ApplyGPUBellyGulpDeform(world, gulps)
+                if gpush and gpush:LengthSqr() > 0.01 then
+                    world = world + gpush
+                end
                 mesh.Position(world)
                 mesh.Normal(nrm)
                 mesh.TexCoord(0, v.u, v.v)
@@ -496,6 +754,44 @@ if CLIENT then
             end
         end
         mesh.End()
+    end
+
+    local function drawGulpBulges(ent, chain)
+        local spots = VNPC_GetGPUBellyGulpSpots(ent, chain)
+        if not spots or #spots == 0 then return end
+        if not UNIT_VERTS then buildUnitSphere() end
+        local mat = bellyMaterial(ent)
+        render.SetMaterial(mat)
+        local fwd = (chain and chain.forward) or Vector(1, 0, 0)
+        local up = (chain and chain.up) or Vector(0, 0, 1)
+        local right = (chain and chain.rightDir) or up:Cross(fwd)
+        if not isvector(right) or right:LengthSqr() < 0.01 then right = Vector(0, 1, 0) else right:Normalize() end
+        for _, spot in ipairs(spots) do
+            if not spot.world then continue end
+            local rx = spot.radius * 0.72
+            local ry = spot.radius * 0.95
+            local rz = (spot.length or (spot.radius * 1.4)) * 0.42
+            mesh.Begin(MATERIAL_TRIANGLES, #UNIT_TRIS)
+            for t = 1, #UNIT_TRIS do
+                local tri = UNIT_TRIS[t]
+                for k = 1, 3 do
+                    local v = UNIT_VERTS[tri[k]]
+                    local lp = v.pos
+                    local world = spot.world
+                        + right * (lp.x * rx)
+                        + fwd * (lp.y * ry * 0.85 + 0.18 * ry)
+                        + up * (lp.z * rz)
+                    local nrm = (right * v.nrm.x + fwd * v.nrm.y + up * v.nrm.z)
+                    nrm:Normalize()
+                    mesh.Position(world)
+                    mesh.Normal(nrm)
+                    mesh.TexCoord(0, v.u, v.v)
+                    mesh.Color(255, 255, 255, 255)
+                    mesh.AdvanceVertex()
+                end
+            end
+            mesh.End()
+        end
     end
 
     hook.Add("PreDrawOpaqueRenderables", "VNPC_GPUBelly_GenerateBones", function()
@@ -520,8 +816,11 @@ if CLIENT then
             if not isPredCandidate(ent) then continue end
             if ent:IsDormant() or (ent.GetNoDraw and ent:GetNoDraw()) then continue end
             local chain = ent.VNPC_VirtualBellyBones or VNPC_UpdateVirtualBellyBones(ent)
-            if not chain or (chain.size or 0) < 0.035 then continue end
-            pcall(drawGeneratedBelly, ent, chain)
+            if not chain then continue end
+            if (chain.size or 0) >= 0.035 then
+                pcall(drawGeneratedBelly, ent, chain)
+            end
+            pcall(drawGulpBulges, ent, chain)
         end
     end)
 
@@ -538,7 +837,9 @@ if CLIENT then
                 VNPC_Belly_Upper = Color(120, 200, 255),
                 VNPC_Belly_Lower = Color(255, 160, 80),
                 VNPC_Belly_L = Color(80, 255, 160),
-                VNPC_Belly_R = Color(80, 255, 160)
+                VNPC_Belly_R = Color(80, 255, 160),
+                VNPC_Gulp_Neck = Color(255, 200, 70),
+                VNPC_Gulp_Chest = Color(255, 160, 50)
             }
             for name, bone in pairs(chain.byName or {}) do
                 local col = cols[name] or Color(255, 255, 255)
@@ -559,6 +860,19 @@ if CLIENT then
                     render.DrawSphere(spot.world, 1.4 + (spot.amp or 0) * 3, 7, 7, Color(255, 60, 120, 220))
                 end
             end
+            if chain.gulpNeck and chain.gulpChest then
+                render.DrawLine(chain.gulpNeck.pos, chain.gulpChest.pos, Color(255, 200, 80), true)
+                if chain.upper then
+                    render.DrawLine(chain.gulpChest.pos, chain.upper.pos, Color(255, 170, 60), true)
+                end
+            end
+            local gulps = VNPC_GetGPUBellyGulpSpots(ent, chain)
+            for _, spot in ipairs(gulps) do
+                if spot.world then
+                    render.DrawWireframeSphere(spot.world, spot.radius or 6, 9, 9, Color(255, 190, 70, 210), true)
+                    render.DrawSphere(spot.world, 1.8 + (spot.preyScale or 1) * 1.4, 7, 7, Color(255, 160, 40, 230))
+                end
+            end
         end
     end)
 end
@@ -573,6 +887,19 @@ if SERVER then
         for _, ent in ipairs(ents.FindByClass("npc_*")) do
             if isPredCandidate(ent) then
                 VNPC_SyncGPUBellyStruggle(ent)
+                if VNPC_SyncGPUBellyGulp then VNPC_SyncGPUBellyGulp(ent) end
+            end
+        end
+    end)
+    hook.Add("Think", "VNPC_GPUBelly_SyncGulp", function()
+        local now = CurTime()
+        if (VNPC_NextGPUGulpSync or 0) > now then return end
+        VNPC_NextGPUGulpSync = now + 0.1
+        local enabled = GetConVar("vnpcs_gpu_belly_gulp")
+        if enabled and not enabled:GetBool() then return end
+        for _, ent in ipairs(ents.FindByClass("npc_*")) do
+            if isPredCandidate(ent) then
+                VNPC_SyncGPUBellyGulp(ent)
             end
         end
     end)
@@ -629,6 +956,7 @@ concommand.Add("vnpcs_gpu_belly_status", function(ply)
     print(" - Bone Scale: " .. tostring(GetConVar("vnpcs_gpu_belly_bonescale"):GetBool()))
     print(" - Debug: " .. tostring(GetConVar("vnpcs_gpu_belly_debug"):GetBool()))
     print(" - Struggle Deform: " .. tostring(GetConVar("vnpcs_gpu_belly_struggle"):GetBool()) .. " amp=" .. tostring(GetConVar("vnpcs_gpu_belly_struggle_amp"):GetFloat()))
+    print(" - Gulp Neck Deform: " .. tostring(GetConVar("vnpcs_gpu_belly_gulp"):GetBool()) .. " amp=" .. tostring(GetConVar("vnpcs_gpu_belly_gulp_amp"):GetFloat()))
     print("-----------------------------------------")
     local count = 0
     for _, ent in ipairs(ents.FindByClass("npc_*")) do
@@ -637,9 +965,10 @@ concommand.Add("vnpcs_gpu_belly_status", function(ply)
             if chain then
                 count = count + 1
                 local preyN = (ent.GetNWInt and ent:GetNWInt("VNPC_GPUStruggleN", 0)) or 0
-                print(string.format(" -> #%d [%s] size=%.3f radius=%.1f W/H %.1f/%.1f modelBellyBones=%s strugglePrey=%d spots=%d",
+                local gulpN = (ent.GetNWInt and ent:GetNWInt("VNPC_GPUGulpN", 0)) or 0
+                print(string.format(" -> #%d [%s] size=%.3f radius=%.1f W/H %.1f/%.1f modelBellyBones=%s strugglePrey=%d spots=%d gulp=%d",
                     ent:EntIndex(), ent.PrintName or ent:GetClass(), chain.size, chain.radius,
-                    chain.width, chain.height, tostring(chain.hasModelBellyBones), preyN, preyN * 4))
+                    chain.width, chain.height, tostring(chain.hasModelBellyBones), preyN, preyN * 4, gulpN))
             end
         end
     end
@@ -699,4 +1028,51 @@ concommand.Add("vnpcs_test_gpu_struggle", function(ply)
     end
     local spots = VNPC_GetGPUBellyStruggleSpots and VNPC_GetGPUBellyStruggleSpots(target, target.VNPC_VirtualBellyBones) or {}
     ply:ChatPrint(string.format("[V-NPCs] Forced 2 prey / %d unique GPU struggle lumps on %s. Enable vnpcs_gpu_belly_debug 1 to see them.", #spots, tostring(target)))
+end)
+
+concommand.Add("vnpcs_test_gpu_gulp", function(ply, _, args)
+    if not IsValid(ply) then return end
+    local target = ply:GetEyeTrace().Entity
+    local scaleArg = tonumber(args and args[1])
+    if IsValid(target) and (target:IsNPC() or target:IsNextBot() or target.IsDrGNextbot) then
+        local looksLikePrey = target.Vored or target.VNPC_Vored or (not target.Predator and not target.VNPC_FemaleModelVore and not target.VNPC_Belly and not target.Belly)
+        if looksLikePrey then
+            scaleArg = scaleArg or VNPC_GetPreyGulpScale(target)
+            local pred, best = nil, 1400 * 1400
+            for _, ent in ipairs(ents.FindByClass("npc_*")) do
+                if IsValid(ent) and ent ~= target and (ent.Predator or ent.VNPC_FemaleModelVore or ent.VNPC_Belly or ent.Belly or ent.IsDrGNextbot) then
+                    local d = ent:GetPos():DistToSqr(target:GetPos())
+                    if d < best then
+                        pred = ent
+                        best = d
+                    end
+                end
+            end
+            if IsValid(pred) then target = pred end
+        end
+    end
+    if not IsValid(target) or not (target:IsNPC() or target:IsNextBot() or target.IsDrGNextbot) then
+        ply:ChatPrint("[V-NPCs] Aim at a predator (or nearby prey) to test GPU neck/upper-torso gulp bulges!")
+        return
+    end
+    if scaleArg then
+        target.VNPC_GPUGulpTest = {
+            { id = target:EntIndex() * 11 + 1, scale = math.Clamp(scaleArg, 0.28, 2.8), animate = true }
+        }
+    else
+        target.VNPC_GPUGulpTest = {
+            { id = target:EntIndex() * 11 + 1, scale = 0.55, animate = true },
+            { id = target:EntIndex() * 13 + 2, scale = 1.45, animate = true }
+        }
+    end
+    if VNPC_SyncGPUBellyGulp then
+        VNPC_SyncGPUBellyGulp(target)
+    end
+    if target.SetFacialExpression then
+        target:SetFacialExpression(1)
+    elseif target.SetNWInt then
+        target:SetNWInt("FacialPhase", 1)
+    end
+    local spots = VNPC_GetGPUBellyGulpSpots and VNPC_GetGPUBellyGulpSpots(target, target.VNPC_VirtualBellyBones) or {}
+    ply:ChatPrint(string.format("[V-NPCs] Forced %d GPU gulp bulge(s) on %s (prey scale driven). Enable vnpcs_gpu_belly_debug 1 to see the neck path.", math.max(#spots, #target.VNPC_GPUGulpTest), tostring(target)))
 end)

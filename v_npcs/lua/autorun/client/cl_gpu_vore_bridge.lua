@@ -204,7 +204,8 @@ hook.Add("HUDPaint", "VNPCS_GPU_Vore_DebugHUD", function()
     draw.SimpleText(string.format("Stomach Center: %.1f, %.1f, %.1f", g_VoreStomachCenter.x, g_VoreStomachCenter.y, g_VoreStomachCenter.z), "DermaDefault", x + 10, y + 50, Color(200, 255, 200))
     draw.SimpleText(string.format("Radius: %.1f | Intensity: %.1f", g_VoreRadius, g_VoreIntensity), "DermaDefault", x + 10, y + 70, Color(200, 220, 255))
     local preyN = (IsValid(g_ActivePredator) and g_ActivePredator.GetNWInt) and g_ActivePredator:GetNWInt("VNPC_GPUStruggleN", 0) or 0
-    draw.SimpleText("Bound Materials: " .. g_UpdatedMaterialsCount .. " | Struggle spots: " .. (preyN * 4), "DermaDefault", x + 10, y + 90, Color(255, 200, 255))
+    local gulpN = (IsValid(g_ActivePredator) and g_ActivePredator.GetNWInt) and g_ActivePredator:GetNWInt("VNPC_GPUGulpN", 0) or 0
+    draw.SimpleText("Bound Materials: " .. g_UpdatedMaterialsCount .. " | Struggle: " .. (preyN * 4) .. " | Gulps: " .. gulpN, "DermaDefault", x + 10, y + 90, Color(255, 200, 255))
 end)
 
 concommand.Add("vnpcs_gpu_vore_status", function()

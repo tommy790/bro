@@ -3,6 +3,7 @@
 //   1) virtual belly bones on any ValveBiped skeleton
 //   2) a GPU mesh skinned to those bones
 //   3) 4 unique struggle lumps per prey (head / torso / L limb / R limb)
+//   4) gulp bulge on the upper torso / neck, radius from prey scale
 // This file documents the same displace functions.
 
 float4 g_VoreStomachCenter : register(c190);
@@ -39,4 +40,16 @@ float3 ApplyPreyStruggleSpots(float3 worldPos, float3 worldNormal)
         }
     }
     return pos;
+}
+
+// Gulp lump on the neck / upper chest. Radius and amp come from prey scale.
+float3 ApplyGulpBulge(float3 worldPos, float3 worldNormal, float3 gulpPos, float radius, float amp)
+{
+    if (amp <= 0.001) return worldPos;
+    float dist = length(worldPos - gulpPos);
+    if (dist >= radius) return worldPos;
+    float gaussian = exp(-((dist * dist) / (2.0 * radius * radius + 0.001)));
+    float factor = saturate(1.0 - dist / radius) * gaussian;
+    float3 outDir = normalize(worldPos - gulpPos + worldNormal * 0.25);
+    return worldPos + outDir * (factor * amp * radius);
 }
