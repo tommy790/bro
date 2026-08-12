@@ -2135,32 +2135,6 @@ function VNPC_AnimatedBoneOffsets(ent)
 
     local boneCount = ent:GetBoneCount() or 0
     local speed = (phase == 1 or phase == 3 or phase == 4) and 14 or 8
-    local is_hunting_or_moving = false
-    if IsValid(ent:GetEnemy()) then
-        is_hunting_or_moving = true
-    elseif ent.IsMoving and ent:IsMoving() then
-        is_hunting_or_moving = true
-    elseif ent.GetVelocity and ent:GetVelocity():Length2DSqr() > 25 then
-        is_hunting_or_moving = true
-    end
-    local is_armed = false
-    if ent.GetActiveWeapon and IsValid(ent:GetActiveWeapon()) then
-        is_armed = true
-    end
-
-    local is_in_battle = is_hunting_or_moving or is_armed
-    local is_special_stationary_pose = (ent.VNPC_IsMatingBonePose or ent.VNPC_IsWillingUnbirthCrawl or ent.VNPC_IsMountingHeavyPrey or ent.VNPC_IsDrinkingWater or ent.VNPC_IsSleepCrawled or ent.VNPC_IsSleeping or ((ent.VNPC_InChildbirthPose or 0) > CurTime()))
-    local is_locomoting = false
-    if ent.IsMoving and ent:IsMoving() then
-        is_locomoting = true
-    elseif ent.GetVelocity and ent:GetVelocity():Length2DSqr() > 100 then
-        is_locomoting = true
-    elseif ent.GetSchedule and pcall(ent.GetSchedule, ent) then
-        local ok, sched = pcall(ent.GetSchedule, ent)
-        if ok and (sched == SCHED_FORCED_GO or sched == SCHED_FORCED_GO_RUN or sched == SCHED_CHASE_ENEMY or sched == SCHED_PATROL_WALK) then
-            is_locomoting = true
-        end
-    end
 
     for i = 0, boneCount - 1 do
         local boneName = ent:GetBoneName(i)
@@ -2185,13 +2159,7 @@ function VNPC_AnimatedBoneOffsets(ent)
             end
         end
 
-        local is_leg_or_pelvis = boneName:find("Pelvis") or boneName:find("Thigh") or boneName:find("Calf") or boneName:find("Foot") or boneName:find("Toe") or boneName:find("Leg") or boneName:find("leg") or boneName:find("thigh") or boneName:find("calf") or boneName:find("foot") or boneName:find("pelvis") or boneName:find("toe")
-        local is_torso_or_arm = boneName:find("Spine") or boneName:find("Clavicle") or boneName:find("UpperArm") or boneName:find("Forearm") or boneName:find("Hand") or boneName:find("spine") or boneName:find("clavicle") or boneName:find("arm") or boneName:find("hand")
-
         if phase == 0 then
-            tgtPos, tgtAng = vector_origin, angle_zero
-        elseif is_leg_or_pelvis and is_locomoting and not is_special_stationary_pose then
-            -- Only release leg and pelvis bones to zero when actively walking or running so idle sitting movesets can pose freely
             tgtPos, tgtAng = vector_origin, angle_zero
         end
 
