@@ -1986,7 +1986,19 @@ function VNPC_InterpolateKeyframes(keyframes, tNorm, boneName)
     local a = (closestAfter - closestBefore)
     local f = (a > 0) and ((tNorm - closestBefore) / a) or 0
     local b1 = frame1[boneName]
+    if not b1 and not boneName:find("ValveBiped%.") then
+        b1 = frame1["ValveBiped." .. boneName]
+    elseif not b1 and boneName:find("ValveBiped%.") then
+        b1 = frame1[boneName:gsub("ValveBiped%.", "")]
+    end
+
     local b2 = frame2[boneName]
+    if not b2 and not boneName:find("ValveBiped%.") then
+        b2 = frame2["ValveBiped." .. boneName]
+    elseif not b2 and boneName:find("ValveBiped%.") then
+        b2 = frame2[boneName:gsub("ValveBiped%.", "")]
+    end
+
     if not b1 and not b2 then
         return vector_origin, angle_zero
     end
