@@ -145,21 +145,11 @@ end
 
 local function buildSignature(predator)
     local color = predator:GetColor() or WHITE
-    local bSize = 0
-    local belly = predator.VNPC_Belly or predator.Belly
-    if IsValid(belly) and belly.GetBellySize then
-        bSize = belly:GetBellySize() or 0
-    elseif IsValid(belly) and belly.BaseScale then
-        bSize = belly.BaseScale or 0
-    end
-    local mGrowth = predator.VNPC_MonsterGrowth or 0
 
     return table.concat({
         predator:GetModel() or "",
         tostring(predator:GetSkin() or 0),
         string.format("%.4f", predator:GetModelScale() or 1),
-        string.format("%.3f", bSize),
-        string.format("%.2f", mGrowth),
         getBodygroupSignature(predator),
         tostring(predator:GetMaterial() or ""),
         getSubMaterialSignature(predator),
@@ -219,7 +209,8 @@ local function copyVisualState(src, dst)
     end
 
     dst:SetSkin(src:GetSkin() or 0)
-    dst:SetModelScale(src:GetModelScale() or 1, 0)
+    -- Keep the RT T-Pose clone at 1.0 unscaled size so the camera never has to raise or adjust as the NPC grows
+    dst:SetModelScale(1, 0)
     dst:SetMaterial(src:GetMaterial() or "")
     dst:SetColor(src:GetColor() or WHITE)
     dst:SetRenderMode(src:GetRenderMode() or RENDERMODE_NORMAL)
@@ -270,15 +261,10 @@ local function forceTPose(ent)
     ent:SetupBones()
 end
 
-local function getTorsoTarget(ent, predator)
+local function getTorsoTarget(ent)
     ent:SetupBones()
 
     local mins, maxs = ent:GetModelBounds()
-    local scale = ent:GetModelScale() or 1.0
-    if scale <= 0 then scale = 1.0 end
-    mins = mins * scale
-    maxs = maxs * scale
-
     local center = (mins + maxs) * 0.5
     local found = 0
     local sum = Vector(0, 0, 0)
@@ -298,25 +284,12 @@ local function getTorsoTarget(ent, predator)
         center = sum / found
     end
 
-    local bSize = 0
-    local mGrowth = 0
-    if IsValid(predator) then
-        local belly = predator.VNPC_Belly or predator.Belly
-        if IsValid(belly) and belly.GetBellySize then
-            bSize = belly:GetBellySize() or 0
-        elseif IsValid(belly) and belly.BaseScale then
-            bSize = belly.BaseScale or 0
-        end
-        mGrowth = predator.VNPC_MonsterGrowth or 0
-    end
-
     local height = maxs.z - mins.z
-    local growthRise = (scale - 1.0) * height * 0.42 + (bSize * 5.5) + (mGrowth * 2.0)
     center.x = 0
     center.y = 0
-    center.z = math.Clamp(center.z + math.max(0, growthRise), mins.z + height * 0.35, mins.z + height * 0.72 + math.max(0, growthRise))
+    center.z = math.Clamp(center.z, mins.z + height * 0.35, mins.z + height * 0.68)
 
-    return center, mins, maxs, scale, bSize
+    return center, mins, maxs
 end
 
 local function ensureDuplicate(state, predator)
@@ -427,13 +400,11 @@ local function captureTorso(state, predator)
     copyVisualState(predator, clone)
     forceTPose(clone)
 
-    local target, mins, maxs, scale, bSize = getTorsoTarget(clone, predator)
+    local target, mins, maxs = getTorsoTarget(clone)
     local height = math.max(maxs.z - mins.z, 32)
     local width = math.max(maxs.y - mins.y, 24)
-    local distance = math.max(height * 0.5, width * 1.0, 26) + math.max(0, (scale - 1.0) * 18.0) + (bSize * 8.0)
-
-    -- Ensure the RT camera raises vertically while the NPC grows so the belly texture remains perfectly centered
-    local camPos = target + Vector(distance, 0, height * 0.08 + ((scale - 1.0) * 8.0) + (bSize * 3.0))
+    local distance = math.max(height * 0.5, width * 1.0, 26)
+    local camPos = target + Vector(distance, 0, height * 0.01)
     local camAng = (target - camPos):Angle()
     local fov = math.Clamp(24 + (width / height) * 8, 20, 36)
 
