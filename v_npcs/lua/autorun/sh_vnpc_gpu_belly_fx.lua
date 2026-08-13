@@ -16,17 +16,14 @@ local SILHOUETTE_BASES = {
 }
 
 local WAVE_LINKS = {
-    { kind = "ghead",      off = -0.11, rad = 0.82, amp = 1.00 },
-    { kind = "gshoulders", off = -0.02, rad = 1.18, amp = 1.22 },
-    { kind = "gtorso",     off =  0.09, rad = 1.05, amp = 0.92 },
-    { kind = "ghips",      off =  0.20, rad = 0.78, amp = 0.68 }
+    { kind = "gulp", off = 0.00, rad = 1.00, amp = 1.00 }
 }
 
 local EXTRA_SCALE = {
-    { names = { "ValveBiped.Bip01_Neck1", "Neck1", "Neck", "neck" }, mul = Vector(0.18, 0.22, 0.10) },
-    { names = { "ValveBiped.Bip01_Spine2", "Spine2", "spine2" }, mul = Vector(0.20, 0.42, 0.16) },
-    { names = { "ValveBiped.Bip01_L_Clavicle", "L_Clavicle", "l_clavicle" }, mul = Vector(0.08, 0.12, 0.06) },
-    { names = { "ValveBiped.Bip01_R_Clavicle", "R_Clavicle", "r_clavicle" }, mul = Vector(0.08, 0.12, 0.06) }
+    { names = { "ValveBiped.Bip01_Neck1", "Neck1", "Neck", "neck" }, mul = Vector(0.08, 0.10, 0.05) },
+    { names = { "ValveBiped.Bip01_Spine2", "Spine2", "spine2" }, mul = Vector(0.07, 0.12, 0.06) },
+    { names = { "ValveBiped.Bip01_L_Clavicle", "L_Clavicle", "l_clavicle" }, mul = Vector(0.03, 0.04, 0.02) },
+    { names = { "ValveBiped.Bip01_R_Clavicle", "R_Clavicle", "r_clavicle" }, mul = Vector(0.03, 0.04, 0.02) }
 }
 
 local function lookup(ent, names)
@@ -101,17 +98,27 @@ if not VNPC_UpdateVirtualBellyBones_FXWrapped and VNPC_UpdateVirtualBellyBones t
             pregF, preyF = 0, 0
         end
 
+        local hasBelly = false
+        if VNPC_GetPredBelly then
+            hasBelly = IsValid(VNPC_GetPredBelly(ent))
+        else
+            hasBelly = IsValid(ent.VNPC_Belly or ent.Belly)
+        end
+        chain.hasBellyEntity = hasBelly
         local up = chain.up or Vector(0, 0, 1)
         local fwd = chain.forward or Vector(1, 0, 0)
         local r = chain.radius or 8
-        if chain.mid and chain.mid.pos then
-            chain.mid.pos = chain.mid.pos + up * (pregF * r * 0.20) - up * (preyF * r * 0.14) + fwd * (preyF * r * 0.06)
-        end
-        if chain.upper and chain.upper.pos then
-            chain.upper.pos = chain.upper.pos + up * (pregF * r * 0.24) + fwd * (pregF * r * 0.04)
-        end
-        if chain.lower and chain.lower.pos then
-            chain.lower.pos = chain.lower.pos - up * (preyF * r * 0.22) + fwd * (preyF * r * 0.10)
+        -- Never offset the gut bones when the real belly entity is attached.
+        if not hasBelly then
+            if chain.mid and chain.mid.pos then
+                chain.mid.pos = chain.mid.pos + up * (pregF * r * 0.20) - up * (preyF * r * 0.14) + fwd * (preyF * r * 0.06)
+            end
+            if chain.upper and chain.upper.pos then
+                chain.upper.pos = chain.upper.pos + up * (pregF * r * 0.24) + fwd * (pregF * r * 0.04)
+            end
+            if chain.lower and chain.lower.pos then
+                chain.lower.pos = chain.lower.pos - up * (preyF * r * 0.22) + fwd * (preyF * r * 0.10)
+            end
         end
         chain.pregFactor = pregF
         chain.preyFactor = preyF
@@ -277,28 +284,32 @@ function VNPC_GetGPUBellyGulpSpots(ent, chain)
         end
         scale = math.Clamp(tonumber(scale) or 1, 0.28, 2.8)
         prog = math.Clamp(tonumber(prog) or 0.5, 0, 1)
-        local spacing = 0.07 + scale * 0.06
-        for w = 1, #WAVE_LINKS do
-            local link = WAVE_LINKS[w]
-            local lp = math.Clamp(prog + link.off * (spacing / 0.12), 0, 1)
-            local vis = gulpVis(lp)
-            if vis <= 0.02 then continue end
-            local world = pathPoint(chain, math.Clamp((lp - 0.28) / 0.70, 0, 1))
-            if not world then continue end
-            local wriggle = 1 + 0.06 * math.sin(now * 10.2 + p * 2.1 + w)
-            local radius = (3.4 + scale * 4.8) * link.rad * wriggle
-            local amp = vis * ampMul * link.amp * (0.38 + scale * 0.34)
-            table.insert(spots, {
-                kind = link.kind,
-                preyScale = scale,
-                prog = lp,
-                vis = vis,
-                world = world,
-                radius = radius,
-                length = 6.0 + scale * 7.5,
-                amp = amp
-            })
-        end
+        local vis = gulpVis(prog)
+        if vis <= 0.02 then continue end
+        -- Stay on the neck/chest only so the ridge never sits on the belly model.
+        local neckPos = chain.gulpNeck and chain.gulpNeck.pos
+        local chestPos = chain.gulpChest and chain.gulpChest.pos
+        if not neckPos then neckPos = ent:GetPos() + Vector(0, 0, 62) end
+        if not chestPos then chestPos = LerpVector(0.45, neckPos, (chain.upper and chain.upper.pos) or neckPos) end
+        local along = math.Clamp((prog - 0.32) / 0.46, 0, 1)
+        local world = LerpVector(along, neckPos, chestPos)
+        local fwd = chain.forward or Vector(1, 0, 0)
+        world = world + fwd * (1.6 + scale * 0.8)
+        local axis = chestPos - neckPos
+        if axis:LengthSqr() < 1 then axis = -(chain.up or Vector(0, 0, 1)) else axis:Normalize() end
+        local radius = 2.6 + scale * 2.1
+        local amp = vis * ampMul * (0.28 + scale * 0.18)
+        table.insert(spots, {
+            kind = "gulp",
+            preyScale = scale,
+            prog = prog,
+            vis = vis,
+            world = world,
+            radius = radius,
+            length = 7.0 + scale * 4.0,
+            axis = axis,
+            amp = amp
+        })
     end
     ent.VNPC_GPUGulpSpots = spots
     return spots
@@ -381,7 +392,7 @@ function VNPC_ApplyGeneratedBellyBoneScale(ent, chain)
         gulpAmp = math.max(gulpAmp, 0.85)
     end
     local pregF = chain.pregFactor or 0
-    local extra = math.Clamp((chain.size or 0) * 0.35 + pregF * 0.15 + gulpAmp * 0.55, 0, 1.4)
+    local extra = math.Clamp(gulpAmp * 0.18, 0, 0.45)
     for _, spec in ipairs(EXTRA_SCALE) do
         local id = lookup(ent, spec.names)
         if id then
@@ -540,11 +551,20 @@ if CLIENT then
         return Lerp((t - 0.55) / 0.45, bellyW, hipW)
     end
 
-    -- 1) Collar-to-pelvis hull skinned along the spine, front-weighted so it wraps the torso.
+    -- Optional hull. Never replace a live ent_vore_belly.
     function VNPC_DrawGPUBellyFX(ent, chain)
-        if not IsValid(ent) or not chain then return end
+        if not IsValid(ent) or not chain then return false end
         local hullOn = GetConVar("vnpcs_gpu_belly_torso_hull")
         if hullOn and not hullOn:GetBool() then
+            return false
+        end
+        local belly = nil
+        if VNPC_GetPredBelly then
+            belly = VNPC_GetPredBelly(ent)
+        else
+            belly = ent.VNPC_Belly or ent.Belly
+        end
+        if IsValid(belly) then
             return false
         end
         local hasGulp = ((ent.GetNWInt and ent:GetNWInt("VNPC_GPUGulpN", 0)) or 0) > 0 or ent.VNPC_GPUGulpTest
@@ -615,10 +635,8 @@ if CLIENT then
         return true
     end
 
-    -- Separate gulp orbs only when the hull is off (hull already carries the wave).
+    -- One elongated gulp ridge on the neck/chest. Does not draw on the belly.
     function VNPC_DrawGPUGulpFX(ent, chain)
-        local hullOn = GetConVar("vnpcs_gpu_belly_torso_hull")
-        if not hullOn or hullOn:GetBool() then return end
         local spots = VNPC_GetGPUBellyGulpSpots(ent, chain)
         if not spots or #spots == 0 then return end
         if not SPHERE_VERTS then buildSphereUnit() end
@@ -630,9 +648,19 @@ if CLIENT then
         if not isvector(right) or right:LengthSqr() < 0.01 then right = Vector(0, 1, 0) else right:Normalize() end
         for _, spot in ipairs(spots) do
             if not spot.world then continue end
-            local rx = spot.radius * 0.62
-            local ry = spot.radius * 0.88
-            local rz = (spot.length or (spot.radius * 1.3)) * 0.38
+            local axis = spot.axis
+            if not axis or not isvector(axis) or axis:LengthSqr() < 0.01 then
+                axis = -up
+            else
+                axis:Normalize()
+            end
+            local side = axis:Cross(fwd)
+            if side:LengthSqr() < 0.01 then side = right else side:Normalize() end
+            local out = side:Cross(axis)
+            if out:LengthSqr() < 0.01 then out = fwd else out:Normalize() end
+            local rx = spot.radius * 0.55
+            local ry = spot.radius * 0.62
+            local rz = (spot.length or (spot.radius * 2.2)) * 0.42
             mesh.Begin(MATERIAL_TRIANGLES, #SPHERE_TRIS)
             for t = 1, #SPHERE_TRIS do
                 local tri = SPHERE_TRIS[t]
@@ -640,10 +668,10 @@ if CLIENT then
                     local v = SPHERE_VERTS[tri[k]]
                     local lp = v.pos
                     local world = spot.world
-                        + right * (lp.x * rx)
-                        + fwd * (lp.y * ry * 0.85 + 0.16 * ry)
-                        + up * (lp.z * rz)
-                    local nrm = (right * v.nrm.x + fwd * v.nrm.y + up * v.nrm.z)
+                        + side * (lp.x * rx)
+                        + out * (lp.y * ry + rx * 0.35)
+                        + axis * (lp.z * rz)
+                    local nrm = (side * v.nrm.x + out * v.nrm.y + axis * v.nrm.z)
                     nrm:Normalize()
                     mesh.Position(world)
                     mesh.Normal(nrm)
@@ -662,9 +690,10 @@ if CLIENT then
         if (VNPC_NextGPUHideThink or 0) > now then return end
         VNPC_NextGPUHideThink = now + 0.25
         local hideCv = GetConVar("vnpcs_gpu_belly_hide_entity")
+        local hullCv = GetConVar("vnpcs_gpu_belly_torso_hull")
         local gpuCv = GetConVar("vnpcs_gpu_belly_enabled")
         local meshCv = GetConVar("vnpcs_gpu_belly_mesh")
-        local hide = hideCv and hideCv:GetBool()
+        local hide = hideCv and hideCv:GetBool() and hullCv and hullCv:GetBool()
         local gpu = (not gpuCv) or gpuCv:GetBool()
         local meshOn = (not meshCv) or meshCv:GetBool()
         for _, ent in ipairs(ents.FindByClass("npc_*")) do

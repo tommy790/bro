@@ -10,11 +10,11 @@ CreateConVar("vnpcs_gpu_belly_struggle", "1", {FCVAR_ARCHIVE, FCVAR_REPLICATED},
 CreateConVar("vnpcs_gpu_belly_struggle_amp", "1.0", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Amplitude multiplier for GPU belly struggle lumps")
 CreateConVar("vnpcs_gpu_belly_gulp", "1", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "GPU mesh gulp bulge on the upper torso near the neck, sized by the swallowed prey scale")
 CreateConVar("vnpcs_gpu_belly_gulp_amp", "1.0", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Amplitude multiplier for GPU neck/upper-torso gulp bulges")
-CreateConVar("vnpcs_gpu_belly_torso_hull", "1", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Draw a collar-to-pelvis GPU hull instead of a floating belly sphere")
+CreateConVar("vnpcs_gpu_belly_torso_hull", "0", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Optional collar-to-chest GPU sleeve. Off by default so it does not cover the real belly")
 CreateConVar("vnpcs_gpu_belly_jiggle", "1", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Spring-damper jiggle on the GPU belly after kicks and movement")
 CreateConVar("vnpcs_gpu_belly_jiggle_amp", "1.0", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Amplitude multiplier for GPU belly jiggle")
 CreateConVar("vnpcs_gpu_belly_preg_shape", "1", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "High/round pregnancy belly vs low/heavy swallowed-prey belly")
-CreateConVar("vnpcs_gpu_belly_hide_entity", "1", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Hide the ent_vore_belly model when the GPU mesh is drawing")
+CreateConVar("vnpcs_gpu_belly_hide_entity", "0", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Hide the ent_vore_belly model when the GPU mesh is drawing. Keep off to use the real belly")
 
 VNPC_GPU_BELLY_BONE_NAMES = {
     "VNPC_Belly_Root",
@@ -842,7 +842,10 @@ if CLIENT then
                 usedFX = ok and res ~= false
             end
             if not usedFX and (chain.size or 0) >= 0.035 then
-                pcall(drawGeneratedBelly, ent, chain)
+                local liveBelly = (VNPC_GetPredBelly and VNPC_GetPredBelly(ent)) or ent.VNPC_Belly or ent.Belly
+                if not IsValid(liveBelly) then
+                    pcall(drawGeneratedBelly, ent, chain)
+                end
             end
             if VNPC_DrawGPUGulpFX then
                 pcall(VNPC_DrawGPUGulpFX, ent, chain)
