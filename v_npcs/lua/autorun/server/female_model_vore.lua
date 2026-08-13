@@ -154,6 +154,7 @@ function VNPC_GiveFemaleModelVore(ent)
         if not (self.VNPC_IsWildWanderer and self.VNPC_WildType == "predator") and VNPC_IsProtectedChildPrey and VNPC_IsProtectedChildPrey(target) then return false end
         if VNPC_IsPreyEmissary and VNPC_IsPreyEmissary(target) then return false end
         if target.VNPC_PreyCampID and self.VNPC_PreyCampID and target.VNPC_PreyCampID == self.VNPC_PreyCampID then return false end
+        if VNPC_CanSwallowOwnSpecies and not VNPC_CanSwallowOwnSpecies(self, target) then return false end
         if not target:GetModel() or target:GetClass():find("func") then return false end
         
         self.Swallowing = true
@@ -407,6 +408,7 @@ function VNPC_GiveFemaleModelVore(ent)
         if prey.VNPC_IsPreyCampWall or prey.VNPC_IsPreyCampHutPiece or prey.VNPC_IsCourtyardDefense then
             if self.VNPC_PreyCampID and prey.VNPC_PreyCampID == self.VNPC_PreyCampID then return false end
         end
+        if VNPC_CanSwallowOwnSpecies and not VNPC_CanSwallowOwnSpecies(self, prey) then return false end
         return true
     end
 
@@ -415,6 +417,7 @@ function VNPC_GiveFemaleModelVore(ent)
         if prey.VNPC_IsPreyCampWall or prey.VNPC_IsPreyCampHutPiece or prey.VNPC_IsCourtyardDefense then
             if self.VNPC_PreyCampID and prey.VNPC_PreyCampID == self.VNPC_PreyCampID then return false end
         end
+        if VNPC_CanSwallowOwnSpecies and not VNPC_CanSwallowOwnSpecies(self, prey) then return false end
         return true
     end
 
@@ -649,6 +652,9 @@ hook.Add("Think", "VNPC_FemaleModelVore_AI", function()
         local enemy = npc:GetEnemy()
         local prefer_swallow = GetConVar("vnpcs_ai_prefer_swallowing")
         if IsValid(enemy) and enemy ~= npc and not enemy.Vored then
+            if VNPC_CanSwallowOwnSpecies and not VNPC_CanSwallowOwnSpecies(npc, enemy) then
+                continue
+            end
             local targetRad = (enemy.OBBMaxs and enemy:OBBMaxs():Length2D() or 30)
             local dist = npc:GetPos():Distance(enemy:GetPos())
             local battle_grab = math.max(140, eff_grab * 1.5) + targetRad + levelBonus
@@ -678,6 +684,7 @@ hook.Add("Think", "VNPC_FemaleModelVore_AI", function()
                     if VNPC_IsFamilyOrMate and VNPC_IsFamilyOrMate(npc, ent) then continue end
                     if not (npc.VNPC_IsWildWanderer and npc.VNPC_WildType == "predator") and VNPC_IsProtectedChildPrey and VNPC_IsProtectedChildPrey(ent) then continue end
                     if VNPC_IsPreyEmissary and VNPC_IsPreyEmissary(ent) then continue end
+                    if VNPC_CanSwallowOwnSpecies and not VNPC_CanSwallowOwnSpecies(npc, ent) then continue end
                     if npc.GetRelationship and npc:GetRelationship(ent) == D_HT then
                         local targetRad = (ent.OBBMaxs and ent:OBBMaxs():Length2D() or 30)
                         local levelBonus = (VNPC_GetPredatorLevel and (VNPC_GetPredatorLevel(npc) - 1) * 3) or 0
@@ -798,6 +805,7 @@ hook.Add("EntityTakeDamage", "VNPC_FemaleModelVore_MeleeSwallow", function(targe
     if VNPC_IsFamilyOrMate and VNPC_IsFamilyOrMate(target, attacker) then return end
     if not (target.VNPC_IsWildWanderer and target.VNPC_WildType == "predator") and VNPC_IsProtectedChildPrey and VNPC_IsProtectedChildPrey(attacker) then return end
     if VNPC_IsPreyEmissary and VNPC_IsPreyEmissary(attacker) then return end
+    if VNPC_CanSwallowOwnSpecies and not VNPC_CanSwallowOwnSpecies(target, attacker) then return end
 
     local dist = target:GetPos():Distance(attacker:GetPos())
     local targetRad = (attacker.OBBMaxs and attacker:OBBMaxs():Length2D() or 30)

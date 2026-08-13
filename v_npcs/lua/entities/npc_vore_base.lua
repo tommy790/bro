@@ -339,6 +339,7 @@ end
 function ENT:EatEntity(ent)
 	if not IsValid(ent) or (self.Swallowing and not self._InClumpVore) or ent.Vored or self.Vored then return end
 	if ent.VNPC_DigestedBone or ent.VNPC_BoneOwner or ent.VNPC_NoVore then return end
+	if VNPC_CanSwallowOwnSpecies and not VNPC_CanSwallowOwnSpecies(self, ent) then return end
 	if not ent:GetModel() or ent:GetClass():find("func") then return end
 
 	local result = false

@@ -46,6 +46,7 @@ function VNPC_SelectSmartPreyTarget(pred, search_radius)
         end
         if not isHostile then continue end
         if pred.EatCondition and not pred:EatCondition(ent) then continue end
+        if VNPC_CanSwallowOwnSpecies and not VNPC_CanSwallowOwnSpecies(pred, ent) then continue end
 
         local dist = predPos:Distance(ent:GetPos())
         local val = VNPC_CalculatePreyValue and VNPC_CalculatePreyValue(ent) or 75

@@ -176,6 +176,73 @@ function VNPC_IsFemaleModelNPC(ent)
     return (mdl:find("female") or mdl:find("alyx") or mdl:find("mossman")) ~= nil
 end
 
+CreateConVar("vnpcs_citizen_same_species_restrict", "1", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Female citizen predators only swallow other citizens/humans when very hungry")
+CreateConVar("vnpcs_citizen_same_species_hunger", "80", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Hunger (0-100) a female citizen predator needs before swallowing her own species")
+
+function VNPC_IsCitizenSpecies(ent)
+    if not IsValid(ent) then return false end
+    if ent:IsPlayer() then return true end
+    if VNPC_GetPreySpecies then
+        local ok, species = pcall(VNPC_GetPreySpecies, ent)
+        if ok and species == "human" then return true end
+        if ok and species == "zombie" then return false end
+    end
+    local cls = string.lower(ent:GetClass() or "")
+    local mdl = string.lower(ent:GetModel() or "")
+    if cls:find("citizen") or cls:find("rebel") or cls:find("refugee") or cls:find("medic") or cls:find("hostage") then
+        return true
+    end
+    if mdl:find("group01") or mdl:find("group02") or mdl:find("group03") or mdl:find("humans/") then
+        return true
+    end
+    if ent.Classify and ent:Classify() == CLASS_CITIZEN then
+        return true
+    end
+    return false
+end
+
+function VNPC_IsCitizenFemalePredator(ent)
+    if not IsValid(ent) then return false end
+    if not (ent.VNPC_FemaleModelVore or ent.Predator or ent.EatEntity or ent.IsDrGNextbot) then
+        return false
+    end
+    if ent.IsCitizenVore and isfunction(ent.IsCitizenVore) then
+        local ok, res = pcall(ent.IsCitizenVore, ent)
+        if ok and res then return true end
+    end
+    local cls = string.lower(ent:GetClass() or "")
+    local mdl = string.lower(ent:GetModel() or "")
+    if cls == "npc_alyx" or cls == "npc_mossman" or cls == "npc_metropolice" or cls == "npc_combine_s" or cls == "npc_vortigaunt" then
+        return false
+    end
+    if mdl:find("alyx") or mdl:find("mossman") or mdl:find("combine") or mdl:find("police") or mdl:find("vortigaunt") then
+        return false
+    end
+    if cls:find("citizen") or cls:find("rebel") or cls:find("refugee") or cls:find("medic") then
+        return true
+    end
+    if mdl:find("group01") or mdl:find("group02") or mdl:find("group03") or mdl:find("humans/") then
+        return true
+    end
+    return false
+end
+
+function VNPC_CanSwallowOwnSpecies(pred, prey)
+    if not IsValid(pred) or not IsValid(prey) then return false end
+    local restrict = GetConVar("vnpcs_citizen_same_species_restrict")
+    if restrict and not restrict:GetBool() then return true end
+    if not VNPC_IsCitizenFemalePredator(pred) then return true end
+    if not VNPC_IsCitizenSpecies(prey) then return true end
+    local hunger = (VNPC_GetHunger and VNPC_GetHunger(pred)) or 0
+    if pred.VNPC_DesperateSurvival then
+        hunger = math.max(hunger, 100)
+    end
+    local thresh = 80
+    local cv = GetConVar("vnpcs_citizen_same_species_hunger")
+    if cv then thresh = cv:GetFloat() or 80 end
+    return hunger >= thresh
+end
+
 function VNPC_ClearPatrols(ent)
     if not IsValid(ent) then return end
     if ent.ClearPatrols and isfunction(ent.ClearPatrols) then
