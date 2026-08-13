@@ -276,14 +276,115 @@ function VNPC_RemoveWombPrey(mother, baby)
     end
 end
 
-function VNPC_CreateUnbornBaby(mother)
-    if not IsValid(mother) then return nil end
-    local child = ents.Create("npc_citizen")
+function VNPC_GetBabyNPCClass(mother)
+    if not IsValid(mother) or mother:IsPlayer() then return "npc_citizen" end
+    local cls = mother:GetClass()
+    if not isstring(cls) or cls == "" or cls == "player" or cls:find("func_") then
+        return "npc_citizen"
+    end
+    return cls
+end
+
+function VNPC_IsHL2GenderedHumanModel(mdl)
+    mdl = string.lower(mdl or "")
+    if mdl == "" then return false end
+    if mdl:find("alyx") or mdl:find("mossman") then return false end
+    return mdl:find("humans/group0") or mdl:find("humans/female") or mdl:find("humans/male")
+        or mdl:find("/group01/") or mdl:find("/group02/") or mdl:find("/group03")
+        or mdl:find("citizen_female") or mdl:find("citizen_male")
+end
+
+function VNPC_GetBabyModel(mother, gender)
+    gender = gender or "female"
+    local fallback = (gender == "male") and "models/Humans/Group01/Male_01.mdl" or "models/Humans/Group01/Female_01.mdl"
+    if not IsValid(mother) then return fallback end
+    local momMdl = mother:GetModel() or ""
+    if momMdl == "" then return fallback end
+    -- Unique / custom NPCs always look like the mother.
+    if not VNPC_IsHL2GenderedHumanModel(momMdl) then
+        return momMdl
+    end
+    if gender == "male" then
+        local male = momMdl
+        male = string.gsub(male, "[Ff]emale_", "Male_")
+        male = string.gsub(male, "/[Ff]emale", "/Male")
+        male = string.gsub(male, "female", "male")
+        if male ~= momMdl and util.IsValidModel and util.IsValidModel(male) then
+            return male
+        end
+        if male ~= momMdl then
+            return male
+        end
+    end
+    return momMdl
+end
+
+function VNPC_CopyMotherAppearance(mother, child)
+    if not IsValid(mother) or not IsValid(child) then return end
+    if mother.GetSkin and child.SetSkin then
+        pcall(child.SetSkin, child, mother:GetSkin() or 0)
+    end
+    if mother.GetColor and child.SetColor then
+        pcall(child.SetColor, child, mother:GetColor())
+    end
+    if mother.GetNumBodyGroups and child.SetBodygroup and mother.GetBodygroup then
+        local n = mother:GetNumBodyGroups() or 0
+        for i = 0, n - 1 do
+            pcall(child.SetBodygroup, child, i, mother:GetBodygroup(i) or 0)
+        end
+    end
+    if mother.GetMaterial and child.SetMaterial then
+        local mat = mother:GetMaterial()
+        if isstring(mat) and mat ~= "" then
+            pcall(child.SetMaterial, child, mat)
+        end
+    end
+end
+
+function VNPC_HideBabyOwnBelly(child)
+    if not IsValid(child) then return end
+    local belly = child.VNPC_Belly or child.Belly or child.belly
+    if IsValid(belly) then
+        child.VNPC_BabyOwnBelly = belly
+        belly:SetNoDraw(true)
+        if belly.SetSolid then belly:SetSolid(SOLID_NONE) end
+    end
+end
+
+function VNPC_SpawnMotherChild(mother, gender)
+    gender = gender or (math.random() < 0.5 and "female" or "male")
+    local cls = VNPC_GetBabyNPCClass(mother)
+    local child = ents.Create(cls)
+    if not IsValid(child) then
+        child = ents.Create("npc_citizen")
+    end
     if not IsValid(child) then return nil end
-    child:SetPos(mother:GetPos() + Vector(0, 0, 32))
-    child:SetAngles(Angle(0, mother:GetAngles().y, 0))
+    child.VNPC_IsUnbornBaby = true
+    child.VNPC_IsWombPrey = true
+    child.VNPC_ProtectedChild = true
+    child.VNPC_ChildGender = gender
+    child.VNPC_MotherClass = cls
+    if IsValid(mother) then
+        child.VNPC_MotherModel = mother:GetModel()
+        child:SetPos(mother:GetPos() + Vector(0, 0, 32))
+        child:SetAngles(Angle(0, mother:GetAngles().y, 0))
+    end
     child:Spawn()
     child:Activate()
+    local mdl = VNPC_GetBabyModel(mother, gender)
+    if mdl and child.SetModel then
+        pcall(child.SetModel, child, mdl)
+    end
+    VNPC_CopyMotherAppearance(mother, child)
+    VNPC_HideBabyOwnBelly(child)
+    return child
+end
+
+function VNPC_CreateUnbornBaby(mother)
+    if not IsValid(mother) then return nil end
+    local gender = math.random() < 0.5 and "female" or "male"
+    local child = VNPC_SpawnMotherChild(mother, gender)
+    if not IsValid(child) then return nil end
     child:SetModelScale(0.15, 0)
     child:SetNoDraw(true)
     child:SetSolid(0)
@@ -379,11 +480,12 @@ function VNPC_FinalizeBornBaby(mother, child, camp, slot, litterSize)
     child:SetModelScale(0.35, 0)
 
     child.VNPC_ChildGender = child.VNPC_ChildGender or (math.random() < 0.5 and "female" or "male")
-    if child.VNPC_ChildGender == "female" then
-        child:SetModel("models/Humans/Group01/Female_01.mdl")
-    else
-        child:SetModel("models/Humans/Group01/Male_01.mdl")
+    local babyMdl = VNPC_GetBabyModel(mother, child.VNPC_ChildGender)
+    if babyMdl and child.SetModel then
+        pcall(child.SetModel, child, babyMdl)
     end
+    VNPC_CopyMotherAppearance(mother, child)
+    VNPC_HideBabyOwnBelly(child)
 
     child.VNPC_IsUnbornBaby = nil
     child.VNPC_IsGrowingBaby = true
@@ -551,12 +653,10 @@ function VNPC_StartChildbirthAnimation(mother, child, camp)
             if not IsValid(mother) then return end
             local born = baby
             if not IsValid(born) then
-                born = ents.Create("npc_citizen")
+                born = VNPC_SpawnMotherChild(mother, math.random() < 0.5 and "female" or "male")
                 if IsValid(born) then
                     born:SetPos(mother:GetPos() + mother:GetForward() * 24 + Vector(0, 0, 5))
                     born:SetAngles(Angle(0, mother:GetAngles().y, 0))
-                    born:Spawn()
-                    born:Activate()
                 end
             end
             if IsValid(born) then
@@ -617,6 +717,15 @@ hook.Add("Think", "VNPC_BabyCitizenGrowth_Loop", function()
                     if (ent.VNPC_AdoptedByPredator or ent.VNPC_BornSister) and VNPC_TransformToPredator then
                         VNPC_TransformToPredator(ent, ent.VNPC_AdoptedByPredator or ent.VNPC_MotherRef)
                         return
+                    end
+                    local mom = ent.VNPC_MotherRef
+                    if IsValid(mom) and (mom.Predator or mom.VNPC_FemaleModelVore or mom.IsDrGNextbot or mom.EatEntity) then
+                        if VNPC_GiveFemaleModelVore then
+                            VNPC_GiveFemaleModelVore(ent)
+                        end
+                        if IsValid(ent.VNPC_BabyOwnBelly) then
+                            ent.VNPC_BabyOwnBelly:SetNoDraw(false)
+                        end
                     end
 
                     if ent.EmitSound then

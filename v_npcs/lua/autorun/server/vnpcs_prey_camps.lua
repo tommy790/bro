@@ -335,12 +335,25 @@ function VNPC_EnsureUnbornChild(mother, count)
     end
     if not IsValid(mother) then return nil end
     if IsValid(mother.VNPC_UnbornChild) then return mother.VNPC_UnbornChild end
-    local child = ents.Create("npc_citizen")
+    local child = nil
+    if VNPC_SpawnMotherChild then
+        child = VNPC_SpawnMotherChild(mother, math.random() < 0.5 and "female" or "male")
+    else
+        child = ents.Create(IsValid(mother) and mother:GetClass() or "npc_citizen")
+        if not IsValid(child) then
+            child = ents.Create("npc_citizen")
+        end
+        if IsValid(child) then
+            child:SetPos(mother:GetPos() + Vector(0, 0, 32))
+            child:SetAngles(Angle(0, mother:GetAngles().y, 0))
+            child:Spawn()
+            child:Activate()
+            if mother.GetModel and child.SetModel then
+                pcall(child.SetModel, child, mother:GetModel())
+            end
+        end
+    end
     if not IsValid(child) then return nil end
-    child:SetPos(mother:GetPos() + Vector(0, 0, 32))
-    child:SetAngles(Angle(0, mother:GetAngles().y, 0))
-    child:Spawn()
-    child:Activate()
     child:SetModelScale(0.15, 0)
     child:SetNoDraw(true)
     child:SetSolid(0)

@@ -48,6 +48,9 @@ end
 function VNPC_GiveFemaleModelVore(ent)
     if not IsValid(ent) then return false end
     if IsValid(ent.VNPC_Belly or ent.Belly) then return true end
+    if (ent.VNPC_IsUnbornBaby or ent.VNPC_IsGrowingBaby or ent.VNPC_ProtectedChild) and not ent.VNPC_ForceFemaleVore then
+        return false
+    end
     if not ent.VNPC_ForceFemaleVore and not VNPC_IsFemaleModelNPC(ent) then return false end
     
     ent.VNPC_FemaleModelVore = true
@@ -536,6 +539,7 @@ hook.Add("OnEntityCreated", "VNPC_AutoGiveFemaleModelVore", function(ent)
         if not IsValid(ent) then return end
         local enabled = GetConVar("vnpcs_female_model_vore")
         if enabled and not enabled:GetBool() then return end
+        if ent.VNPC_IsUnbornBaby or ent.VNPC_IsGrowingBaby or ent.VNPC_ProtectedChild then return end
         if VNPC_IsFemaleModelNPC(ent) then
             VNPC_GiveFemaleModelVore(ent)
         end
@@ -552,8 +556,10 @@ hook.Add("Think", "VNPC_FemaleModelVore_Think", function()
         if not IsValid(npc) then continue end
         if not IsValid(npc.VNPC_Belly or npc.Belly) and (npc.VNPC_NextVoreCheckTime or 0) <= now then
             npc.VNPC_NextVoreCheckTime = now + 2.0
-            if npc.VNPC_ForceFemaleVore or VNPC_IsFemaleModelNPC(npc) then
-                VNPC_GiveFemaleModelVore(npc)
+            if not (npc.VNPC_IsUnbornBaby or npc.VNPC_IsGrowingBaby or npc.VNPC_ProtectedChild) then
+                if npc.VNPC_ForceFemaleVore or VNPC_IsFemaleModelNPC(npc) then
+                    VNPC_GiveFemaleModelVore(npc)
+                end
             end
         end
         if not npc.VNPC_FemaleModelVore then continue end
