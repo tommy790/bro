@@ -41,18 +41,59 @@ local function getModelBounds(ent, scale)
 end
 
 local function GetFlags(ent)
+    local solid, move, flags = SOLID_BBOX, MOVETYPE_STEP, 0
+    if ent.GetSolid then
+        local ok, v = pcall(ent.GetSolid, ent)
+        if ok then solid = v end
+    end
+    if ent.GetMoveType then
+        local ok, v = pcall(ent.GetMoveType, ent)
+        if ok then move = v end
+    end
+    if ent.GetFlags then
+        local ok, v = pcall(ent.GetFlags, ent)
+        if ok then flags = v or 0 end
+    end
     return {
-        Solid = ent:GetSolid(),
-        MoveType = ent:GetMoveType(),
-        Flags = ent:GetFlags();
+        Solid = solid,
+        MoveType = move,
+        Flags = flags
     }
 end
 
 local function SetFlags(ent, flags)
-    ent:SetSolid(flags.Solid)
-    ent:SetMoveType(flags.MoveType)
-    ent:RemoveEFlags(EFL_NOCLIP_ACTIVE)
-    ent:SetFlags(flags.Flags)
+    if not IsValid(ent) then return end
+    flags = istable(flags) and flags or {}
+
+    if ent.SetSolid then
+        ent:SetSolid(flags.Solid ~= nil and flags.Solid or SOLID_BBOX)
+    end
+    if ent.SetMoveType then
+        local mt = flags.MoveType
+        if mt == nil then
+            mt = ent:IsPlayer() and MOVETYPE_WALK or MOVETYPE_STEP
+        end
+        ent:SetMoveType(mt)
+    end
+    if ent.RemoveEFlags then
+        ent:RemoveEFlags(EFL_NOCLIP_ACTIVE)
+    end
+
+    -- GMod entities have AddFlags/RemoveFlags, not SetFlags.
+    local want = flags.Flags
+    if ent.SetFlags and want ~= nil then
+        local ok = pcall(ent.SetFlags, ent, want)
+        if ok then return end
+    end
+    if want ~= nil and ent.GetFlags and ent.AddFlags and ent.RemoveFlags and bit then
+        local current = ent:GetFlags() or 0
+        local extra = bit.band(current, bit.bnot(want))
+        if extra ~= 0 then pcall(ent.RemoveFlags, ent, extra) end
+        local missing = bit.band(want, bit.bnot(current))
+        if missing ~= 0 then pcall(ent.AddFlags, ent, missing) end
+    elseif ent.RemoveFlags then
+        ent:RemoveFlags(FL_NOTARGET)
+    end
 end
 
 --[[     HOOKS      ]]
@@ -727,6 +768,9 @@ function ENT:Regurgitate(index)
     VNPC_RegurgitateAttachedEntities(self, prey)
 
     SetFlags(prey, info.OldFlags)
+    prey.VNPC_IsBeingSwallowed = nil
+    prey.VNPC_IngestionDepth = nil
+    if prey.NextThink then pcall(prey.NextThink, prey, CurTime()) end
 
     table.remove(self.Prey, index)
 
