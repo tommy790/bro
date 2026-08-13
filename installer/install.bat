@@ -115,6 +115,9 @@ if errorlevel 1 (
     echo vnpcs_belly_rt_size 512 >> "%cfg%"
     echo vnpcs_belly_rt_center 0.42 >> "%cfg%"
     echo vnpcs_belly_rt_zoom 1.0 >> "%cfg%"
+    echo vnpcs_belly_mesh 1 >> "%cfg%"
+    echo vnpcs_belly_mesh_flipu 0 >> "%cfg%"
+    echo vnpcs_belly_mesh_flipv 0 >> "%cfg%"
 )
 
 echo.
@@ -150,7 +153,7 @@ if exist "%addons%\v_npcs" rmdir /s /q "%addons%\v_npcs"
 set "cfg=%gmod_dir%\garrysmod\cfg\autoexec.cfg"
 if exist "%cfg%" (
     set "tmp=%cfg%.tmp"
-    findstr /v /c:"VNPCS_BELLY_BLEND_INSTALLED" /c:"vnpcs_belly_rt_enable" /c:"vnpcs_belly_lit" /c:"vnpcs_belly_rt_size" /c:"vnpcs_belly_rt_center" /c:"vnpcs_belly_rt_zoom" "%cfg%" > "!tmp!"
+    findstr /v /c:"VNPCS_BELLY_BLEND_INSTALLED" /c:"vnpcs_belly_rt_enable" /c:"vnpcs_belly_lit" /c:"vnpcs_belly_rt_size" /c:"vnpcs_belly_rt_center" /c:"vnpcs_belly_rt_zoom" /c:"vnpcs_belly_mesh" "%cfg%" > "!tmp!"
     move /y "!tmp!" "%cfg%" >nul
 )
 

@@ -113,6 +113,11 @@ end
 if not CLIENT then return end
 
 function ENT:Draw()
+    -- Mesh texture-blend mode (no camera): the belly is drawn as a custom
+    -- mesh that samples the predator's own abdomen skin texture with the
+    -- predator's own material (see vnpcs_belly_blend.lua).
+    if VNPCS_BellyBlend and VNPCS_BellyBlend.Draw(self) then return end
+
     local rtMaterial = VNPCS_BellyRT and VNPCS_BellyRT.GetMaterial(self)
 
     if rtMaterial then
@@ -131,5 +136,11 @@ function ENT:Draw()
     end
 
     self:DrawModel()
+end
+
+-- The engine consults this inside DrawModel(); the mesh blend returns its
+-- skin-textured mesh + material here.
+function ENT:GetRenderMesh()
+    return VNPCS_BellyBlend and VNPCS_BellyBlend.GetRenderMesh(self)
 end
 include("belly_modules/animations.lua")
