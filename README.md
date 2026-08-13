@@ -21,16 +21,22 @@ still looked like a sticker because:
 
 ### Fixes in this branch
 
-- **Lit skin shader** (`vnpcs_belly_lit 1`): the RT material is now a
-  `VertexLitGeneric` clone of the belly model's own `.vmt` — same `$bumpmap`,
-  `$phong`, `$phongboost`, `$halflambert`, `$surfaceprop` — with only
+- **Lit skin shader** (`vnpcs_belly_lit 1`): the RT material is a
+  `VertexLitGeneric` clone of the **predator's own torso material** —
+  same `$bumpmap`, `$phong`, `$halflambert`, `$surfaceprop` — with only
   `$basetexture` swapped for the render target. The belly shades, bumps and
-  highlights exactly like the body it hangs from.
+  highlights exactly like the body it hangs from. (Using the belly's own
+  phong settings caused the leftover color tint; phong now only applies when
+  the body itself uses it.)
 - **Neutral belly colour while blending** (`ent_vore_belly` /
   `ent_fernkarry_belly` `Draw()`): the belly's own tint is suppressed while
   the RT material is applied, so the predator's colors show through 1:1.
-- **Tighter capture framing**: the torso now fills the frame so the photo
-  over-covers the belly surface and no hard photo edge appears.
+- **Stomach-centered capture**: the capture frame now centres on the
+  abdomen (below the chest), so the breast region of the model texture no
+  longer gets baked onto the belly. Tunable per model:
+  `vnpcs_belly_rt_center` / `vnpcs_belly_rt_zoom`.
+- **Skin-tone rim**: the RT clears to a darkened belly skin color so photo
+  edges read as soft shading instead of a tinted border.
 - **Configurable render target** (`vnpcs_belly_rt_size 128-1024`) and a
   master switch (`vnpcs_belly_rt_enable 0` restores the old behavior).
 
@@ -56,6 +62,8 @@ Then just restart Garry's Mod and spawn a V-NPC.
 | `vnpcs_belly_rt_enable` | 1 | Master switch for the render-target blending |
 | `vnpcs_belly_rt_size` | 512 | RT resolution (128–1024, higher = sharper but slower) |
 | `vnpcs_belly_lit` | 1 | Lit skin-shader material; 0 = old flat unlit material |
+| `vnpcs_belly_rt_center` | 0.42 | Where the capture frame centers on the body (0 = feet, 1 = head). Lower it if the belly still shows chest/breast texture |
+| `vnpcs_belly_rt_zoom` | 1.0 | Capture tightness (0.6 = wider, 1.6 = tighter) |
 
 ## Manual install
 
