@@ -1169,6 +1169,10 @@ concommand.Add("vnpcs_test_wild_pregnancy", function(ply)
     target.VNPC_BabyGrowthValue = 47.0
     target.VNPC_PregnancyStartTime = CurTime() - 117.0
     target.VNPC_LastGrowthTime = CurTime()
+    target.VNPC_LitterSize = target.VNPC_LitterSize or 1
+    if VNPC_EnsureUnbornLitter then
+        VNPC_EnsureUnbornLitter(target, target.VNPC_LitterSize)
+    end
     ply:ChatPrint("[V-NPCs] Triggered wild pregnancy on " .. tostring(target) .. "! Birth at 50 in ~3 seconds.")
 end)
 

@@ -481,7 +481,7 @@ function VNPC_GiveFemaleModelVore(ent)
         local belly = self.VNPC_Belly or self.Belly
         if IsValid(belly) and belly.Prey and istable(belly.Prey) then
             for _, p_tbl in ipairs(belly.Prey) do
-                if p_tbl and IsValid(p_tbl.Entity) then
+                if p_tbl and IsValid(p_tbl.Entity) and not (p_tbl.WombPrey or p_tbl.NoDigest or p_tbl.Entity.VNPC_IsWombPrey or p_tbl.Entity.VNPC_IsUnbornBaby) then
                     self:Regurgitate(p_tbl.Entity)
                 end
             end
@@ -577,14 +577,15 @@ hook.Add("Think", "VNPC_FemaleModelVore_Think", function()
             belly:SetLocalAngles(npc.Belly_Angles or Angle(0, 90, 90))
             belly:SetLocalPos(npc.Belly_Offset or VNPC_GetFixedFemaleBellyOffset(npc))
 
-            if (belly.DigestionPhase == 0 and (not belly.Prey or #belly.Prey == 0)) and not npc.Swallowing then
+            local hasSwallowed = VNPC_BellyHasSwallowedPrey and VNPC_BellyHasSwallowedPrey(belly) or ((not VNPC_BellyHasSwallowedPrey) and (belly.DigestionPhase ~= 0 or (belly.Prey and #belly.Prey > 0)))
+            if (not hasSwallowed) and not npc.Swallowing then
                 local current_phase = npc:GetCurrentFacialPhase()
                 if current_phase == 1 or current_phase == 2 or current_phase == 4 then
                     npc:SetFacialExpression(0)
                 end
             end
 
-            if not GetConVar("vnpcs_patrol_full"):GetBool() and (belly.DigestionPhase ~= 0 or (belly.Prey and #belly.Prey > 0)) then
+            if not GetConVar("vnpcs_patrol_full"):GetBool() and (VNPC_BellyHasSwallowedPrey and VNPC_BellyHasSwallowedPrey(belly) or ((not VNPC_BellyHasSwallowedPrey) and (belly.DigestionPhase ~= 0 or (belly.Prey and #belly.Prey > 0)))) then
                 if not IsValid(npc:GetEnemy()) then
                     local isMovingOrWandering = false
                     if npc.IsMoving and npc:IsMoving() then isMovingOrWandering = true end
@@ -626,7 +627,7 @@ hook.Add("Think", "VNPC_FemaleModelVore_AI", function()
         npc.VNPC_NextAIThink = now + 0.5
         
         local belly = npc.VNPC_Belly or npc.Belly
-        if IsValid(belly) and (belly.DigestionPhase ~= 0 or (belly.Prey and #belly.Prey > 0)) then
+        if IsValid(belly) and (VNPC_BellyHasSwallowedPrey and VNPC_BellyHasSwallowedPrey(belly) or ((not VNPC_BellyHasSwallowedPrey) and (belly.DigestionPhase ~= 0 or (belly.Prey and #belly.Prey > 0)))) then
             if VNPC_IsPredatorCalm and VNPC_IsPredatorCalm(npc) then
                 if npc.ClearSchedule then pcall(npc.ClearSchedule, npc) end
                 if npc.SetSchedule then pcall(npc.SetSchedule, npc, SCHED_IDLE_STAND) end
@@ -821,9 +822,15 @@ hook.Add("EntityTakeDamage", "VNPC_FemaleModelVore_DamageRegurgitate", function(
     if IsValid(ent) and ent.VNPC_FemaleModelVore and IsValid(ent.VNPC_Belly) then
         if dmg:GetDamage() >= (ent:GetMaxHealth() * 0.3) or (ent:Health() - dmg:GetDamage() <= 0) then
             if ent.VNPC_Belly.Prey and istable(ent.VNPC_Belly.Prey) then
-                for _, prey in ipairs(ent.VNPC_Belly.Prey) do
-                    if IsValid(prey) and ent.VNPC_Belly.Regurgitate then
-                        pcall(ent.VNPC_Belly.Regurgitate, ent.VNPC_Belly, prey)
+                for i = #ent.VNPC_Belly.Prey, 1, -1 do
+                    local info = ent.VNPC_Belly.Prey[i]
+                    local prey = (istable(info) and info.Entity) or info
+                    if istable(info) and (info.WombPrey or info.NoDigest) then continue end
+                    if IsValid(prey) and (prey.VNPC_IsWombPrey or prey.VNPC_IsUnbornBaby) then continue end
+                    if IsValid(prey) and ent.VNPC_Belly.RegurgitateENT then
+                        pcall(ent.VNPC_Belly.RegurgitateENT, ent.VNPC_Belly, prey)
+                    elseif IsValid(prey) and ent.VNPC_Belly.Regurgitate then
+                        pcall(ent.VNPC_Belly.Regurgitate, ent.VNPC_Belly, i)
                     end
                 end
             end
@@ -834,9 +841,15 @@ end)
 hook.Add("EntityRemoved", "VNPC_FemaleModelVore_Cleanup", function(ent)
     if IsValid(ent) and ent.VNPC_FemaleModelVore and IsValid(ent.VNPC_Belly) then
         if ent.VNPC_Belly.Prey and istable(ent.VNPC_Belly.Prey) then
-            for _, prey in ipairs(ent.VNPC_Belly.Prey) do
-                if IsValid(prey) and ent.VNPC_Belly.Regurgitate then
-                    pcall(ent.VNPC_Belly.Regurgitate, ent.VNPC_Belly, prey)
+            for i = #ent.VNPC_Belly.Prey, 1, -1 do
+                local info = ent.VNPC_Belly.Prey[i]
+                local prey = (istable(info) and info.Entity) or info
+                if istable(info) and (info.WombPrey or info.NoDigest) then continue end
+                if IsValid(prey) and (prey.VNPC_IsWombPrey or prey.VNPC_IsUnbornBaby) then continue end
+                if IsValid(prey) and ent.VNPC_Belly.RegurgitateENT then
+                    pcall(ent.VNPC_Belly.RegurgitateENT, ent.VNPC_Belly, prey)
+                elseif IsValid(prey) and ent.VNPC_Belly.Regurgitate then
+                    pcall(ent.VNPC_Belly.Regurgitate, ent.VNPC_Belly, i)
                 end
             end
         end

@@ -265,22 +265,11 @@ hook.Add("Think", "VNPC_PreyEmissary_AI_Loop", function()
 
         if pred.VNPC_IsPregnantWithCitizen and now >= pred.VNPC_IsPregnantWithCitizen then
             pred.VNPC_IsPregnantWithCitizen = nil
-            local child = ents.Create("npc_citizen")
-            if IsValid(child) then
-                child:SetPos(pred:GetPos() + pred:GetForward() * 24 + Vector(0, 0, 5))
-                child:SetAngles(Angle(0, pred:GetAngles().y, 0))
-                child:Spawn()
-                child:Activate()
-                child.VNPC_ChildGender = math.random() < 0.5 and "female" or "male"
-                if child.VNPC_ChildGender == "female" then
-                    child:SetModel("models/Humans/Group01/Female_01.mdl")
-                else
-                    child:SetModel("models/Humans/Group01/Male_01.mdl")
-                end
-
-                if VNPC_StartChildbirthAnimation then
-                    VNPC_StartChildbirthAnimation(pred, child, camp)
-                end
+            if not IsValid(pred.VNPC_UnbornChild) and VNPC_EnsureUnbornLitter then
+                VNPC_EnsureUnbornLitter(pred, pred.VNPC_LitterSize or 1)
+            end
+            if VNPC_StartChildbirthAnimation then
+                VNPC_StartChildbirthAnimation(pred, pred.VNPC_UnbornChild, camp)
             end
 
             -- Return home to original Predator Camp after childbirth completes
@@ -315,6 +304,12 @@ hook.Add("Think", "VNPC_PreyEmissary_AI_Loop", function()
                     VNPC_InitiatePrivateMating(pred, mate, camp)
                 else
                     pred.VNPC_IsPregnantWithCitizen = now + emissary_preg_time:GetFloat()
+                    pred.VNPC_IsPregnant = true
+                    pred.VNPC_BabyGrowthValue = pred.VNPC_BabyGrowthValue or 10.0
+                    pred.VNPC_LitterSize = pred.VNPC_LitterSize or 1
+                    if VNPC_EnsureUnbornLitter then
+                        VNPC_EnsureUnbornLitter(pred, pred.VNPC_LitterSize)
+                    end
                 end
 
                 if pred.EmitSound then pred:EmitSound("npc/citizen/vo/nice.wav", 80, 108) end
@@ -401,6 +396,12 @@ concommand.Add("vnpcs_test_visiting_mate", function(ply)
     target.VNPC_VisitedPreyCamp = bestCamp
     target.VNPC_OriginalCampID = target.VNPC_CampID
     target.VNPC_IsPregnantWithCitizen = CurTime() + 5.0 -- 5 second test pregnancy!
+    target.VNPC_IsPregnant = true
+    target.VNPC_BabyGrowthValue = target.VNPC_BabyGrowthValue or 46.0
+    target.VNPC_LitterSize = target.VNPC_LitterSize or 1
+    if VNPC_EnsureUnbornLitter then
+        VNPC_EnsureUnbornLitter(target, 1)
+    end
     target.VNPC_PreyCampBabyMother = true
     ply:ChatPrint("[V-NPCs] Set " .. tostring(target) .. " as a visiting predator pregnant with a citizen baby for Prey Camp #" .. bestCamp.id .. " (birth in 5 seconds)!")
 end)

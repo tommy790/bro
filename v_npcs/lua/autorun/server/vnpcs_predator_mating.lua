@@ -9,7 +9,23 @@ function VNPC_DeliverWillingMateToCamp(pred, camp, belly)
     if not IsValid(pred) or not IsValid(belly) or not camp then return false end
     if not belly.Prey or #belly.Prey == 0 then return false end
 
-    belly:Regurgitate(1)
+    local released = false
+    if belly.RegurgitateENT then
+        for _, info in ipairs(belly.Prey) do
+            if info and IsValid(info.Entity) and info.Entity.VNPC_IsWillingMate then
+                released = belly:RegurgitateENT(info.Entity) and true or false
+                break
+            end
+        end
+    end
+    if not released then
+        for i, info in ipairs(belly.Prey) do
+            if info and not (info.WombPrey or info.NoDigest or (IsValid(info.Entity) and (info.Entity.VNPC_IsWombPrey or info.Entity.VNPC_IsUnbornBaby))) then
+                released = belly:Regurgitate(i) and true or false
+                break
+            end
+        end
+    end
     pred.VNPC_IsCarryingMateForCamp = false
     belly.VNPC_NoDigestion = false
     belly.DigestionStrength = pred.VoreSettings and pred.VoreSettings.DigestionStrength or 2
@@ -38,6 +54,12 @@ function VNPC_DeliverWillingMateToCamp(pred, camp, belly)
             VNPC_InitiatePrivateMating(pred, male, camp)
         else
             pred.VNPC_IsPregnantWithSister = CurTime() + pred_pregnancy_time:GetFloat()
+            pred.VNPC_IsPregnant = true
+            pred.VNPC_BabyGrowthValue = pred.VNPC_BabyGrowthValue or 10.0
+            pred.VNPC_LitterSize = pred.VNPC_LitterSize or 1
+            if VNPC_EnsureUnbornLitter then
+                VNPC_EnsureUnbornLitter(pred, pred.VNPC_LitterSize)
+            end
         end
         if pred.EmitSound then
             pred:EmitSound("npc/citizen/vo/nice.wav", 80, 115)
@@ -130,19 +152,15 @@ hook.Add("Think", "VNPC_PredatorMating_AI_Loop", function()
             -- 1. Check existing pregnancy with a new sister
             if pred.VNPC_IsPregnantWithSister and now >= pred.VNPC_IsPregnantWithSister then
                 pred.VNPC_IsPregnantWithSister = nil
-                local child = ents.Create("npc_citizen")
-                if IsValid(child) then
-                    child:SetPos(pred:GetPos() + pred:GetForward() * 24 + Vector(0, 0, 5))
-                    child:SetAngles(Angle(0, pred:GetAngles().y, 0))
-                    child:Spawn()
-                    child:Activate()
-                    child.VNPC_ChildGender = "female"
-                    child:SetModel("models/Humans/Group01/Female_01.mdl")
-                    child.VNPC_BornSister = true
-
-                    if VNPC_StartChildbirthAnimation then
-                        VNPC_StartChildbirthAnimation(pred, child, camp)
-                    end
+                if not IsValid(pred.VNPC_UnbornChild) and VNPC_EnsureUnbornLitter then
+                    VNPC_EnsureUnbornLitter(pred, pred.VNPC_LitterSize or 1)
+                end
+                if IsValid(pred.VNPC_UnbornChild) then
+                    pred.VNPC_UnbornChild.VNPC_ChildGender = pred.VNPC_UnbornChild.VNPC_ChildGender or "female"
+                    pred.VNPC_UnbornChild.VNPC_BornSister = true
+                end
+                if VNPC_StartChildbirthAnimation then
+                    VNPC_StartChildbirthAnimation(pred, pred.VNPC_UnbornChild, camp)
                 end
             end
 
@@ -232,6 +250,12 @@ concommand.Add("vnpcs_test_pred_mate", function(ply)
         return
     end
     target.VNPC_IsPregnantWithSister = CurTime() + 5.0 -- 5 second test pregnancy!
+    target.VNPC_IsPregnant = true
+    target.VNPC_BabyGrowthValue = target.VNPC_BabyGrowthValue or 46.0
+    target.VNPC_LitterSize = target.VNPC_LitterSize or 1
+    if VNPC_EnsureUnbornLitter then
+        VNPC_EnsureUnbornLitter(target, 1)
+    end
     ply:ChatPrint("[V-NPCs] Triggered pregnancy on " .. tostring(target) .. "! Baby sister-in-training in 5 seconds!")
 end)
 

@@ -179,7 +179,9 @@ hook.Add("Think", "VNPCS_SwallowedPrey_SafetyLoop", function()
                 seen[prey] = true
 
                 if prey:Health() <= 0 and not info.Absorbing and belly.AbsorbSpecificPrey then
-                    pcall(belly.AbsorbSpecificPrey, belly, i)
+                    if not (info.WombPrey or info.NoDigest or prey.VNPC_IsWombPrey or prey.VNPC_IsUnbornBaby) then
+                        pcall(belly.AbsorbSpecificPrey, belly, i)
+                    end
                     continue
                 end
 
@@ -508,6 +510,11 @@ function ENT:TransferPreyFrom(otherPredOrBelly)
     for _, p_table in ipairs(toTransfer) do
         local preyEnt = p_table.Entity
         if not IsValid(preyEnt) or preyEnt == self or preyEnt == self.NPC then continue end
+        if p_table.WombPrey or p_table.NoDigest or preyEnt.VNPC_IsWombPrey or preyEnt.VNPC_IsUnbornBaby then
+            -- Keep unborn babies in the swallowed mother's own belly.
+            table.insert(oldBelly.Prey, p_table)
+            continue
+        end
 
         -- Check if already in our belly
         local alreadyIn = false
@@ -629,6 +636,9 @@ end
 function ENT:AbsorbSpecificPrey(index)
     local info = self.Prey[index]
     if not info or info.Absorbing then return end
+    if info.WombPrey or info.NoDigest or (IsValid(info.Entity) and (info.Entity.VNPC_IsWombPrey or info.Entity.VNPC_IsUnbornBaby)) then
+        return
+    end
     info.Absorbing = true 
     local prey = info.Entity
 
@@ -709,6 +719,12 @@ function ENT:DigestPrey(dt)
         preyInTotal = preyInTotal + 1
 
         local prey = prey_table.Entity
+        if prey_table.WombPrey or prey_table.NoDigest or (IsValid(prey) and (prey.VNPC_IsWombPrey or prey.VNPC_IsUnbornBaby)) then
+            if IsValid(prey) and prey:Health() > 0 then
+                livingPrey = livingPrey + 1
+            end
+            continue
+        end
         if not IsValid(prey) then
             self:AbsorbSpecificPrey(i)
             continue
@@ -838,8 +854,13 @@ function ENT:SetAbsorbPower(num)
 end
 
 function ENT:WipeAllPrey()
+    local keep = {}
     for i,prey in ipairs(self.Prey) do
         local preyEnt = prey.Entity
+        if prey.WombPrey or prey.NoDigest or (IsValid(preyEnt) and (preyEnt.VNPC_IsWombPrey or preyEnt.VNPC_IsUnbornBaby)) then
+            table.insert(keep, prey)
+            continue
+        end
         if preyEnt then
             if IsValid(preyEnt) then
                 preyEnt:SetParent(nil)
@@ -854,7 +875,10 @@ function ENT:WipeAllPrey()
             end
         end
     end
-    table.Empty(self.Prey)
+    self.Prey = keep
+    if #self.Prey == 0 then
+        self:ChangeDigestionPhase(0)
+    end
 end
 
 function ENT:SetNPC(npc)

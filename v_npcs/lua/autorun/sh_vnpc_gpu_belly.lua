@@ -261,6 +261,7 @@ function VNPC_SyncGPUBellyStruggle(pred)
             local prey = info and info.Entity
             if not IsValid(prey) then continue end
             if info.Absorbing then continue end
+            if info.WombPrey or info.NoDigest or prey.VNPC_IsWombPrey or prey.VNPC_IsUnbornBaby then continue end
             if info.Alive == false and not prey.VNPC_IsBeingSwallowed then continue end
             local mul = 1.0
             if VNPC_GetPreyPersonality then

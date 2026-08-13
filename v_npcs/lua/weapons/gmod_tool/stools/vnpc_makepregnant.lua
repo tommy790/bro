@@ -56,8 +56,12 @@ local function clearPregnancy(ent)
 	end
 	for _, child in ipairs(kids) do
 		if IsValid(child) then
-			child:SetParent(nil)
-			child:Remove()
+			if VNPC_RemoveWombPrey then
+				VNPC_RemoveWombPrey(ent, child)
+			else
+				child:SetParent(nil)
+				child:Remove()
+			end
 		end
 	end
 	ent.VNPC_IsPregnant = nil

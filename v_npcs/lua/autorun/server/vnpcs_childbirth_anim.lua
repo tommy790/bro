@@ -86,6 +86,196 @@ function VNPC_GetLitterSize(love)
     return math.Clamp(size, 1, maxLitter)
 end
 
+function VNPC_IsWombPrey(ent, info)
+    if info and (info.WombPrey or info.NoDigest) then return true end
+    if IsValid(ent) and (ent.VNPC_IsWombPrey or ent.VNPC_IsUnbornBaby) then return true end
+    return false
+end
+
+function VNPC_BellyHasSwallowedPrey(belly)
+    if not IsValid(belly) or not istable(belly.Prey) then return false end
+    for _, info in ipairs(belly.Prey) do
+        if info and not VNPC_IsWombPrey(info.Entity, info) then
+            return true
+        end
+    end
+    return false
+end
+
+function VNPC_EnsureMotherBelly(mother)
+    if not IsValid(mother) then return nil end
+    local belly = mother.VNPC_Belly or mother.Belly or mother.belly
+    if IsValid(belly) then return belly end
+    if mother.GetBelly and isfunction(mother.GetBelly) then
+        local ok, found = pcall(mother.GetBelly, mother)
+        if ok and IsValid(found) then return found end
+    end
+    if mother.GetNWEntity then
+        local nw = mother:GetNWEntity("Belly")
+        if IsValid(nw) then return nw end
+    end
+    -- Existing preds keep their vore belly. Regular pregnant citizens get a
+    -- belly without being turned into hunters.
+    if mother.Predator or mother.VNPC_FemaleModelVore or mother.IsDrGNextbot or mother.EatEntity then
+        if VNPC_GiveFemaleModelVore then
+            pcall(VNPC_GiveFemaleModelVore, mother)
+            belly = mother.VNPC_Belly or mother.Belly
+            if IsValid(belly) then return belly end
+        end
+    end
+    if VNPC_EnsureFemalePreyBelly then
+        return VNPC_EnsureFemalePreyBelly(mother)
+    end
+    return nil
+end
+
+function VNPC_GetWombPreyValue(mother, baby)
+    local growth = 10
+    if IsValid(mother) then
+        growth = tonumber(mother.VNPC_BabyGrowthValue) or 10
+    end
+    local t = math.Clamp((growth - 10) / 40, 0, 1)
+    return 16 + t * 52
+end
+
+function VNPC_PutUnbornInBelly(mother, baby)
+    if not IsValid(mother) or not IsValid(baby) then return false end
+    local belly = VNPC_EnsureMotherBelly(mother)
+    if not IsValid(belly) then return false end
+    belly.Prey = belly.Prey or {}
+    for _, info in ipairs(belly.Prey) do
+        if info and info.Entity == baby then
+            info.WombPrey = true
+            info.NoDigest = true
+            info.Absorbing = false
+            baby.VNPC_IsWombPrey = true
+            baby.VNPC_IsUnbornBaby = true
+            baby.VNPC_MotherRef = mother
+            return true
+        end
+    end
+
+    baby.VNPC_IsUnbornBaby = true
+    baby.VNPC_IsWombPrey = true
+    baby.VNPC_MotherRef = mother
+    baby.Vored = true
+    baby.VNPC_Vored = true
+    baby.VNPC_IsBeingSwallowed = nil
+    baby.VNPC_IngestionDepth = nil
+    if baby.SetHealth then baby:SetHealth(math.max(baby:Health() or 0, 100)) end
+
+    if baby.SetParent then baby:SetParent(nil) end
+    if VNPC_HideSwallowedPrey then
+        VNPC_HideSwallowedPrey(baby, belly)
+    else
+        baby:SetNoDraw(true)
+        if baby.AddEffects then baby:AddEffects(EF_NODRAW) end
+        baby:SetSolid(SOLID_NONE)
+        baby:SetMoveType(MOVETYPE_NONE)
+        baby:SetParent(belly)
+        baby:SetPos(belly:GetPos())
+    end
+
+    local value = VNPC_GetWombPreyValue(mother, baby)
+    table.insert(belly.Prey, {
+        Value = value,
+        TrueValue = value,
+        Alive = true,
+        Entity = baby,
+        Absorbing = false,
+        WombPrey = true,
+        NoDigest = true,
+        OldFlags = { Solid = SOLID_BBOX, MoveType = MOVETYPE_STEP, Flags = 0 }
+    })
+    if belly.SetBellySize then belly:SetBellySize() end
+    if belly.SetNWInt and belly.GetAliveFactor then
+        belly:SetNWInt("AliveFactor", belly:GetAliveFactor())
+    end
+    return true
+end
+
+function VNPC_UpdateWombPreyInBelly(mother)
+    if not IsValid(mother) then return end
+    local belly = mother.VNPC_Belly or mother.Belly or mother.belly
+    if not IsValid(belly) or not istable(belly.Prey) then return end
+    local growth = tonumber(mother.VNPC_BabyGrowthValue) or 10
+    local t = math.Clamp((growth - 10) / 40, 0, 1)
+    local scale = 0.15 + t * 0.17
+    local changed = false
+    for _, info in ipairs(belly.Prey) do
+        if not info or not VNPC_IsWombPrey(info.Entity, info) then continue end
+        local val = VNPC_GetWombPreyValue(mother, info.Entity)
+        info.Value = val
+        info.TrueValue = val
+        info.WombPrey = true
+        info.NoDigest = true
+        info.Absorbing = false
+        if IsValid(info.Entity) then
+            info.Entity.VNPC_IsWombPrey = true
+            if info.Entity.SetModelScale then
+                info.Entity:SetModelScale(scale, 0)
+            end
+        end
+        changed = true
+    end
+    if changed and belly.SetBellySize then
+        belly:SetBellySize()
+    end
+end
+
+function VNPC_ReleaseWombPrey(mother, baby)
+    if not IsValid(baby) then return false end
+    local belly = IsValid(mother) and (mother.VNPC_Belly or mother.Belly or mother.belly) or nil
+    if not IsValid(belly) then
+        belly = baby:GetParent()
+        if not (IsValid(belly) and belly.Prey) then
+            belly = nil
+        end
+    end
+    if IsValid(belly) and istable(belly.Prey) then
+        for i = #belly.Prey, 1, -1 do
+            local info = belly.Prey[i]
+            if info and info.Entity == baby then
+                table.remove(belly.Prey, i)
+                break
+            end
+        end
+        if belly.SetBellySize then belly:SetBellySize() end
+        if #belly.Prey == 0 or not VNPC_BellyHasSwallowedPrey(belly) then
+            if belly.ChangeDigestionPhase and not VNPC_BellyHasSwallowedPrey(belly) then
+                if #belly.Prey == 0 then
+                    belly:ChangeDigestionPhase(0)
+                end
+            end
+        end
+    end
+    baby:SetParent(nil)
+    if VNPC_UnhideRegurgitatedPrey then
+        VNPC_UnhideRegurgitatedPrey(baby)
+    else
+        baby:SetNoDraw(false)
+        if baby.RemoveEffects then baby:RemoveEffects(EF_NODRAW) end
+        if baby.SetRenderMode then baby:SetRenderMode(RENDERMODE_NORMAL) end
+        baby:SetColor(Color(255, 255, 255, 255))
+        if baby.DrawShadow then baby:DrawShadow(true) end
+    end
+    baby.Vored = false
+    baby.VNPC_Vored = false
+    baby.VNPC_IsDeadAndAbsorbed = nil
+    baby.VNPC_IsWombPrey = nil
+    baby.VNPC_IsBeingSwallowed = nil
+    baby.VNPC_IngestionDepth = nil
+    if baby.NextThink then pcall(baby.NextThink, baby, CurTime()) end
+    return true
+end
+
+function VNPC_RemoveWombPrey(mother, baby)
+    VNPC_ReleaseWombPrey(mother, baby)
+    if IsValid(baby) then
+        baby:Remove()
+    end
+end
+
 function VNPC_CreateUnbornBaby(mother)
     if not IsValid(mother) then return nil end
     local child = ents.Create("npc_citizen")
@@ -98,24 +288,40 @@ function VNPC_CreateUnbornBaby(mother)
     child:SetNoDraw(true)
     child:SetSolid(0)
     child:SetMoveType(MOVETYPE_NONE)
-    child:SetParent(mother)
     child.VNPC_IsUnbornBaby = true
+    child.VNPC_IsWombPrey = true
     child.VNPC_MotherRef = mother
+    child:SetHealth(100)
+    if not VNPC_PutUnbornInBelly(mother, child) then
+        child:SetParent(mother)
+    end
     return child
 end
 
 function VNPC_GetUnbornLitter(mother)
     local kids = {}
+    local seen = {}
     if not IsValid(mother) then return kids end
-    if istable(mother.VNPC_UnbornChildren) then
-        for _, c in ipairs(mother.VNPC_UnbornChildren) do
-            if IsValid(c) then
-                table.insert(kids, c)
-            end
+    local function addKid(c)
+        if IsValid(c) and not seen[c] then
+            seen[c] = true
+            table.insert(kids, c)
         end
     end
-    if #kids == 0 and IsValid(mother.VNPC_UnbornChild) then
-        table.insert(kids, mother.VNPC_UnbornChild)
+    if istable(mother.VNPC_UnbornChildren) then
+        for _, c in ipairs(mother.VNPC_UnbornChildren) do
+            addKid(c)
+        end
+    end
+    addKid(mother.VNPC_UnbornChild)
+    local belly = mother.VNPC_Belly or mother.Belly or mother.belly
+    if IsValid(belly) and istable(belly.Prey) then
+        for _, info in ipairs(belly.Prey) do
+            local ent = info and info.Entity
+            if info and (info.WombPrey or info.NoDigest or (IsValid(ent) and (ent.VNPC_IsWombPrey or ent.VNPC_IsUnbornBaby))) then
+                addKid(ent)
+            end
+        end
     end
     mother.VNPC_UnbornChildren = kids
     if #kids > 0 then
@@ -139,6 +345,12 @@ function VNPC_EnsureUnbornLitter(mother, count)
     mother.VNPC_UnbornChildren = kids
     mother.VNPC_UnbornChild = kids[1]
     mother.VNPC_LitterSize = math.max(tonumber(mother.VNPC_LitterSize) or 0, #kids)
+    for _, baby in ipairs(kids) do
+        if IsValid(baby) then
+            VNPC_PutUnbornInBelly(mother, baby)
+        end
+    end
+    VNPC_UpdateWombPreyInBelly(mother)
     return kids
 end
 
@@ -267,6 +479,7 @@ function VNPC_ApplyPregnancyBellyBulge(mother, val)
     if pelvisBone then
         mother:ManipulateBoneScale(pelvisBone, Vector(1.0 + factor * 0.25 * litterMult, 1.0 + factor * 0.25 * litterMult, 1.0 + factor * 0.20 * litterMult))
     end
+    VNPC_UpdateWombPreyInBelly(mother)
 end
 
 function VNPC_ResetPregnancyBellyBulge(mother)
@@ -347,6 +560,7 @@ function VNPC_StartChildbirthAnimation(mother, child, camp)
                 end
             end
             if IsValid(born) then
+                VNPC_ReleaseWombPrey(mother, born)
                 VNPC_FinalizeBornBaby(mother, born, camp, i, litterSize)
             end
         end)
@@ -371,9 +585,18 @@ hook.Add("Think", "VNPC_BabyCitizenGrowth_Loop", function()
     for _, ent in ipairs(ents.GetAll()) do
         if not IsValid(ent) or ent:Health() <= 0 then continue end
 
-        -- 1. Unborn Baby inside Womb: sync position with mother
+        -- 1. Unborn Baby inside Womb: keep them hidden in the mother's belly
         if ent.VNPC_IsUnbornBaby and IsValid(ent.VNPC_MotherRef) then
-            ent:SetPos(ent.VNPC_MotherRef:GetPos() + Vector(0, 0, 32))
+            local mother = ent.VNPC_MotherRef
+            local belly = mother.VNPC_Belly or mother.Belly or mother.belly
+            if IsValid(belly) then
+                if ent:GetParent() ~= belly or not ent.VNPC_IsWombPrey then
+                    VNPC_PutUnbornInBelly(mother, ent)
+                end
+            elseif ent:GetParent() ~= mother then
+                ent:SetParent(mother)
+                ent:SetPos(mother:GetPos() + Vector(0, 0, 32))
+            end
             continue
         end
 
@@ -493,8 +716,17 @@ concommand.Add("vnpcs_childbirth_status", function(ply)
                 local kids = VNPC_GetUnbornLitter(ent)
                 local litter = math.max(#kids, tonumber(ent.VNPC_LitterSize) or 1)
                 wombBabies = wombBabies + litter
-                print(string.format(" -> Pregnant Citizen [%d] | Growth Value: %.1f / 50.0 | Love: %.0f | Litter: %d | Mating lasts %.1fs",
-                    ent:EntIndex(), ent.VNPC_BabyGrowthValue, VNPC_GetMateLove(ent, ent.VNPC_LovedPartner or ent.VNPC_WildMate), litter, VNPC_GetMatingDuration(VNPC_GetMateLove(ent, ent.VNPC_LovedPartner or ent.VNPC_WildMate))))
+                local belly = ent.VNPC_Belly or ent.Belly
+                local inBelly = 0
+                if IsValid(belly) and istable(belly.Prey) then
+                    for _, info in ipairs(belly.Prey) do
+                        if info and (info.WombPrey or (IsValid(info.Entity) and (info.Entity.VNPC_IsWombPrey or info.Entity.VNPC_IsUnbornBaby))) then
+                            inBelly = inBelly + 1
+                        end
+                    end
+                end
+                print(string.format(" -> Pregnant Citizen [%d] | Growth Value: %.1f / 50.0 | Love: %.0f | Litter: %d | In Belly: %d | Mating lasts %.1fs",
+                    ent:EntIndex(), ent.VNPC_BabyGrowthValue, VNPC_GetMateLove(ent, ent.VNPC_LovedPartner or ent.VNPC_WildMate), litter, inBelly, VNPC_GetMatingDuration(VNPC_GetMateLove(ent, ent.VNPC_LovedPartner or ent.VNPC_WildMate))))
             end
             if ent.VNPC_IsGrowingBaby then
                 growCount = growCount + 1
