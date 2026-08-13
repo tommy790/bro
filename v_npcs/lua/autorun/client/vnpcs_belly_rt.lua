@@ -20,6 +20,15 @@ local WHITE = Color(255, 255, 255, 255)
 local ZERO_ANGLE = Angle(0, 0, 0)
 local ONE_VECTOR = Vector(1, 1, 1)
 
+-- Belly texture blending controls.  The render-target material is what makes
+-- the belly sample the VNPC's own torso texture; these tweak how seamlessly
+-- it blends with the body.
+local vnpcs_belly_rt_enable = CreateClientConVar("vnpcs_belly_rt_enable", "1", true)
+local vnpcs_belly_rt_size   = CreateClientConVar("vnpcs_belly_rt_size", "512", true)
+local vnpcs_belly_lit       = CreateClientConVar("vnpcs_belly_lit", "1", true)
+
+RT_SIZE = math.Clamp(vnpcs_belly_rt_size:GetInt(), 128, 1024)
+
 local states = {}
 local captureQueue = {}
 local nextUID = 0
@@ -281,17 +290,131 @@ local function ensureDuplicate(state, predator)
     return state.clone
 end
 
+--[[
+    Belly material construction.
+
+    The old material was a flat UnlitGeneric: the captured torso photo got
+    pasted onto the belly with no lighting response, which is exactly why it
+    looked like a sticker instead of skin.  Now we clone the belly model's own
+    skin shader ($bumpmap / $phong / $halflambert / $surfaceprop ...) and only
+    swap $basetexture for the render target, so the belly shades, bumps and
+    highlights exactly like the VNPC body it is attached to.
+]]
+
+local VMT_PARAM_WHITELIST = {
+    ["$bumpmap"] = true,
+    ["$phong"] = true,
+    ["$phongboost"] = true,
+    ["$phongfresnelranges"] = true,
+    ["$phongexponent"] = true,
+    ["$halflambert"] = true,
+    ["$surfaceprop"] = true,
+    ["$ambientocclusion"] = true,
+    ["$basemapalphaphongmask"] = true,
+    ["$normalmapalphaenvmapmask"] = true,
+    ["$detail"] = true,
+    ["$detailblendmode"] = true,
+    ["$detailscale"] = true
+}
+
+local DEFAULT_BELLY_PARAMS = {
+    ["$bumpmap"] = "models/wormonlooker/belly/normal",
+    ["$phong"] = "1",
+    ["$phongboost"] = "2",
+    ["$phongfresnelranges"] = "[0.1 0.5 1]",
+    ["$phongexponent"] = "15",
+    ["$halflambert"] = "1",
+    ["$ambientocclusion"] = "1",
+    ["$surfaceprop"] = "Flesh"
+}
+
+--- Reads the belly model's own .vmt and returns the shader params that are
+--- safe to reuse on the render-target material.  Returns nil when the file
+--- cannot be read (then the caller falls back to DEFAULT_BELLY_PARAMS).
+local function parseBellyVmt(materialName)
+    if not materialName or materialName == "" then return nil end
+
+    local path = "materials/" .. materialName .. ".vmt"
+    local content = file.Read(path, "GAME")
+    if not content then return nil end
+
+    local params = {}
+    for key, value in string.gmatch(content, '"(%$[%w_]+)"%s*"([^"]*)"') do
+        local lkey = string.lower(key)
+        if VMT_PARAM_WHITELIST[lkey] then
+            params[lkey] = string.gsub(value, "\\", "/")
+        end
+    end
+
+    if not params["$bumpmap"] then
+        params["$bumpmap"] = DEFAULT_BELLY_PARAMS["$bumpmap"]
+    end
+
+    return params
+end
+
+--- The material the belly model uses by default (e.g. "models/wormonlooker/
+--- belly/belly"), so the shader clone matches the actual belly model even
+--- when the entity never called SetMaterial.
+local function getBellyDefaultMaterial(belly)
+    local model = belly:GetModel()
+    if not model or model == "" then return "" end
+
+    local meshes = util.GetModelMeshes(model)
+    if meshes and meshes[1] and meshes[1].material then
+        return meshes[1].material
+    end
+
+    return ""
+end
+
+--- Builds the render-target material for one belly.
+local function makeBellyMaterial(belly, rt)
+    local params = {
+        ["$basetexture"] = rt:GetName(),
+        ["$ignorez"] = "0"
+    }
+    local shader = "UnlitGeneric"
+
+    if vnpcs_belly_lit:GetBool() then
+        shader = "VertexLitGeneric"
+        local vmtSource = belly:GetMaterial()
+        if not vmtSource or vmtSource == "" then
+            vmtSource = getBellyDefaultMaterial(belly)
+        end
+        local vmtParams = parseBellyVmt(vmtSource)
+        for k, v in pairs(vmtParams or DEFAULT_BELLY_PARAMS) do
+            params[k] = v
+        end
+    end
+
+    local matName = "vnpcs_belly_blend_mat_" .. belly:EntIndex() .. "_" .. nextUID
+    local ok, mat = pcall(CreateMaterial, matName, shader, params)
+    if ok and mat then
+        mat:SetTexture("$basetexture", rt)
+        return mat
+    end
+
+    return nil
+end
+
 local function createState(belly)
     nextUID = nextUID + 1
 
     local rtName = "vnpcs_belly_rt_" .. belly:EntIndex() .. "_" .. nextUID
-    local matName = "vnpcs_belly_rt_mat_" .. belly:EntIndex() .. "_" .. nextUID
-    local rt = GetRenderTarget(rtName, RT_SIZE, RT_SIZE)
-    local mat = CreateMaterial(matName, "UnlitGeneric", {
-        ["$basetexture"] = rt:GetName(),
-        ["$ignorez"] = "0"
-    })
-    mat:SetTexture("$basetexture", rt)
+    local rt = GetRenderTarget(rtName, RT_SIZE, RT_SIZE, IMAGE_FORMAT_RGBA8888)
+    local mat = makeBellyMaterial(belly, rt)
+    if not mat then
+        -- Last resort: the previous flat unlit material so the feature never
+        -- hard-fails a belly.
+        mat = CreateMaterial("vnpcs_belly_rt_mat_" .. belly:EntIndex() .. "_" .. nextUID, "UnlitGeneric", {
+            ["$basetexture"] = rt:GetName(),
+            ["$ignorez"] = "0"
+        })
+        if mat then
+            mat:SetTexture("$basetexture", rt)
+        end
+    end
 
     local state = {
         belly = belly,
@@ -335,10 +458,12 @@ local function captureTorso(state, predator)
     local target, mins, maxs = getTorsoTarget(clone)
     local height = math.max(maxs.z - mins.z, 32)
     local width = math.max(maxs.y - mins.y, 24)
-    local distance = math.max(height * 0.72, width * 1.45, 36)
+    -- Frame the torso a bit tighter than before: the captured photo should
+    -- over-cover the belly surface so no hard photo edge shows on the belly.
+    local distance = math.max(height * 0.55, width * 1.15, 30)
     local camPos = target + Vector(distance, 0, height * 0.02)
     local camAng = (target - camPos):Angle()
-    local fov = math.Clamp(32 + (width / height) * 10, 28, 46)
+    local fov = math.Clamp(34 + (width / height) * 12, 34, 52)
 
     local oldX, oldY, oldW, oldH = 0, 0, ScrW(), ScrH()
     if render.GetViewPort then
@@ -347,7 +472,11 @@ local function captureTorso(state, predator)
 
     render.PushRenderTarget(state.rt)
     render.SetViewPort(0, 0, RT_SIZE, RT_SIZE)
-    render.Clear(0, 0, 0, 255, true, true)
+    -- Clear to the belly's own skin color: where the captured torso photo
+    -- does not cover the belly surface, the rim fades into the configured
+    -- skin tone instead of a hard black border.
+    local bellyColor = state.belly:GetColor() or WHITE
+    render.Clear(bellyColor.r or 255, bellyColor.g or 255, bellyColor.b or 255, 255, true, true)
     render.ClearDepth()
 
     if render.FogMode then render.FogMode(MATERIAL_FOG_NONE) end
@@ -374,7 +503,9 @@ local function captureTorso(state, predator)
     render.SetViewPort(oldX or 0, oldY or 0, oldW or ScrW(), oldH or ScrH())
     render.PopRenderTarget()
 
-    state.material:SetTexture("$basetexture", state.rt)
+    if state.material then
+        state.material:SetTexture("$basetexture", state.rt)
+    end
     state.ready = true
     return true
 end
@@ -400,6 +531,7 @@ local function getPredatorForBelly(belly)
 end
 
 function BellyRT.GetMaterial(belly)
+    if not vnpcs_belly_rt_enable:GetBool() then return nil end
     if not IsValid(belly) then return nil end
 
     local predator = getPredatorForBelly(belly)

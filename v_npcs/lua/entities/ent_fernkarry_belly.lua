@@ -96,14 +96,20 @@ function ENT:Draw()
     local rtMaterial = VNPCS_BellyRT and VNPCS_BellyRT.GetMaterial(self)
 
     if rtMaterial then
+        -- See ent_vore_belly: the belly's own tint must not multiply over
+        -- the captured predator torso texture.
+        local bellyColor = self:GetColor()
+        self:SetColor(Color(255, 255, 255, 255))
+
         render.MaterialOverride(rtMaterial)
+        self:DrawModel()
+        render.MaterialOverride(nil)
+
+        self:SetColor(bellyColor)
+        return
     end
 
     self:DrawModel()
-
-    if rtMaterial then
-        render.MaterialOverride(nil)
-    end
 end
 
 local force_struggle = CreateConVar("vnpcs_global_struggle", "0", {FCVAR_ARCHIVE, FCVAR_NOTIFY, FCVAR_REPLICATED})

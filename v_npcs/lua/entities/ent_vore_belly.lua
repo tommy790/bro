@@ -116,13 +116,20 @@ function ENT:Draw()
     local rtMaterial = VNPCS_BellyRT and VNPCS_BellyRT.GetMaterial(self)
 
     if rtMaterial then
+        -- The belly entity's own tint would multiply over the captured
+        -- predator texture and discolour it.  Draw neutral while the render
+        -- target is applied so the torso colors show through exactly.
+        local bellyColor = self:GetColor()
+        self:SetColor(Color(255, 255, 255, 255))
+
         render.MaterialOverride(rtMaterial)
+        self:DrawModel()
+        render.MaterialOverride(nil)
+
+        self:SetColor(bellyColor)
+        return
     end
 
     self:DrawModel()
-
-    if rtMaterial then
-        render.MaterialOverride(nil)
-    end
 end
 include("belly_modules/animations.lua")
