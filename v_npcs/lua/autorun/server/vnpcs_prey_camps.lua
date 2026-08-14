@@ -298,6 +298,7 @@ function VNPC_IsEligiblePreyNPC(ent)
     if not IsValid(ent) or ent:Health() <= 0 then return false end
     if ent.Vored or ent.VNPC_Vored or ent.VNPC_Surrendered then return false end
     if ent.IsDrGNextbot or ent.VNPC_FemaleModelVore or ent.Predator then return false end
+    if ent.VNPC_IsSecretAssassin then return false end
     if VNPC_IsShyPredator and VNPC_IsShyPredator(ent) then return false end
     return (ent:IsNPC() or ent:IsNextBot())
 end
@@ -450,6 +451,7 @@ end
 function VNPC_AssignPreyToCamp(npc, force)
     if not camps_enabled:GetBool() or not VNPC_IsEligiblePreyNPC(npc) then return nil end
     if npc.VNPC_IsPermanentFortPredator then return nil end
+    if npc.VNPC_IsSecretAssassin then return nil end
 
     if not npc.VNPC_PreyPersonality and not npc.PreyPersonality then
         local preyPersList = { "fighter", "passive", "panicked", "stubborn", "willing" }
@@ -1351,6 +1353,7 @@ function VNPC_PreyCampLove_AI(camp, now)
     local males = {}
     for _, mem in ipairs(camp.members) do
         if IsValid(mem) and mem:Health() > 0 and not mem.Vored and not mem.VNPC_Vored and not mem:IsPlayer() then
+            if mem.VNPC_IsSecretAssassin then continue end
             if VNPC_IsAdultPreyCitizen and not VNPC_IsAdultPreyCitizen(mem) then continue end
             if VNPC_IsFemalePreyCitizen(mem) then
                 table.insert(females, mem)
@@ -1840,6 +1843,9 @@ hook.Add("Think", "VNPC_PreyCamps_AI_Loop", function()
                 if pred.VNPC_PreyCampID and pred.VNPC_PreyCampID == camp.id then continue end
                 if VNPC_IsFemalePreyCitizen and VNPC_IsFemalePreyCitizen(pred) then continue end
                 if pred.IsDrGNextbot or pred.VNPC_FemaleModelVore or pred.Predator then
+                    -- Undercover assassins walk through the gate as "citizens" — no wall eating.
+                    if VNPC_IsAssassinUndercover and VNPC_IsAssassinUndercover(pred) then continue end
+                    if pred.VNPC_IsSecretAssassin and pred.VNPC_AssassinPhase == "travel" then continue end
                     local belly = pred.VNPC_Belly or pred.Belly
                     local hasSpace = not IsValid(belly) or not belly.Prey or #belly.Prey < 5
                     if hasSpace and (pred.VNPC_NextWallBreachTime or 0) <= now then
@@ -1861,6 +1867,8 @@ hook.Add("Think", "VNPC_PreyCamps_AI_Loop", function()
                 if pred.VNPC_PreyCampID and pred.VNPC_PreyCampID == camp.id then continue end
                 if VNPC_IsFemalePreyCitizen and VNPC_IsFemalePreyCitizen(pred) then continue end
                 if pred.IsDrGNextbot or pred.VNPC_FemaleModelVore or pred.Predator then
+                    if VNPC_IsAssassinUndercover and VNPC_IsAssassinUndercover(pred) then continue end
+                    if pred.VNPC_IsSecretAssassin and pred.VNPC_AssassinPhase == "travel" then continue end
                     local belly = pred.VNPC_Belly or pred.Belly
                     local hasSpace = not IsValid(belly) or not belly.Prey or #belly.Prey < 5
                     if hasSpace and (pred.VNPC_NextHutBreachTime or 0) <= now then
@@ -1911,10 +1919,15 @@ hook.Add("Think", "VNPC_PreyCamps_AI_Loop", function()
         local nearEnemy = nil
         for _, ent in ipairs(ents.FindInSphere(camp.pos, 800)) do
             if IsValid(ent) and ent:Health() > 0 and (ent.IsDrGNextbot or ent.VNPC_FemaleModelVore or ent.Predator) then
-                if not ent.VNPC_IsPermanentFortPredator then
-                    nearEnemy = ent
-                    break
+                if ent.VNPC_IsPermanentFortPredator then continue end
+                -- Undercover secret assassins pose as camp citizens — do not raise alarm.
+                if VNPC_IsAssassinUndercover and VNPC_IsAssassinUndercover(ent) then continue end
+                if ent.VNPC_IsSecretAssassin and ent.VNPC_AssassinPhase == "travel" then continue end
+                if ent.VNPC_PreyCampID and ent.VNPC_PreyCampID == camp.id and not (VNPC_IsAssassinNightHunting and VNPC_IsAssassinNightHunting(ent)) then
+                    continue
                 end
+                nearEnemy = ent
+                break
             end
         end
 

@@ -358,6 +358,8 @@ local function predIsHunter(pred)
     if pred.Vored or pred.VNPC_Vored then return false end
     if pred.VNPC_IsSleeping then return false end
     if pred.VNPC_IsDrinkingWater or pred.VNPC_IsMating or pred.VNPC_InChildbirthPose then return false end
+    -- Secret assassins only hunt during their night-raid phase (mission AI owns them otherwise).
+    if pred.VNPC_IsSecretAssassin and pred.VNPC_AssassinPhase ~= "night" then return false end
     -- Full belly (capacity trait): hunters with no room digest instead of hunting
     if VNPC_GetBellyCapacity then
         local belly = pred.VNPC_Belly or pred.Belly

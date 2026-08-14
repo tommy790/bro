@@ -407,7 +407,18 @@ function ENT:AddPrey(prey)
     if IsValid(self.NPC) and VNPC_IsFamilyOrMate and VNPC_IsFamilyOrMate(self.NPC, prey) then return false end
     if not (IsValid(self.NPC) and self.NPC.VNPC_IsWildWanderer and self.NPC.VNPC_WildType == "predator") and VNPC_IsProtectedChildPrey and VNPC_IsProtectedChildPrey(prey) then return false end
     if VNPC_IsPreyEmissary and VNPC_IsPreyEmissary(prey) then return false end
-    if prey.VNPC_PreyCampID and self.NPC and self.NPC.VNPC_PreyCampID and prey.VNPC_PreyCampID == self.NPC.VNPC_PreyCampID then return false end
+    if VNPC_IsAssassinUndercover and IsValid(self.NPC) and VNPC_IsAssassinUndercover(self.NPC) then return false end
+    do
+        local pred = self.NPC
+        local sameCamp = prey.VNPC_PreyCampID and IsValid(pred) and pred.VNPC_PreyCampID and prey.VNPC_PreyCampID == pred.VNPC_PreyCampID
+        if sameCamp then
+            local nightRaid = pred.VNPC_AssassinAllowCampSwallow
+                or (VNPC_IsAssassinNightHunting and VNPC_IsAssassinNightHunting(pred))
+            if not nightRaid then
+                return false
+            end
+        end
+    end
     for _, info in ipairs(self.Prey) do
         if info and info.Entity == prey then return false end
     end

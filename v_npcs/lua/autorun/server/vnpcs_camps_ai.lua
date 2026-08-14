@@ -76,6 +76,7 @@ function VNPC_AssignPredatorToCamp(pred, force)
     if not camps_enabled:GetBool() then return nil end
     if not IsValid(pred) or pred:Health() <= 0 then return nil end
     if pred.VNPC_IsPermanentFortPredator then return nil end
+    if pred.VNPC_IsSecretAssassin then return nil end
 
     if not pred.VNPC_PredatorPersonality and not (pred.VoreSettings and pred.VoreSettings.PredatorPersonality) then
         local predPersList = { "aggressive", "opportunistic", "glutton", "shy", "selective", "gentle", "loving" }
@@ -554,6 +555,7 @@ hook.Add("Think", "VNPC_PredatorCamps_AI_Loop", function()
         if not pred.VNPC_FemaleModelVore and VNPC_GiveFemaleModelVore then
             VNPC_GiveFemaleModelVore(pred)
         end
+        if pred.VNPC_IsSecretAssassin then continue end
         if (not pred.VNPC_CampID or pred.VNPC_CampID == "wild") and not pred.VNPC_IsPermanentFortPredator then
             pred.VNPC_CampID = nil
             VNPC_AssignPredatorToCamp(pred)

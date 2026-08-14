@@ -139,6 +139,34 @@ ConVars: `vnpcs_traits_enabled`, `vnpcs_traits_random_chance`,
 
 ---
 
+## 5. Secret Assassin Predators
+**File:** `lua/autorun/server/vnpcs_secret_assassins.lua`
+
+Predator camps can dispatch an empty-bellied member as a **secret assassin**
+to a nearby prey camp:
+
+1. **Travel** — walks to the prey fort under `FL_NOTARGET`, wearing a female
+   citizen disguise model.
+2. **Undercover** — enrolls as a camp citizen, stays friendly (`D_LI`), idles
+   near the fire/huts, and refuses to hunt or swallow.
+3. **Night** — when `VNPC_IsStormFox2Night()` (or the simulated night concommand)
+   is true, she drops the disguise, turns hostile, and starts swallowing camp
+   members (prefers sleepers; does not wake them).
+4. **Escape** — after `vnpcs_assassin_max_swallows` (default 3) or a full belly,
+   or at dawn, she leaves the prey roster and runs home to her predator camp.
+
+ConVars: `vnpcs_secret_assassins_enabled`, `vnpcs_assassin_dispatch_interval`,
+`vnpcs_assassin_max_active`, `vnpcs_assassin_min_prey_camp`,
+`vnpcs_assassin_hunger_thresh`, `vnpcs_assassin_max_swallows`,
+`vnpcs_assassin_swallow_range`.
+
+Commands: `vnpcs_assassin_status`, `vnpcs_test_secret_assassin`,
+`vnpcs_test_assassin_night`, `vnpcs_clear_secret_assassins`.
+
+Spawn menu: **V-NPCs → Status & Traits → Secret Assassins**.
+
+---
+
 ## Testing
 - Syntax check (GMod LuaJIT dialect, incl. `continue`): `python3 tools/check_lua_syntax.py v_npcs`
 - Headless Lua execution of traits + weight paint: `python3 tools/run_modules_lua.py`

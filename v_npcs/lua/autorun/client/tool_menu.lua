@@ -245,6 +245,37 @@ local function populate()
         end
     end)
 
+    spawnmenu.AddToolMenuOption("V-NPCs", "Status & Traits", "vnpcs_secret_assassins", "Secret Assassins", "", "", function(panel)
+        panel:ClearControls()
+        panel:Help("Secret Assassin Predators")
+        panel:CheckBox("Enable Secret Assassins", "vnpcs_secret_assassins_enabled")
+        panel:NumSlider("Dispatch Interval (s)", "vnpcs_assassin_dispatch_interval", 20, 300, 0)
+        panel:NumSlider("Max Active Assassins", "vnpcs_assassin_max_active", 1, 8, 0)
+        panel:NumSlider("Min Prey Camp Size", "vnpcs_assassin_min_prey_camp", 2, 20, 0)
+        panel:NumSlider("Hunger Threshold", "vnpcs_assassin_hunger_thresh", 0, 100, 0)
+        panel:NumSlider("Max Swallows / Raid", "vnpcs_assassin_max_swallows", 1, 8, 0)
+        panel:NumSlider("Swallow Range", "vnpcs_assassin_swallow_range", 60, 250, 0)
+        panel:ControlHelp("Predator camps send undercover assassins to prey camps. They pose as friendly citizens by day; when night falls they drop the act and start swallowing camp members, then escape home.")
+        do
+            local btn = panel:Button("Assassin Status")
+            btn.DoClick = function()
+                RunConsoleCommand("vnpcs_assassin_status")
+            end
+            local btn2 = panel:Button("Test: Dispatch Assassin")
+            btn2.DoClick = function()
+                RunConsoleCommand("vnpcs_test_secret_assassin")
+            end
+            local btn3 = panel:Button("Test: Force Night Raid")
+            btn3.DoClick = function()
+                RunConsoleCommand("vnpcs_test_assassin_night")
+            end
+            local btn4 = panel:Button("Clear Assassins")
+            btn4.DoClick = function()
+                RunConsoleCommand("vnpcs_clear_secret_assassins")
+            end
+        end
+    end)
+
     spawnmenu.AddToolMenuOption("V-NPCs", "Info", "vnpcs_credits", "Credits", "", "", function(panel)
         panel:ClearControls()
 

@@ -303,6 +303,7 @@ if SERVER then
         if pred.VNPC_IsPregnant or pred.VNPC_IsPregnantWithSister then return false end
         if VNPC_IsBusyMating and VNPC_IsBusyMating(pred) then return false end
         if pred.Swallowing or pred.VNPC_IsCarryingMateForCamp or pred.VNPC_IsInfiltratingFort then return false end
+        if pred.VNPC_IsSecretAssassin then return false end
         if pred.VNPC_IsSleeping then return false end
         return true
     end

@@ -156,7 +156,12 @@ function VNPC_GiveFemaleModelVore(ent)
         end
         if not (self.VNPC_IsWildWanderer and self.VNPC_WildType == "predator") and VNPC_IsProtectedChildPrey and VNPC_IsProtectedChildPrey(target) then return false end
         if VNPC_IsPreyEmissary and VNPC_IsPreyEmissary(target) then return false end
-        if target.VNPC_PreyCampID and self.VNPC_PreyCampID and target.VNPC_PreyCampID == self.VNPC_PreyCampID then return false end
+        -- Secret assassins undercover must not eat; at night they may swallow same-camp prey.
+        if VNPC_IsAssassinUndercover and VNPC_IsAssassinUndercover(self) then return false end
+        local sameCamp = target.VNPC_PreyCampID and self.VNPC_PreyCampID and target.VNPC_PreyCampID == self.VNPC_PreyCampID
+        if sameCamp and not (self.VNPC_AssassinAllowCampSwallow or (VNPC_IsAssassinNightHunting and VNPC_IsAssassinNightHunting(self))) then
+            return false
+        end
         if VNPC_CanSwallowOwnSpecies and not VNPC_CanSwallowOwnSpecies(self, target) then return false end
         if not target:GetModel() or target:GetClass():find("func") then return false end
         
@@ -631,6 +636,12 @@ hook.Add("Think", "VNPC_FemaleModelVore_AI", function()
         if not IsValid(npc) or not npc.VNPC_FemaleModelVore then continue end
         if (npc.VNPC_NextAIThink or 0) > now then continue end
         npc.VNPC_NextAIThink = now + 0.5
+
+        -- Secret assassins are driven by vnpcs_secret_assassins.lua while on mission.
+        if npc.VNPC_IsSecretAssassin and npc.VNPC_AssassinPhase ~= "night" then
+            if npc.SetEnemy then pcall(npc.SetEnemy, npc, nil) end
+            continue
+        end
         
         local belly = npc.VNPC_Belly or npc.Belly
         if IsValid(belly) and (VNPC_BellyHasSwallowedPrey and VNPC_BellyHasSwallowedPrey(belly) or ((not VNPC_BellyHasSwallowedPrey) and (belly.DigestionPhase ~= 0 or (belly.Prey and #belly.Prey > 0)))) then
@@ -771,6 +782,9 @@ hook.Add("Think", "VNPC_WillingPrey_AI", function()
             -- Search for nearby female model vore predator
             for _, pred in ipairs(ents.FindInSphere(npc:GetPos(), 600)) do
                 if IsValid(pred) and pred ~= npc and (pred.Predator or pred.VNPC_FemaleModelVore or VNPC_IsFemaleModelNPC(pred)) and not pred.Vored then
+                    if pred.VNPC_IsSecretAssassin and pred.VNPC_AssassinPhase ~= "night" then
+                        continue
+                    end
                     if npc.VNPC_PreyCampID and pred.VNPC_PreyCampID and npc.VNPC_PreyCampID == pred.VNPC_PreyCampID then
                         continue
                     end

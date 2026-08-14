@@ -10,6 +10,8 @@ function VNPC_SelectSmartPreyTarget(pred, search_radius)
     local enabled = GetConVar("vnpcs_smart_ai_enabled")
     if enabled and not enabled:GetBool() then return nil end
     if pred.VNPC_IsCarryingPreyForCamp then return nil end
+    -- Undercover / traveling secret assassins are driven by their own mission AI.
+    if pred.VNPC_IsSecretAssassin and pred.VNPC_AssassinPhase ~= "night" then return nil end
 
     -- Full belly (capacity trait): no point picking targets we cannot swallow
     local belly = VNPC_GetPredBelly and VNPC_GetPredBelly(pred) or pred.VNPC_Belly or pred.Belly

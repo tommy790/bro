@@ -25,6 +25,8 @@ hook.Add("Think", "VNPCS_SleepSystem_Loop", function()
     for _, ent in ipairs(ents.FindByClass("npc_*")) do
         local ok, role = VNPC_IsSleepEligible(ent)
         if not ok then continue end
+        -- Secret assassins stay awake on mission (undercover / night raid / escape).
+        if ent.VNPC_IsSecretAssassin then continue end
         if (ent.VNPC_NextSleepThink or 0) > now then continue end
         ent.VNPC_NextSleepThink = now + 1.0
 
@@ -98,8 +100,8 @@ end)
 hook.Add("EntityTakeDamage", "VNPCS_SleepSystem_WakeOnDamage", function(ent, dmginfo)
     if IsValid(ent) and ent.VNPC_IsSleeping then
         local attacker = dmginfo:GetAttacker()
-        if IsValid(attacker) and attacker.VNPC_IsInfiltratingFort then
-            -- Infiltrating predator quietly swallowing sleeping prey! Do not wake the victim!
+        if IsValid(attacker) and (attacker.VNPC_IsInfiltratingFort or (VNPC_IsAssassinNightHunting and VNPC_IsAssassinNightHunting(attacker))) then
+            -- Infiltrating / night-raid assassin quietly swallowing sleeping prey — do not wake the victim.
             return
         end
         ent.VNPC_IsSleeping = false
