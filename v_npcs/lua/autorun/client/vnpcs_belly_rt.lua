@@ -292,16 +292,14 @@ local function getTorsoTarget(ent)
         center = sum / found
     end
 
-    -- Nudged toward the belly/lower-torso rather than mid-chest (the bone
-    -- flattening below is what actually keeps breasts out of frame - this
-    -- just keeps the framing centered on stomach skin instead of pecs/collar).
     local height = maxs.z - mins.z
     center.x = 0
     center.y = 0
-    center.z = math.Clamp(center.z, mins.z + height * 0.36, mins.z + height * 0.58)
+    center.z = math.Clamp(center.z, mins.z + height * 0.35, mins.z + height * 0.68)
 
     return center, mins, maxs
 end
+
 
 
 local function ensureDuplicate(state, predator)
@@ -380,16 +378,6 @@ local function captureTorso(state, predator)
     local camAng = (target - camPos):Angle()
     local fov = math.Clamp(32 + (width / height) * 10, 28, 46)
 
-    -- Same front-facing direction as the crop above, just pulled back with a
-    -- wider FOV so it covers the whole RT. This is NOT a second viewpoint of
-    -- the back/sides - it's the same single camera angle, just zoomed out -
-    -- used purely so every pixel of the texture has some skin-toned content
-    -- under it instead of flat black wherever the belly's UV falls outside
-    -- the tight torso crop.
-    local fillDistance = distance * 2.6
-    local fillCamPos = target + Vector(fillDistance, 0, height * 0.02)
-    local fillFov = math.Clamp(fov + 34, 55, 90)
-
     local oldX, oldY, oldW, oldH = 0, 0, ScrW(), ScrH()
     if render.GetViewPort then
         oldX, oldY, oldW, oldH = render.GetViewPort()
@@ -412,37 +400,6 @@ local function captureTorso(state, predator)
     render.SetColorModulation(1, 1, 1)
     render.SetBlend(1)
 
-    -- Throwaway wide draw, purely so we can sample a representative skin
-    -- tone off of it (still the same front angle, nothing new is "seen").
-    cam.Start3D(fillCamPos, camAng, fillFov, 0, 0, RT_SIZE, RT_SIZE, 1, fillDistance + height * 3)
-        cam.IgnoreZ(false)
-        clone:DrawModel()
-    cam.End3D()
-
-    local sampleR, sampleG, sampleB = 190, 160, 140
-    if render.CapturePixels and render.ReadPixel then
-        render.CapturePixels()
-        local r, g, b = render.ReadPixel(RT_SIZE * 0.5, RT_SIZE * 0.5)
-        if r and g and b and (r + g + b) > 0 then
-            sampleR, sampleG, sampleB = r, g, b
-        end
-    end
-
-    -- Re-clear using the sampled skin tone instead of black, then redraw the
-    -- same two front-facing passes on top of it. Anything the model itself
-    -- doesn't cover (gaps around limbs, the very edges of the frame, or UV
-    -- space the tight crop below doesn't reach) now falls back to a
-    -- plausible skin tone instead of a black void.
-    render.Clear(sampleR, sampleG, sampleB, 255, true, true)
-    render.ClearDepth()
-
-    cam.Start3D(fillCamPos, camAng, fillFov, 0, 0, RT_SIZE, RT_SIZE, 1, fillDistance + height * 3)
-        cam.IgnoreZ(false)
-        clone:DrawModel()
-    cam.End3D()
-
-    render.ClearDepth()
-
     cam.Start3D(camPos, camAng, fov, 0, 0, RT_SIZE, RT_SIZE, 1, distance + height * 2)
         cam.IgnoreZ(false)
         clone:DrawModel()
@@ -459,7 +416,6 @@ local function captureTorso(state, predator)
     state.ready = true
     return true
 end
-
 
 local function removeState(belly)
     local state = states[belly]
