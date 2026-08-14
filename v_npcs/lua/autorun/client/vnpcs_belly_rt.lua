@@ -292,13 +292,13 @@ local function getTorsoTarget(ent)
         center = sum / found
     end
 
-    -- Biased low (waist/abdomen) rather than mid-chest, on top of the bone
-    -- flattening below, so the captured skin sample reads as belly/stomach
-    -- skin rather than chest.
+    -- Nudged toward the belly/lower-torso rather than mid-chest (the bone
+    -- flattening below is what actually keeps breasts out of frame - this
+    -- just keeps the framing centered on stomach skin instead of pecs/collar).
     local height = maxs.z - mins.z
     center.x = 0
     center.y = 0
-    center.z = math.Clamp(center.z, mins.z + height * 0.28, mins.z + height * 0.52)
+    center.z = math.Clamp(center.z, mins.z + height * 0.36, mins.z + height * 0.58)
 
     return center, mins, maxs
 end
