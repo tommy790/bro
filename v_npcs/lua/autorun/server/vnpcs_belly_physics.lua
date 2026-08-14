@@ -302,6 +302,58 @@ if SERVER then
         return nil
     end
 
+    -- ------------------------------------------------------------------
+    -- Rotation composition helpers.
+    --
+    -- GMod Angle does NOT support Angle * Angle (its __mul only takes a
+    -- scalar), so all angle composition is done with explicit quaternions.
+    -- Source Euler decomposition is R = Rz(yaw) * Ry(pitch) * Rx(roll), i.e.
+    --   q = qYaw * qPitch * qRoll.
+    -- Offsets are right-multiplied (applied in the bone's own local frame),
+    -- which matches how the engine applies ManipulateBoneAngles.
+    -- ------------------------------------------------------------------
+    local function matrixEulerToQuat(ang)
+        local p = math.rad(ang.p or 0)
+        local y = math.rad(ang.y or 0)
+        local r = math.rad(ang.r or 0)
+        local cp, sp = math.cos(p * 0.5), math.sin(p * 0.5)
+        local cy, sy = math.cos(y * 0.5), math.sin(y * 0.5)
+        local cr, sr = math.cos(r * 0.5), math.sin(r * 0.5)
+        return {
+            x = sr * cp * cy - cr * sp * sy,
+            y = cr * sp * cy + sr * cp * sy,
+            z = cr * cp * sy - sr * sp * cy,
+            w = cr * cp * cy + sr * sp * sy
+        }
+    end
+
+    local function matrixQuatMul(a, b)
+        return {
+            x = a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y,
+            y = a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x,
+            z = a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w,
+            w = a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z
+        }
+    end
+
+    local function matrixQuatToEuler(q)
+        local sinp = math.Clamp(2 * (q.w * q.y - q.z * q.x), -1, 1)
+        local pitch = math.asin(sinp)
+        local yaw = math.atan2(2 * (q.w * q.z + q.x * q.y), 1 - 2 * (q.y * q.y + q.z * q.z))
+        local roll = math.atan2(2 * (q.w * q.x + q.y * q.z), 1 - 2 * (q.x * q.x + q.y * q.y))
+        return Angle(math.deg(pitch), math.deg(yaw), math.deg(roll))
+    end
+
+    -- world = local * offset  (offset applied in the local frame)
+    local function matrixAngleCompose(a, b)
+        return matrixQuatToEuler(matrixQuatMul(matrixEulerToQuat(a), matrixEulerToQuat(b)))
+    end
+
+    local function matrixAngleInverse(ang)
+        local q = matrixEulerToQuat(ang)
+        return matrixQuatToEuler({ x = -q.x, y = -q.y, z = -q.z, w = q.w })
+    end
+
     -- Pose the ragdoll into a curled swallowed ball and store per-bone local
     -- offsets/angles relative to the pelvis so the update loop can drive it.
     --
@@ -335,7 +387,7 @@ if SERVER then
             return fallback
         end
 
-        local pelvisAng = pelvis.ang * poseAng("ValveBiped.Bip01_Pelvis", Angle(0, 0, 0))
+        local pelvisAng = matrixAngleCompose(pelvis.ang, poseAng("ValveBiped.Bip01_Pelvis", Angle(0, 0, 0)))
         pelvis.po:SetAngles(pelvisAng)
         pelvis.po:SetPos(pelvis.pos)
 
@@ -349,7 +401,7 @@ if SERVER then
             local child = rest[link.name]
             if parent and child then
                 local parentRest = rest[link.parent]
-                local newAng = child.ang * poseAng(link.name, Angle(0, 0, 0))
+                local newAng = matrixAngleCompose(child.ang, poseAng(link.name, Angle(0, 0, 0)))
                 -- rest offset of the child from its parent, in the child's rest frame
                 local restOffset = child.ang:WorldToLocal(child.pos - (parentRest and parentRest.pos or parent.pos))
                 local newPos = parent.pos + newAng:LocalToWorld(restOffset)
@@ -364,7 +416,7 @@ if SERVER then
                     lx = lp.x,
                     ly = lp.y,
                     lz = lp.z,
-                    localAng = pelvisAng:Inverse() * newAng
+                    localAng = matrixAngleCompose(matrixAngleInverse(pelvisAng), newAng)
                 })
             end
         end
@@ -542,7 +594,7 @@ if SERVER then
                                 + baseAng:Forward() * bone.ly
                                 + baseAng:Up() * (bone.lz + limbWob * 0.3)
                             bone.phys:SetPos(worldPos)
-                            bone.phys:SetAngles(baseAng * bone.localAng)
+                            bone.phys:SetAngles(matrixAngleCompose(baseAng, bone.localAng))
                         end
                     end
                 end

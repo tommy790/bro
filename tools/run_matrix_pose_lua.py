@@ -16,6 +16,10 @@ lua = LuaRuntime(unpack_returned_tuples=True)
 
 PRELUDE = r"""
 math.Clamp = function(v, lo, hi) return math.max(lo, math.min(hi, v)) end
+-- Lua 5.3+ removed math.atan2; GMod's LuaJIT has it. Polyfill for the harness.
+if not math.atan2 then
+    math.atan2 = function(y, x) return math.atan(y, x) end
+end
 CVARS = {}
 function GetConVar(name)
     local cv = CVARS[name]
@@ -150,20 +154,25 @@ local ANGLE_MT = {
 }
 
 function AngleFromQ(q)
-    return setmetatable({ q = q }, ANGLE_MT)
+    local p, y, r = qToEuler(q)
+    return setmetatable({ q = q, p = p, y = y, r = r }, ANGLE_MT)
 end
 
 function Angle(p, y, r)
-    return AngleFromQ(qFromEuler(math.rad(p or 0), math.rad(y or 0), math.rad(r or 0)))
+    p, y, r = p or 0, y or 0, r or 0
+    return setmetatable({
+        p = p, y = y, r = r,
+        q = qFromEuler(math.rad(p), math.rad(y), math.rad(r)),
+    }, ANGLE_MT)
 end
 
+ANGLE_MT.__index = ANGLE_MT.__index
 ANGLE_MT.__mul = function(a, b)
     if type(b) == "table" and b.q then
         return AngleFromQ(qmul(a.q, b.q))
     end
     error("Angle * non-Angle")
 end
-ANGLE_MT.__index = ANGLE_MT.__index
 
 function isangle(v) return getmetatable(v) == ANGLE_MT end
 """
