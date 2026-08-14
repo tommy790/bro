@@ -5,19 +5,29 @@ Four system remakes added on top of the existing V-NPCs architecture.
 ---
 
 ## 1. Dynamic Weight Painting & Mesh Deform
-**Files:** `lua/autorun/sh_vnpc_weight_paint.lua` (new), edits in
+**Files:** `lua/autorun/sh_vnpc_weight_paint.lua`, edits in
 `lua/autorun/sh_vnpc_gpu_belly.lua`
 
 Every swallowed entity becomes a **volumetric shape blob** built from its
 *measured* body parts (`VNPC_MeasureBodyParts`: torso/head/pelvis width,
 limb length, model scale) and physics mass. The old "one rigid teardrop belly"
-is replaced by a procedurally deformed mesh:
+is replaced by a procedurally deformed mesh, and blob **positions** are laid
+out by a deterministic bounding-box packer rather than a live simulation
+(see system 2 for why):
 
 - **Blob bounding box drives the belly ellipsoid** — a long prey makes a long
   belly, a wide prey makes a wide belly, multiple prey stack into a bigger one.
-- **Per-vertex gaussian weight painting** adds a lump for every prey that
-  tracks its live simulated position inside the belly (see system 2), so the
-  belly visibly bulges where the prey actually is.
+- **Shelf packing (`VNPC_DefaultBlobLayout`)** lays bodies out shoulder-to-
+  shoulder along the belly's width using each blob's *real measured width* -
+  their widths add together, so 2+ similarly-sized prey genuinely reads as a
+  wider belly instead of a rounder single blob. An adaptive row-width budget
+  (not a fixed headcount) means a row overflows into a second, deeper row
+  once it can't realistically fit another body, instead of the belly getting
+  absurdly wide. It's pure math: the same prey list always produces the same
+  layout, so it can't desync, jitter, or freeze mid-pose.
+- **Per-vertex gaussian weight painting** adds a lump for every prey at its
+  packed position inside the belly, so the belly visibly bulges where each
+  prey actually is.
 - **Asymmetric skeleton stretching** — the generated belly bones shift toward
   the center of mass, and the character's own spine/pelvis/thigh bones are
   scaled per-axis and per-side, so even stock models without belly bones grow a
@@ -26,38 +36,42 @@ is replaced by a procedurally deformed mesh:
 ConVars: `vnpcs_weight_paint_enabled`, `vnpcs_weight_paint_lumps`,
 `vnpcs_weight_paint_amp`, `vnpcs_weight_paint_asymmetry`.
 Status: `vnpcs_weight_paint_status`; test: `vnpcs_test_paint_blob [w] [h] [d]`.
+Headless packing test: `python3 tools/run_box_packing_lua.py`.
 
-## 2. Full Physics-Driven Digestion (Ragdoll Matrix)
-**Files:** `lua/autorun/server/vnpcs_belly_physics.lua` (new)
+## 2. Full Physics-Driven Digestion — replaced with bounding-box shape (#1)
+**Files:** `lua/autorun/server/vnpcs_belly_physics.lua`
 
-Prey are no longer "an invisible inventory slot". A live mass-spring simulation
-runs inside the belly volume (the integrator `VNPC_BellyPhysicsStep` is pure
-math, mirror-tested by `test_belly_physics_sim.py`):
+This used to be a full mass-spring physics simulation per swallowed prey,
+plus frozen `prop_ragdoll` copies driven bone-by-bone (hand-rolled quaternion
+FK) to visually ride inside the belly. It didn't hold up in practice: the
+ragdoll posing crashed repeatedly (`bad argument #2 to __mul` in the
+quaternion math, copies frozen in their bind pose on some skeletons), and
+independently of that, the physics simulation's output never actually
+reached the belly mesh in the first place — a field-name mismatch
+(`sh_vnpc_weight_paint.lua` read `m.pos`/`m.vel`, but the simulation stored
+`m.x, m.y, m.z`/`m.vx, m.vy, m.vz`) meant the "live jiggle" was silently
+never applied, and blob positions were *already* falling back to the
+deterministic layout the whole time.
 
-- Every swallowed prey is a **mass point** with gravity, drag, pairwise prey
-  repulsion, soft-wall containment inside the measured belly ellipsoid, and
-  **struggle impulses** scaled by personality *and* traits.
-- The aggregate center of mass, slosh vector, and per-prey positions drive the
-  weight-painted mesh, the visual belly jiggle, and slosh sounds.
+Given that, the whole physics/ragdoll engine has been removed rather than
+patched. What survives in `vnpcs_belly_physics.lua` is just the movement
+weight penalty:
+
 - **Weight penalty:** a full belly slows the predator down
-  (`VNPC_GetBellyWeightSlow`, integrated into DrGBase `GetAdjustedSpeeds`).
-- **Ragdoll matrix visuals:** frozen `prop_ragdoll` copies of swallowed NPCs
-  ride inside the belly (visible with the inside-camera). A prop_ragdoll's
-  bones are owned by its physics objects (entity parenting alone leaves it
-  frozen in the standing bind pose), so each copy is first curled into the
-  addon's proven in-game sitting keyframe (`VNPC_ChildbirthSittingPoseKeyframe`
-  — knees up, shins folded, arms wrapped) via rigid rest-geometry FK, then
-  every bone physics object is driven to its prey mass position each tick,
-  wobbling while the prey struggles.
+  (`VNPC_GetBellyWeightSlow`, integrated into DrGBase `GetAdjustedSpeeds`),
+  now computed directly from `VNPC_GetBellyDeformMetrics`'s total mass
+  instead of a per-tick simulation.
+- Belly shape/lump positioning is entirely handled by the bounding-box
+  packer in system #1 above.
+- The dedicated locomotion-based belly slosh sound system
+  (`vnpcs_slosh_sounds.lua`) is unrelated to this and untouched — it never
+  depended on the physics simulation.
 
-ConVars: `vnpcs_belly_physics_enabled`, `vnpcs_belly_physics_rate`,
-`vnpcs_belly_ragdoll_visual`, `vnpcs_belly_ragdoll_max`,
-`vnpcs_belly_weight_slow`, `vnpcs_belly_struggle_kick`.
-Status: `vnpcs_belly_physics_status`; tests: `vnpcs_belly_physics_sim`
-(headless 6-second sim), `vnpcs_test_belly_kick`.
-Headless mirror test: `python3 v_npcs/test_belly_physics_sim.py`.
+ConVars: `vnpcs_belly_physics_enabled`, `vnpcs_belly_weight_slow`.
+Status: `vnpcs_belly_physics_status`.
 
 ## 3. Smart Nextbot AI & Navigation Mesh
+
 **Files:** `lua/autorun/server/vnpcs_hunter_ai.lua` (new), edits in
 `lua/autorun/server/vnpcs_smart_ai.lua`
 
@@ -127,6 +141,6 @@ ConVars: `vnpcs_traits_enabled`, `vnpcs_traits_random_chance`,
 
 ## Testing
 - Syntax check (GMod LuaJIT dialect, incl. `continue`): `python3 tools/check_lua_syntax.py v_npcs`
-- Headless Lua execution of the physics module: `python3 tools/run_belly_physics_lua.py`
 - Headless Lua execution of traits + weight paint: `python3 tools/run_modules_lua.py`
-- Python mirror test of the integrator math: `python3 v_npcs/test_belly_physics_sim.py`
+- Headless Lua execution of the bounding-box belly shape packer: `python3 tools/run_box_packing_lua.py`
+- Swallow animation keyframe alignment check: `python3 v_npcs/test_swallow_alignment_sim.py`

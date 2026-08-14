@@ -264,7 +264,7 @@ end)
 hook.Add("OnEntityCreated", "VNPC_PreventSwallowedDuplicateRagdoll", function(ent)
     timer.Simple(0, function()
         if not IsValid(ent) then return end
-        if ent.VNPC_RagdollMatrix then return end -- belly-physics matrix copies are fine
+        if ent.VNPC_RagdollMatrix then return end -- kept for safety; the belly-physics ragdoll-copy system that set this flag has been removed, so this is now a dead/no-op guard
         if ent:GetClass() == "prop_ragdoll" or ent.VNPC_IsCorpse then
             local owner = ent:GetOwner()
             if IsValid(owner) and (owner.Vored or owner.VNPC_Vored or owner.VNPC_IsDeadAndAbsorbed) then

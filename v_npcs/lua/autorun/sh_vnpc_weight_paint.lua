@@ -1,15 +1,21 @@
 -- V-NPCs Dynamic Weight Painting & Procedural Mesh Deform (sh_vnpc_weight_paint.lua)
 -- Replaces the rigid "one fixed belly shape" approach with a procedural deformation
 -- model: every swallowed entity becomes a volumetric mass blob (from measured body
--- parts: torso width/depth, head size, pelvis, model scale). Blobs are simulated by
--- vnpcs_belly_physics.lua (server) and replicated, then the GPU belly mesh and the
--- character's own bones are deformed per-blob:
+-- parts: torso width/depth, head size, pelvis, model scale). Blob POSITIONS are laid
+-- out by a deterministic bounding-box "shelf packing" (VNPC_DefaultBlobLayout below)
+-- rather than a live physics simulation - an earlier "Ragdoll Matrix" mass-spring sim
+-- + prop_ragdoll posing approach was tried in vnpcs_belly_physics.lua and removed
+-- (it was fragile/crash-prone and, on top of that, never actually reached this file
+-- due to a field-name bug, so the blob positions were already purely deterministic
+-- in practice). The GPU belly mesh and the character's own bones are deformed
+-- per-blob:
 --   * the belly ellipsoid stretches to the bounding box of all blobs (long prey =
 --     long belly, wide prey = wide belly, one-sided prey = asymmetric bulge),
---   * per-vertex gaussian weight painting adds local lumps that track each prey's
---     live position inside the belly ("weight painting" over the model surface),
+--   * per-vertex gaussian weight painting adds local lumps at each prey's packed
+--     position inside the belly ("weight painting" over the model surface),
 --   * spine/pelvis/thigh bones are scaled asymmetrically from the blob layout so
 --     even models without belly bones visibly stretch.
+
 
 CreateConVar("vnpcs_weight_paint_enabled", "1", {FCVAR_REPLICATED, FCVAR_ARCHIVE}, "Enable dynamic weight-painted belly deformation from prey shape blobs")
 CreateConVar("vnpcs_weight_paint_lumps", "1", {FCVAR_REPLICATED, FCVAR_ARCHIVE}, "Draw per-prey lumps on the GPU belly mesh (weight-painted gaussian deform)")
@@ -74,21 +80,72 @@ function VNPC_GetPreyShapeBlob(prey)
     }
 end
 
--- Default stacked layout when physics has not run yet (server or client).
+-- Deterministic bounding-box "shelf packing" layout (Dynamic Weight
+-- Painting & Mesh Deform, replacing the old physics-driven "Ragdoll
+-- Matrix"). Bodies pack shoulder-to-shoulder along the belly's left-right
+-- axis (using each blob's REAL measured width) until a row's width budget
+-- is used up, then a new row starts further back into the belly. This is
+-- pure math - no live simulation, so it can never desync, explode, or
+-- freeze mid-pose the way a physics/ragdoll approach can; it's just a
+-- function of who's currently inside and how big they measured out to be.
 function VNPC_DefaultBlobLayout(pred, blobs)
     if not istable(blobs) then return end
-    local n = #blobs
-    for i, blob in ipairs(blobs) do
-        if blob.pos then continue end
-        -- Stack like oranges in a bag: first sits low-center, later ones pile up
-        -- and slide sideways.
-        local side = ((i % 2) == 0) and -1 or 1
-        local layer = math.floor((i - 1) / 2)
-        blob.pos = Vector(
-            side * math.min(5, 2.5 + layer * 1.5),
-            2.0 - math.min(6, (i - 1) * 2.2),
-            -4.0 + layer * 7.5 - math.min(3, (i - 1) * 1.2)
-        )
+
+    local order = {}
+    for _, blob in ipairs(blobs) do
+        table.insert(order, blob)
+    end
+    if #order == 0 then return end
+
+    -- Biggest bodies define the silhouette; small stragglers (mostly
+    -- digested husks, tiny objects) shouldn't dominate the packing.
+    table.sort(order, function(a, b)
+        return (a.rx * a.ry * a.rz) > (b.rx * b.ry * b.rz)
+    end)
+
+    local totalWidth, biggestWidth = 0, 0
+    for _, blob in ipairs(order) do
+        local w = blob.rx * 2
+        totalWidth = totalWidth + w
+        biggestWidth = math.max(biggestWidth, w)
+    end
+    local avgWidth = totalWidth / #order
+    -- Adaptive row width budget: several similar-sized bodies pack into one
+    -- row, but any single body can always claim a row to itself.
+    local maxRowWidth = math.max(avgWidth * 3.0, biggestWidth * 1.05)
+
+    local rows = {}
+    local row = { blobs = {}, width = 0, depth = 0 }
+    for _, blob in ipairs(order) do
+        local w, d = blob.rx * 2, blob.ry * 2
+        if #row.blobs > 0 and (row.width + w) > maxRowWidth then
+            table.insert(rows, row)
+            row = { blobs = {}, width = 0, depth = 0 }
+        end
+        table.insert(row.blobs, blob)
+        row.width = row.width + w
+        row.depth = math.max(row.depth, d)
+    end
+    table.insert(rows, row)
+
+    -- Lay rows out from the belly's front surface (+y) backward. Later rows
+    -- (bodies that didn't fit shoulder-to-shoulder) sit further back rather
+    -- than making the belly absurdly wide.
+    local depthCursor = 0
+    for rowIndex, r in ipairs(rows) do
+        local cursor = -r.width * 0.5
+        local rowY = 2.0 - depthCursor - r.depth * 0.5
+        for i, blob in ipairs(r.blobs) do
+            local w = blob.rx * 2
+            local x = cursor + w * 0.5
+            cursor = cursor + w
+            -- small alternating vertical offset purely for visual variety,
+            -- not a stand-in for any physical simulation
+            local jitter = ((i % 2) == 0) and -1 or 1
+            local z = -2.5 - jitter * math.min(2.5, blob.rz * 0.25)
+            blob.pos = Vector(x, rowY, z)
+        end
+        depthCursor = depthCursor + r.depth
     end
 end
 
@@ -126,22 +183,6 @@ function VNPC_ComputeBellyBlobs(pred)
             end
         end
 
-        -- Blend in physics positions if the sim is running
-        local phys = pred.VNPC_BellyPhysics
-        if phys and istable(phys.masses) and #phys.masses > 0 then
-            local byId = {}
-            for i, m in ipairs(phys.masses) do
-                byId[m.id] = m
-            end
-            for _, blob in ipairs(blobs) do
-                local m = byId[blob.id]
-                if m then
-                    blob.pos = m.pos
-                    blob.vel = m.vel
-                    blob.kick = m.kick
-                end
-            end
-        end
         VNPC_DefaultBlobLayout(pred, blobs)
         pred.VNPC_BellyBlobs = blobs
         return blobs

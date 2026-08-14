@@ -199,29 +199,30 @@ local function populate()
 
     spawnmenu.AddToolMenuOption("V-NPCs", "Status & Traits", "vnpcs_belly_physics", "Belly Physics & Digestion", "", "", function(panel)
         panel:ClearControls()
-        panel:Help("Physics-Driven Digestion (Ragdoll Matrix)")
-        panel:CheckBox("Enable Belly Physics", "vnpcs_belly_physics_enabled")
-        panel:NumSlider("Physics Rate (Hz)", "vnpcs_belly_physics_rate", 4, 30, 0)
-        panel:CheckBox("Ragdoll Matrix Visuals", "vnpcs_belly_ragdoll_visual")
-        panel:NumSlider("Max Matrix Ragdolls / Pred", "vnpcs_belly_ragdoll_max", 1, 12, 0)
-        panel:CheckBox("Struggle Kicks & Slosh", "vnpcs_belly_struggle_kick")
+        panel:Help("Dynamic Weight Painting & Mesh Deform (bounding-box driven)")
+        panel:CheckBox("Enable Belly Weight Slowdown", "vnpcs_belly_physics_enabled")
         panel:NumSlider("Weight Slowdown Master", "vnpcs_belly_weight_slow", 0, 3, 2)
-        panel:ControlHelp("Prey now simulate as live masses inside the belly: they bounce, struggle, slosh and slow the predator down. Ragdoll copies of swallowed NPCs ride inside for the inside-camera.")
+        panel:CheckBox("Weight-Painted Belly Shape", "vnpcs_weight_paint_enabled")
+        panel:CheckBox("Per-Prey Lumps", "vnpcs_weight_paint_lumps")
+        panel:NumSlider("Lump Amplitude", "vnpcs_weight_paint_amp", 0, 3, 2)
+        panel:CheckBox("Asymmetric Bones", "vnpcs_weight_paint_asymmetry")
+        panel:ControlHelp("Every prey becomes a measured shape blob (torso/pelvis/head width, model scale). Blobs pack shoulder-to-shoulder into rows to size and shape the belly - no live physics simulation, so it's stable and never freezes or crashes.")
         panel:Help("\\nMax Capacity (Modular Traits)\\n")
         panel:CheckBox("Enforce Belly Capacity", "vnpcs_capacity_enabled")
         panel:NumSlider("Base Capacity (value units)", "vnpcs_capacity_base", 200, 5000, 0)
         panel:ControlHelp("Big Stomach / Small Stomach / Glutton traits raise or lower this per predator.")
         do
-            local btn = panel:Button("Run Headless Physics Sim Test")
+            local btn = panel:Button("Belly Weight Status")
             btn.DoClick = function()
-                RunConsoleCommand("vnpcs_belly_physics_sim")
-            end
-            local btn2 = panel:Button("Belly Physics Status")
-            btn2.DoClick = function()
                 RunConsoleCommand("vnpcs_belly_physics_status")
+            end
+            local btn2 = panel:Button("Weight Paint / Shape Status")
+            btn2.DoClick = function()
+                RunConsoleCommand("vnpcs_weight_paint_status")
             end
         end
     end)
+
 
     spawnmenu.AddToolMenuOption("V-NPCs", "Status & Traits", "vnpcs_hunter_ai", "Hunter AI", "", "", function(panel)
         panel:ClearControls()
