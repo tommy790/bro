@@ -89,13 +89,17 @@ end
 function ENT:UpdateRagdollMatrix()
     if not ragdoll_enabled:GetBool() then
         self:SetNWVector("RagOffset", vector_origin)
+        self:SetNWVector("RagOffset2", vector_origin)
         self:SetNWFloat("RagForce", 0)
+        self:SetNWFloat("RagForce2", 0)
         return
     end
 
     if #self.Prey == 0 then
         self:SetNWVector("RagOffset", vector_origin)
+        self:SetNWVector("RagOffset2", vector_origin)
         self:SetNWFloat("RagForce", 0)
+        self:SetNWFloat("RagForce2", 0)
         return
     end
 
@@ -106,14 +110,12 @@ function ENT:UpdateRagdollMatrix()
 
     local interiorRadius = 18 + self:GetBellySize() * 34
 
-    local focusPos, focusForce = vector_origin, 0
-
     for _, info in ipairs(self.Prey) do
         if info.Absorbing then continue end
         local prey = info.Entity
         if not IsValid(prey) then continue end
 
-        info.Rag = info.Rag or {Pos = Vector(0,0,0), Vel = Vector(0,0,0), NextImpulse = 0}
+        info.Rag = info.Rag or {Pos = Vector(0,0,0), Vel = Vector(0,0,0)}
         local rag = info.Rag
 
         local struggle = self:GetStruggleInput(prey, info)
@@ -127,26 +129,74 @@ function ENT:UpdateRagdollMatrix()
             rag.Pos = rag.Pos:GetNormalized() * interiorRadius
             rag.Vel = rag.Vel * -0.35 --bounce off the "stomach wall"
         end
-
-        local magnitude = rag.Vel:Length()
-        if magnitude > focusForce then
-            focusForce = magnitude
-            focusPos = rag.Pos
-        end
     end
 
-    local normalizedForce = math.Clamp(focusForce / 220, 0, 1)
+    --[[ MULTI-OCCUPANT TRACKING ]]
+    --when 2+ prey of the same species are in there, track the two most
+    --"active" of that group independently instead of collapsing everyone
+    --into a single averaged focus point, so the belly can visibly move like
+    --two separate bodies instead of one.
+    local groupCount, group = self:GetLargestPreyGroup()
 
-    self:SetNWVector("RagOffset", focusPos)
-    self:SetNWFloat("RagForce", normalizedForce)
+    local occupantA, occupantB, forceA, forceB = vector_origin, vector_origin, 0, 0
 
-    if normalizedForce > 0.35 then
-        self:PushNearbyPhysics(focusPos, normalizedForce)
+    if groupCount >= 2 then
+        local bestA, bestAMag = nil, -1
+        local bestB, bestBMag = nil, -1
 
-        if self.NPC and IsValid(self.NPC) and normalizedForce > 0.7 and math.random() < 0.05 then
-            util.ScreenShake(self.NPC:GetPos(), normalizedForce * 1.5, 5, 0.15, 200)
+        for _, info in ipairs(group) do
+            if not info.Rag then continue end
+            local mag = info.Rag.Vel:Length()
+
+            if mag > bestAMag then
+                bestB, bestBMag = bestA, bestAMag
+                bestA, bestAMag = info, mag
+            elseif mag > bestBMag then
+                bestB, bestBMag = info, mag
+            end
+        end
+
+        if bestA then
+            occupantA = bestA.Rag.Pos
+            forceA = math.Clamp(bestAMag / 220, 0, 1)
+        end
+
+        if bestB then
+            occupantB = bestB.Rag.Pos
+            forceB = math.Clamp(bestBMag / 220, 0, 1)
+        else
+            occupantB, forceB = occupantA, forceA
+        end
+    else
+        --single-occupant fallback: whichever living prey is struggling hardest
+        local focusPos, focusForce = vector_origin, -1
+        for _, info in ipairs(self.Prey) do
+            if info.Absorbing or not info.Rag then continue end
+            local mag = info.Rag.Vel:Length()
+            if mag > focusForce then
+                focusPos, focusForce = info.Rag.Pos, mag
+            end
+        end
+
+        occupantA = focusPos
+        forceA = math.Clamp(math.max(focusForce, 0) / 220, 0, 1)
+        occupantB, forceB = occupantA, forceA
+    end
+
+    self:SetNWVector("RagOffset", occupantA)
+    self:SetNWVector("RagOffset2", occupantB)
+    self:SetNWFloat("RagForce", forceA)
+    self:SetNWFloat("RagForce2", forceB)
+
+    local totalForce = math.max(forceA, forceB)
+    if totalForce > 0.35 then
+        self:PushNearbyPhysics(occupantA, totalForce)
+
+        if self.NPC and IsValid(self.NPC) and totalForce > 0.7 and math.random() < 0.05 then
+            util.ScreenShake(self.NPC:GetPos(), totalForce * 1.5, 5, 0.15, 200)
         end
     end
 end
+
 
 end --SERVER

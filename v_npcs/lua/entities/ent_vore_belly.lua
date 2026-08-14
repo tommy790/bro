@@ -94,7 +94,13 @@ end
 
 function ENT:SetProperties(props, npc) --alot of support for legacy, not very readable or automatic
     self:SetBaseScale(npc.BaseBellySize or props.BaseSize or 0)
-	self:SetColor(npc._BellyColor or npc.BellyColor or props.BellyColor or Color(255,0,255))
+
+    --The belly now samples the predator's real skin via the render-target
+    --system (vnpcs_belly_rt.lua), so it's always kept pure white/untinted -
+    --any of the old per-NPC BellyColor tan/pink tints would just discolor
+    --that captured texture on top. Legacy _BellyColor is still read below
+    --purely to decide which fallback MATERIAL to use, not to tint it.
+    self:SetColor(color_white)
 
 	self:SetDigestionPower(npc.VoreSettings.DigestionStrength or props.DigestionStrength or 3)
 	self:SetAbsorbPower(npc.VoreSettings.AbsorptionSpeed or props.AbsorptionPower or 2)
@@ -108,6 +114,7 @@ function ENT:SetProperties(props, npc) --alot of support for legacy, not very re
 	elseif npc._BellyColor then --THIS IS FOR OLD NPCS
 		self:SetMaterial("models/wormonlooker/belly/oldbelly")
 	end
+
 
     self.WeightGainAmount = props.WeightGainAmount or 0.5
 end

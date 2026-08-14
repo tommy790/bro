@@ -74,7 +74,10 @@ end
 
 function ENT:SetProperties(props, npc) --alot of support for legacy, not very readable or automatic
     self:SetBaseScale(npc.BaseBellySize or props.BaseSize or 0)
-	self:SetColor(npc._BellyColor or npc.BellyColor or props.BellyColor or Color(255,0,255))
+
+    --kept pure white/untinted so it doesn't discolor the RT-captured real
+    --skin texture on top - see ent_vore_belly.lua for the full explanation.
+    self:SetColor(color_white)
 
 	self:SetDigestionPower(npc.VoreSettings.DigestionStrength or props.DigestionStrength or 3)
 	self:SetAbsorbPower(npc.VoreSettings.AbsorptionSpeed or props.AbsorptionPower or 2)
@@ -86,6 +89,7 @@ function ENT:SetProperties(props, npc) --alot of support for legacy, not very re
 	elseif npc._BellyColor then --THIS IS FOR OLD NPCS
 		self:SetMaterial("models/wormonlooker/belly/oldbelly")
 	end
+
 
     self.WeightGainAmount = props.WeightGainAmount or 0.5
 end
@@ -360,9 +364,40 @@ function ENT:Think() --this code is realllyyyyy stupid
     do
         local modelSize = math.Clamp(newSize, 0, 1)
 
-        self:ManipulateBoneScale(main_bone, vector_one * newSize)
+        --[[ DYNAMIC WEIGHT PAINTING & MESH DEFORM ]]
+        local wantedShape = self:GetNWVector("BellyShape", vector_one)
+        self.ShapeBlend = self.ShapeBlend or vector_one
+        self.ShapeBlend = LerpVector(getLerpTime(FrameTime(), 2), self.ShapeBlend, wantedShape)
+
+        --[[ RAGDOLL MATRIX + MULTI-OCCUPANT SHAPE ]]
+        local occupants = self:GetNWInt("BellyOccupants", 0)
+        local ragOffset = self:GetNWVector("RagOffset", vector_origin)
+        local ragOffset2 = self:GetNWVector("RagOffset2", vector_origin)
+        local ragForce = self:GetNWFloat("RagForce", 0)
+        local ragForce2 = self:GetNWFloat("RagForce2", 0)
+
+        local targetOffset, targetForce = ragOffset, ragForce
+        local widenExtra = 1
+        if occupants >= 2 then
+            local phase = (math.sin(CurTime() * 1.3) + 1) * 0.5
+            targetOffset = LerpVector(phase, ragOffset, ragOffset2)
+            targetForce = Lerp(phase, ragForce, ragForce2)
+            widenExtra = 1 + math.min(occupants - 1, 3) * 0.08
+        end
+
+        self.RagBlend = self.RagBlend or vector_origin
+        self.RagBlend = LerpVector(getLerpTime(FrameTime(), 9), self.RagBlend, targetOffset)
+
+        local scaleVec = Vector(
+            newSize * self.ShapeBlend.x * widenExtra,
+            newSize * self.ShapeBlend.y * widenExtra,
+            newSize * self.ShapeBlend.z
+        ) * (1 + targetForce * 0.12)
+
+        self:ManipulateBoneScale(main_bone, scaleVec)
         local test = (newSize - 1) * 9
-        self:ManipulateBonePosition(main_bone, Vector(test * 0.6    , 0, math.max(-test * 1, -clipMax)))
+        local jostle = self.RagBlend * 0.06
+        self:ManipulateBonePosition(main_bone, Vector(test * 0.6 + jostle.x, jostle.y, math.max(-test * 1, -clipMax) + jostle.z))
         self:ManipulateBoneScale(0, vector_one * modelSize) --fatrolls bone
     end
     --[[animations]]

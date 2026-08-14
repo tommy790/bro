@@ -402,6 +402,38 @@ function ENT:GetAliveFactor() --: number
     return total
 end
 
+--[[
+    Groups currently living (non-absorbing) prey by model, and returns the
+    size + members of the largest matching group. Used by the belly's
+    "multi-occupant" shape logic (Dynamic Mesh Deform) so 2+ prey of the same
+    species visibly reads as more than one body pressed against the inside
+    of the stomach instead of one bigger blob.
+]]
+function ENT:GetLargestPreyGroup()
+    local groups = {}
+
+    for _, info in ipairs(self.Prey) do
+        if info.Absorbing or not info.Alive then continue end
+
+        local ent = info.Entity
+        if not IsValid(ent) then continue end
+
+        local key = ent:GetModel() or "unknown"
+        groups[key] = groups[key] or {}
+        table.insert(groups[key], info)
+    end
+
+    local bestList = nil
+    for _, list in pairs(groups) do
+        if not bestList or #list > #bestList then
+            bestList = list
+        end
+    end
+
+    if not bestList then return 0, {} end
+    return #bestList, bestList
+end
+
 function ENT:SetDigestionPower(num)
     self.DigestionStrength = num
 end

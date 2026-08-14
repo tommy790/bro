@@ -44,6 +44,41 @@ local torsoBones = {
     "bip_spine_2"
 }
 
+-- Bones matching these keywords get flattened to nothing on the offscreen
+-- capture clone only (the real predator model is never touched) so the
+-- render-target sample doesn't bake breast geometry/shading into the belly
+-- skin. Same naming convention already used by npc_modules/weight_gain.lua.
+local excludedBoneKeywords = {
+    "breast",
+    "boob",
+    "chest_l",
+    "chest_r",
+    "chestl",
+    "chestr",
+    "tit",
+}
+
+local function isExcludedBoneName(name)
+    name = string.lower(name)
+    for _, keyword in ipairs(excludedBoneKeywords) do
+        if name:find(keyword, 1, true) then return true end
+    end
+    return false
+end
+
+local function flattenExcludedBones(ent)
+    local boneCount = ent:GetBoneCount() or 0
+    for id = 0, boneCount - 1 do
+        local name = ent:GetBoneName(id)
+        if name and isExcludedBoneName(name) then
+            ent:ManipulateBoneScale(id, Vector(0.001, 0.001, 0.001))
+            ent:ManipulateBonePosition(id, vector_origin)
+            ent:ManipulateBoneAngles(id, ZERO_ANGLE)
+        end
+    end
+end
+
+
 local tPoseSequences = {
     "reference",
     "ref",
@@ -257,13 +292,17 @@ local function getTorsoTarget(ent)
         center = sum / found
     end
 
+    -- Biased low (waist/abdomen) rather than mid-chest, on top of the bone
+    -- flattening below, so the captured skin sample reads as belly/stomach
+    -- skin rather than chest.
     local height = maxs.z - mins.z
     center.x = 0
     center.y = 0
-    center.z = math.Clamp(center.z, mins.z + height * 0.35, mins.z + height * 0.68)
+    center.z = math.Clamp(center.z, mins.z + height * 0.28, mins.z + height * 0.52)
 
     return center, mins, maxs
 end
+
 
 local function ensureDuplicate(state, predator)
     if IsValid(state.clone) then return state.clone end
@@ -331,6 +370,7 @@ local function captureTorso(state, predator)
 
     copyVisualState(predator, clone)
     forceTPose(clone)
+    flattenExcludedBones(clone) --keep breasts/chest bulges out of the belly skin sample
 
     local target, mins, maxs = getTorsoTarget(clone)
     local height = math.max(maxs.z - mins.z, 32)
