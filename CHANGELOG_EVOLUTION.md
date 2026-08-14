@@ -17,16 +17,26 @@ purely geometric, deterministic system — no physics simulation involved
 (an earlier "Ragdoll Matrix" physics-jostle approach was tried here and
 removed; see below).
 
-Every prey swallowed records its own `HalfExtents` (its actual bounding
-box) when it's eaten, shrinking as it digests. `ENT:GetBellyShapeVector()`
-(in `basic_visual.lua`) takes every currently-living prey's box and packs
-them "shoulder to shoulder" into rows, like laying boxes down on a shelf:
+Every prey swallowed records its own `HalfExtents` (its real bounding box,
+using Source's model-space convention: X=depth, Y=width, Z=height) when
+it's eaten. `ENT:GetBellyShapeVector()` (in `basic_visual.lua`) takes every
+currently-occupying body's box and packs them "shoulder to shoulder" into
+rows, like laying boxes down on a shelf:
 
-- Up to 3 bodies pack side-by-side into a row — their widths add together,
-  so 2 similarly-sized prey genuinely reads as a wider belly instead of a
+- Anything with mass still in the belly counts, not just currently-alive
+  prey — objects/props and prey already being absorbed all contribute a
+  (shrinking, for the absorbing case) box, so the shape reflects everything
+  actually in there.
+- Bodies pack side-by-side into a row using their **real left-right width**
+  (not their front-to-back thickness) — their widths add together, so 2
+  similarly-sized prey genuinely reads as a wider belly instead of a
   rounder single blob.
-- A 4th+ body spills into a new row, which adds *depth* instead of making
-  the belly absurdly wide.
+- The row width budget is adaptive (based on how wide the bodies actually
+  are), not a fixed headcount — three children pack into one row far more
+  readily than three adult-sized bodies would, and one huge body can always
+  claim a row to itself. Once a row's budget is full, the next body spills
+  into a new row, which adds *depth* instead of making the belly absurdly
+  wide.
 - The packed footprint is compared against what a single body of
   equivalent bulk would need, producing a width/depth/height bias vector
   around `(1,1,1)` that's replicated to clients as `BellyShape`.
