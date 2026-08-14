@@ -9,55 +9,55 @@ current V-NPC gets the upgrade for free.
 
 **Files:** `v_npcs/lua/entities/belly_modules/basic_visual.lua`,
 `v_npcs/lua/entities/belly_modules/animations.lua`,
+`v_npcs/lua/entities/ent_fernkarry_belly.lua`,
 `v_npcs/lua/entities/belly_modules/mechanics.lua`
 
-The belly no longer just inflates as one uniform blob. Every prey swallowed
-records its own `HalfExtents` (its actual bounding box) when it's eaten.
-`ENT:GetBellyShapeVector()` averages those extents (weighted by how much of
-each prey is still left) into a width/depth/height bias, replicated to
-clients as `BellyShape`. `animations.lua` blends the belly's bone scale
-towards that shape every frame, so a short, wide prey pushes the belly out
-sideways while a tall one bulges it up and forward — no bespoke "belly
-shape" per creature required.
+The belly no longer just inflates as one uniform blob, and this is now a
+purely geometric, deterministic system — no physics simulation involved
+(an earlier "Ragdoll Matrix" physics-jostle approach was tried here and
+removed; see below).
 
-New convar: `vnpcs_traits_enabled` gates whether trait-driven digestion
-(see #4) feeds into this and the other systems.
+Every prey swallowed records its own `HalfExtents` (its actual bounding
+box) when it's eaten, shrinking as it digests. `ENT:GetBellyShapeVector()`
+(in `basic_visual.lua`) takes every currently-living prey's box and packs
+them "shoulder to shoulder" into rows, like laying boxes down on a shelf:
 
-## 2. Full Physics-Driven Digestion ("Ragdoll Matrix")
+- Up to 3 bodies pack side-by-side into a row — their widths add together,
+  so 2 similarly-sized prey genuinely reads as a wider belly instead of a
+  rounder single blob.
+- A 4th+ body spills into a new row, which adds *depth* instead of making
+  the belly absurdly wide.
+- The packed footprint is compared against what a single body of
+  equivalent bulk would need, producing a width/depth/height bias vector
+  around `(1,1,1)` that's replicated to clients as `BellyShape`.
 
-**File:** `v_npcs/lua/entities/belly_modules/ragdoll_matrix.lua`
+`animations.lua` (and `ent_fernkarry_belly.lua`'s own copy of the same
+logic) smoothly blends the belly's bone scale towards that shape every
+frame. Because the whole thing is a deterministic function of who's
+currently inside — not a live simulation — there's nothing to desync,
+jitter, or feel "off"; the only smoothing is the client-side Lerp on the
+networked vector.
 
-Source doesn't support simulating a real ragdoll bouncing around inside a
-deforming skinned mesh cavity, so this implements the same *effect* through
-a lightweight simulated physics state per living prey:
+New convar: `vnpcs_shape_deform` (default on) toggles the whole system off
+back to legacy uniform inflation. `vnpcs_traits_enabled` separately gates
+whether trait-driven digestion (see #4) affects digestion speed/capacity.
 
-- A spring-damped position bounded to the belly's interior radius.
-- Driven by **real input**: players' actual movement keys (mashing WASD
-  while trapped) for players, semi-random flailing impulses for NPCs/props.
-- The dominant (currently most active) prey's simulated position/force is
-  networked (`RagOffset`, `RagForce`) and used to jostle/shift the belly
-  bone position and add extra "bounce" scale in `animations.lua`.
-- When the struggle is strong enough, nearby physics props and players get
-  gently shoved (`ENT:PushNearbyPhysics`) so the belly behaves like an
-  actual solid object with something moving inside it, plus an occasional
-  screen shake.
+## 2. Full Physics-Driven Digestion ("Ragdoll Matrix") — removed
 
-**Why not literally teleport the prey's ragdoll to a hidden box outside the
-map and read its physics impulses back?** That's a real, commonly-used
-trick, but it carries its own risks: extreme/void coordinates can lose
-float precision or land inside a level's kill-Z / `trigger_hurt` volume,
-and a relocated NPC still needs its AI `Think` re-enabled to actually
-struggle — which fights with the rest of the addon deliberately disabling
-it when eaten (`prey:NextThink(CurTime() + 1e9)` in `mechanics.lua`). The
-purely virtual spring simulation here gets the same visible result — belly
-bounce driven by real player input — without ever moving, un-solidifying,
-or re-enabling anything on the real entity, so none of those failure modes
-can happen. It's a deliberately more conservative version of the same idea.
-
-New convars: `vnpcs_ragdoll_matrix`, `vnpcs_ragdoll_collision`,
-`vnpcs_ragdoll_force`.
+An earlier pass added a `belly_modules/ragdoll_matrix.lua` module that kept
+a per-prey spring-damped simulated struggle position, driven by real player
+input, to jostle the belly bone position/scale in real time. In practice
+this didn't hold up — the animated jostle/wobble felt unreliable rather
+than convincing — so it's been removed entirely in favor of the purely
+geometric bounding-box system in #1 above, which gives a more convincing
+"there's actually something specific in there" read without any live
+simulation to fight with. `prey_table.Rag`/`NextImpulse` and the
+`RagOffset`/`RagOffset2`/`RagForce`/`RagForce2` networked vars are gone;
+`vnpcs_ragdoll_matrix`/`vnpcs_ragdoll_collision`/`vnpcs_ragdoll_force` no
+longer exist.
 
 ## 3. Smart Nextbot AI & Navigation Mesh
+
 
 **File:** `v_npcs/lua/entities/npc_modules/smart_ai.lua`
 
@@ -120,10 +120,8 @@ behaviour when off).
 ### Quick convar reference
 
 ```
+vnpcs_shape_deform          1   -- bounding-box belly shape system on/off
 vnpcs_traits_enabled        1   -- master switch for the trait system
-vnpcs_ragdoll_matrix        1   -- Ragdoll Matrix simulation on/off
-vnpcs_ragdoll_collision     1   -- lets a struggling belly push nearby physics/players
-vnpcs_ragdoll_force         1   -- multiplier for that push force
 vnpcs_smart_ai              1   -- master switch for the Smart AI layer
 vnpcs_smart_ai_hearing      1   -- footstep/flashlight detection
 vnpcs_smart_ai_packhunt     1   -- flanking/surrounding

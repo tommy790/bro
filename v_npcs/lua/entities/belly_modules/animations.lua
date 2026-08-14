@@ -232,16 +232,6 @@ function ENT:Think() --this code is realllyyyyy stupid
             end
         end
 
-        --[[ MULTI-OCCUPANT SHAPE ]]
-        --2+ prey of the same species rock the belly back and forth between
-        --the two of them instead of settling on one steady lean, hinting
-        --that there's more than one body shifting around in there.
-        local occupants = self:GetNWInt("BellyOccupants", 0)
-        if occupants >= 2 then
-            local wobbleAmount = math.min(occupants - 1, 3) * 4
-            wantedAngleOffset = wantedAngleOffset + math.sin(CurTime() * 2.1) * wobbleAmount
-        end
-
         self.RotationSpring = do_spring(self.RotationSpring, wantedAngleOffset)
     end
 
@@ -252,69 +242,25 @@ function ENT:Think() --this code is realllyyyyy stupid
         --[[ DYNAMIC WEIGHT PAINTING & MESH DEFORM ]]
         --blends towards the actual shape of whatever's inside (wide vs tall
         --vs long) instead of always inflating uniformly, so the belly reads
-        --like it's actually holding that specific prey.
+        --like it's actually holding that specific prey - and, when there's
+        --more than one body in there, like it's actually holding more than
+        --one body. Purely geometric (bounding-box packing in
+        --basic_visual.lua's GetBellyShapeVector), no physics simulation.
         local wantedShape = self:GetNWVector("BellyShape", vector_one)
         self.ShapeBlend = self.ShapeBlend or vector_one
-        self.ShapeBlend = LerpVector(getLerpTime(FrameTime(), 2), self.ShapeBlend, wantedShape)
-
-        --[[ RAGDOLL MATRIX ]]
-        --live simulated struggle offset/force, shifts the bulge position and
-        --adds a bit of extra "jostle" so the belly visibly bounces around
-        --wherever the prey currently is. When 2+ prey of the same species
-        --are inside, this alternates its focus between both of them instead
-        --of averaging them into one static point, which reads as two
-        --separate bodies taking turns pressing outward rather than one
-        --bigger blob.
-        local occupants = self:GetNWInt("BellyOccupants", 0)
-        local ragOffset = self:GetNWVector("RagOffset", vector_origin)
-        local ragOffset2 = self:GetNWVector("RagOffset2", vector_origin)
-        local ragForce = self:GetNWFloat("RagForce", 0)
-        local ragForce2 = self:GetNWFloat("RagForce2", 0)
-
-        local targetOffset, targetForce = ragOffset, ragForce
-        if occupants >= 2 then
-            local phase = (math.sin(CurTime() * 1.3) + 1) * 0.5
-            targetOffset = LerpVector(phase, ragOffset, ragOffset2)
-            targetForce = Lerp(phase, ragForce, ragForce2)
-        end
-
-        self.RagBlend = self.RagBlend or vector_origin
-        self.RagBlend = LerpVector(getLerpTime(FrameTime(), 9), self.RagBlend, targetOffset)
-
-        --a real second bulge bone (if a belly model ever ships with one)
-        --always wins over the illusion above
-        local secondBone = self.SecondBellyBone
-        if secondBone == nil then
-            secondBone = self:LookupBone("main2") or false
-            self.SecondBellyBone = secondBone
-        end
-
-        local widenExtra = 1
-        if occupants >= 2 and not secondBone then
-            widenExtra = 1 + math.min(occupants - 1, 3) * 0.08
-        end
+        self.ShapeBlend = LerpVector(getLerpTime(FrameTime(), 3), self.ShapeBlend, wantedShape)
 
         local scaleVec = Vector(
-            newSize * self.ShapeBlend.x * widenExtra,
-            newSize * self.ShapeBlend.y * widenExtra,
+            newSize * self.ShapeBlend.x,
+            newSize * self.ShapeBlend.y,
             newSize * self.ShapeBlend.z
-        ) * (1 + targetForce * 0.12)
+        )
 
         self:ManipulateBoneScale(main_bone, scaleVec)
         
         local ughhhhhh = math.min(-(1 - newSize) * 3.5, 0)
-        local jostle = self.RagBlend * 0.06
-        self:ManipulateBonePosition(main_bone, Vector(jostle.x, ughhhhhh * 1.2 + jostle.y, ughhhhhh * 0.9 + jostle.z))
+        self:ManipulateBonePosition(main_bone, Vector(0, ughhhhhh * 1.2, ughhhhhh * 0.9))
         self:ManipulateBoneScale(0, vector_one * modelSize) --fatrolls bone
-
-        if secondBone then
-            if occupants >= 2 then
-                self:ManipulateBoneScale(secondBone, Vector(newSize, newSize, newSize) * (1 + ragForce2 * 0.12))
-                self:ManipulateBonePosition(secondBone, ragOffset2 * 0.06)
-            else
-                self:ManipulateBoneScale(secondBone, vector_origin)
-            end
-        end
     end
     --[[animations]]
     if currentPhase == 1 then
@@ -324,6 +270,7 @@ function ENT:Think() --this code is realllyyyyy stupid
 
     end
 end
+
 
 function ENT:InteralCameraPos(entPos, ang)
     local bone_matrix = self:GetBoneMatrix(1)
