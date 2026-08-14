@@ -42,8 +42,13 @@ math, mirror-tested by `test_belly_physics_sim.py`):
 - **Weight penalty:** a full belly slows the predator down
   (`VNPC_GetBellyWeightSlow`, integrated into DrGBase `GetAdjustedSpeeds`).
 - **Ragdoll matrix visuals:** frozen `prop_ragdoll` copies of swallowed NPCs
-  ride inside the belly (visible with the inside-camera), each driven to its
-  physics position, wobbling while the prey struggles.
+  ride inside the belly (visible with the inside-camera). A prop_ragdoll's
+  bones are owned by its physics objects (entity parenting alone leaves it
+  frozen in the standing bind pose), so each copy is first curled into the
+  addon's proven in-game sitting keyframe (`VNPC_ChildbirthSittingPoseKeyframe`
+  — knees up, shins folded, arms wrapped) via rigid rest-geometry FK, then
+  every bone physics object is driven to its prey mass position each tick,
+  wobbling while the prey struggles.
 
 ConVars: `vnpcs_belly_physics_enabled`, `vnpcs_belly_physics_rate`,
 `vnpcs_belly_ragdoll_visual`, `vnpcs_belly_ragdoll_max`,
