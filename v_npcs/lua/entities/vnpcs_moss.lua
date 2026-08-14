@@ -81,6 +81,15 @@ ENT.VoreSettings.WeightGainDefiners = { --If you want to define a bone that isn'
 	end,
 }
 
+ENT.EyeBone = "ValveBiped.Bip01_Head1"
+ENT.VoreSettings.FlexFaces = VNPC_FEMALE_FLEX_FACES
+
+if CLIENT then
+    function ENT:CustomHeadTurn(yaw, pitch, roll)
+        return Angle(pitch * 0.8, -yaw * 0.9, roll * 0.5)
+    end
+end
+
 -- DO NOT TOUCH --
 AddCSLuaFile()
 DrGBase.AddNextbot(ENT)

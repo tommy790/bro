@@ -74,10 +74,7 @@ end
 
 function ENT:SetProperties(props, npc) --alot of support for legacy, not very readable or automatic
     self:SetBaseScale(npc.BaseBellySize or props.BaseSize or 0)
-
-    --kept pure white/untinted so it doesn't discolor the RT-captured real
-    --skin texture on top - see ent_vore_belly.lua for the full explanation.
-    self:SetColor(color_white)
+	self:SetColor(npc._BellyColor or npc.BellyColor or props.BellyColor or Color(255,0,255))
 
 	self:SetDigestionPower(npc.VoreSettings.DigestionStrength or props.DigestionStrength or 3)
 	self:SetAbsorbPower(npc.VoreSettings.AbsorptionSpeed or props.AbsorptionPower or 2)
@@ -90,7 +87,6 @@ function ENT:SetProperties(props, npc) --alot of support for legacy, not very re
 		self:SetMaterial("models/wormonlooker/belly/oldbelly")
 	end
 
-
     self.WeightGainAmount = props.WeightGainAmount or 0.5
 end
 
@@ -100,13 +96,17 @@ function ENT:Draw()
     local rtMaterial = VNPCS_BellyRT and VNPCS_BellyRT.GetMaterial(self)
 
     if rtMaterial then
+        local c = self:GetColor() or Color(255, 255, 255, 255)
+        local oldColor = Color(c.r or 255, c.g or 255, c.b or 255, c.a or 255)
+        self:SetColor(Color(255, 255, 255, 255))
+        render.SetColorModulation(1, 1, 1)
         render.MaterialOverride(rtMaterial)
-    end
-
-    self:DrawModel()
-
-    if rtMaterial then
+        self:DrawModel()
         render.MaterialOverride(nil)
+        self:SetColor(oldColor)
+        render.SetColorModulation(oldColor.r / 255, oldColor.g / 255, oldColor.b / 255)
+    else
+        self:DrawModel()
     end
 end
 
@@ -347,16 +347,22 @@ function ENT:Think() --this code is realllyyyyy stupid
     do 
         if belly_clipping:GetBool() then
             local bone_matrix = self:GetBoneMatrix(0)
-            local pos = bone_matrix:GetTranslation()
+            if not bone_matrix then
+                self:SetupBones()
+                bone_matrix = self:GetBoneMatrix(0)
+            end
+            if bone_matrix then
+                local pos = bone_matrix:GetTranslation()
 
-            local tr = util.TraceLine({
-                start = pos,
-                endpos = pos + (-vector_up * 200),
-                filter = {self, self.NPC}
-            })
+                local tr = util.TraceLine({
+                    start = pos,
+                    endpos = pos + (-vector_up * 200),
+                    filter = {self, self.NPC}
+                })
 
-            if tr.Hit then
-                clipMax = tr.HitPos:Distance(pos)
+                if tr.Hit then
+                    clipMax = tr.HitPos:Distance(pos)
+                end
             end
         end
     end
@@ -364,23 +370,9 @@ function ENT:Think() --this code is realllyyyyy stupid
     do
         local modelSize = math.Clamp(newSize, 0, 1)
 
-        --[[ DYNAMIC WEIGHT PAINTING & MESH DEFORM ]]
-        --purely geometric bounding-box packing (basic_visual.lua's
-        --GetBellyShapeVector), no physics simulation involved.
-        local wantedShape = self:GetNWVector("BellyShape", vector_one)
-        self.ShapeBlend = self.ShapeBlend or vector_one
-        self.ShapeBlend = LerpVector(getLerpTime(FrameTime(), 3), self.ShapeBlend, wantedShape)
-
-        local scaleVec = Vector(
-            newSize * self.ShapeBlend.x,
-            newSize * self.ShapeBlend.y,
-            newSize * self.ShapeBlend.z
-        )
-
-        self:ManipulateBoneScale(main_bone, scaleVec)
+        self:ManipulateBoneScale(main_bone, vector_one * newSize)
         local test = (newSize - 1) * 9
-        self:ManipulateBonePosition(main_bone, Vector(test * 0.6, 0, math.max(-test * 1, -clipMax)))
-
+        self:ManipulateBonePosition(main_bone, Vector(test * 0.6    , 0, math.max(-test * 1, -clipMax)))
         self:ManipulateBoneScale(0, vector_one * modelSize) --fatrolls bone
     end
     --[[animations]]
@@ -393,9 +385,13 @@ end
 
 function ENT:InteralCameraPos(entPos, ang)
     local bone_matrix = self:GetBoneMatrix(1)
-    local bone_pos = bone_matrix:GetTranslation()
-    local bone_ang = bone_matrix:GetAngles()
-    local bone_scale = bone_matrix:GetScale()
+    if not bone_matrix then
+        self:SetupBones()
+        bone_matrix = self:GetBoneMatrix(1)
+    end
+    local bone_pos = bone_matrix and bone_matrix:GetTranslation() or self:GetPos()
+    local bone_ang = bone_matrix and bone_matrix:GetAngles() or self:GetAngles()
+    local bone_scale = bone_matrix and bone_matrix:GetScale() or Vector(1, 1, 1)
 
     entPos = bone_pos - Vector(0,0,5) + bone_ang:Right() * bone_scale * -15
 

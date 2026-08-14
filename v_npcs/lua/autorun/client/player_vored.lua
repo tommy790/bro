@@ -52,7 +52,11 @@ local function noMoreVore()
         ply:RemoveFlags(FL_NOTARGET)
         ply:DrawViewModel(true)
         ply.VoreCameraPos = nil
+        ply.Vored = false
+        ply.VNPC_VoredBelly = nil
     end
+    VNPC_CL_InsideCamActive = false
+    VNPC_CL_EscapeMeter = 0
     setInternalView(false)
 end
 
@@ -67,6 +71,11 @@ local function OnVored()
     gui.AddCaption( "*Gulp*", 5 )
 
     local ply = LocalPlayer()
+    if IsValid(ply) then
+        ply.Vored = true
+        ply.VNPC_VoredBelly = belly
+        VNPC_CL_InsideCamActive = true
+    end
 
     hook.Add('CalcView', viewHook, function(ply, origin, ang, fov) --SUPER HARD CODED, GET RID OF THIS CODE
         if not IsValid(belly) or not IsValid(npc) then
@@ -111,7 +120,7 @@ local function OnVored()
 
     hook.Add("HUDPaint", hudHook, function()
         local ply = LocalPlayer()
-        if ply:FlashlightIsOn() then
+        if ply:FlashlightIsOn() or VNPC_CL_InsideCamActive then
             setInternalView(true, npc, belly)
         else
             setInternalView(false, npc, belly)
@@ -129,8 +138,8 @@ local function OnVored()
             return
         end
 
-        if is_internal_view then
-            displayText("this is the temporary internal view, i might finish it", ScrW()/2, ScrH()/2, "BudgetLabel", Color(255,255,255))
+        if is_internal_view and VNPC_RenderInsideBellyHUD then
+            VNPC_RenderInsideBellyHUD(ply, npc, belly)
         end
 	end)
 

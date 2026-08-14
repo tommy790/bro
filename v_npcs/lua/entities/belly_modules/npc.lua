@@ -34,6 +34,18 @@ function ENT:NPCThink() --this has to be called by an npc
         self:LoseWeight(dt)
     end
 
+    if npc and IsValid(npc) and not npc.Swallowing then
+        if self.DigestionPhase == 0 and (not self.Prey or #self.Prey == 0) then
+            local current_phase = npc.CurrentFacialPhase
+            if npc.GetCurrentFacialPhase then
+                current_phase = npc:GetCurrentFacialPhase()
+            end
+            if current_phase == 1 or current_phase == 2 or current_phase == 4 then
+                npc:SetFacialExpression(0)
+            end
+        end
+    end
+
     self:SetBellySize() 
 end
 
@@ -45,14 +57,17 @@ function ENT:OnPreyAbsorbing(power, old_value, new_value)
 end
 
 function ENT:OnDigestionPhaseChanged(new, old)
-    if new == 0 and old == 2 then --from absorbing to empty/hungry
+    if new == 0 then --from absorbing to empty/hungry
         self:StopDigestionSound()
         self:StopAbsorbSound()
 
         self.NextSoundTime = nil 
 
         if self.NPC then
-            self.NPC:Burp(true) --no checks, just rawdogging this
+            self.NPC:SetFacialExpression(0)
+        end
+        if VNPC_ScheduleDigestedBoneSpit and (old == 1 or old == 2) then
+            VNPC_ScheduleDigestedBoneSpit(self.NPC or self:GetOwner() or self:GetParent(), self)
         end
     end
 
@@ -62,6 +77,12 @@ function ENT:OnDigestionPhaseChanged(new, old)
 
         if self.NPC then       
             self.NPC:SetFacialExpression(2)
+        end
+        if VNPC_ScheduleDigestedBoneSpit then
+            VNPC_ScheduleDigestedBoneSpit(self.NPC or self:GetOwner() or self:GetParent(), self)
+        end
+        if VNPC_CreateTerritoryScentNode then
+            VNPC_CreateTerritoryScentNode(self.NPC or self:GetOwner() or self, self:GetPos(), "digestion")
         end
     end
 

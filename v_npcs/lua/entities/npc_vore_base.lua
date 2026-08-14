@@ -8,14 +8,10 @@ AddCSLuaFile("npc_modules/weight_gain.lua")
 AddCSLuaFile("npc_modules/faces.lua")
 AddCSLuaFile("npc_modules/client.lua")
 AddCSLuaFile("npc_modules/drgbase.lua")
-AddCSLuaFile("npc_modules/traits.lua")
-AddCSLuaFile("npc_modules/smart_ai.lua")
 include("npc_modules/belly.lua")
 include("npc_modules/weight_gain.lua")
 include("npc_modules/faces.lua")
 include("npc_modules/drgbase.lua")
-include("npc_modules/traits.lua")
-include("npc_modules/smart_ai.lua")
 
 local global_burps = CreateConVar("vnpcs_burps", "1", {FCVAR_ARCHIVE, FCVAR_NOTIFY, FCVAR_REPLICATED})
 local force_burps = CreateConVar("vnpcs_global_burps", "0", {FCVAR_ARCHIVE, FCVAR_REPLICATED})
@@ -32,6 +28,10 @@ ENT.ModNeeded = [["hello, set this to the workshop addon where you found the mod
 
 ENT.Belly_Offset = Vector(0, 1, 0)
 ENT.Belly_Angles = Angle(0, 90, 90)
+
+ENT.TriggerBone = "ValveBiped.Bip01_Pelvis"
+ENT.TriggerThreshold = Vector(1.0, 1.0, 1.0)
+ENT.OffsetFullFactor = 1.5
 
 ENT.BellyProperties = {
 	BellyColor = Color(195,145,122), 
@@ -90,30 +90,6 @@ ENT.VoreSettings.BurpsEnabled = true
 ENT.VoreSettings.HasWeightGain = true
 ENT.VoreSettings.WeightGainBones = {}
 ENT.VoreSettings.WeightGainSettings = {}
-
---[[
-    TRAITS (see npc_modules/traits.lua)
-    Override any of these per-npc-type to give them a distinct "personality"
-    without writing any extra code, e.g:
-
-    ENT.VoreSettings.Traits = {
-        MetabolismSpeed = 1.4, --digests quicker than average
-        AcidResistance = 0.8, --easier to digest if this npc gets eaten itself
-        MaxCapacity = 3, --can only hold 3 living prey at once
-        StaminaPenalty = 1.2, --slows down a bit more than average when full
-    }
-]]
-ENT.VoreSettings.Traits = ENT.VoreSettings.Traits or {}
-
---[[
-    SMART AI (see npc_modules/smart_ai.lua)
-]]
-ENT.VoreSettings.SmartAI = ENT.VoreSettings.SmartAI or {
-    PackHunting = true, --coordinates with other v-npcs hunting the same target
-    Ambushes = true, --will try to hide near patrol routes and wait to strike
-    HearingRange = 700, --how far away this npc can hear loud noises (running, gunfire, etc)
-    FlashlightSpotRange = 900, --how far away a flashlight beam can catch this npc's attention
-}
 ENT.VoreSettings.FlexFaces = { --default, based on hl2 flexes
     [0] = { -- Neutral (rest)
         ["right_puckerer"] = 0,
@@ -210,8 +186,8 @@ ENT.Predator = true --dont change this
 ENT.SpotDuration = 20
 
 ENT.RangeAttackRange = 0
-ENT.MeleeAttackRange = 35
-ENT.ReachEnemyRange = 10
+ENT.MeleeAttackRange = 110
+ENT.ReachEnemyRange = 85
 ENT.AvoidEnemyRange = 0
 
 ENT.UseWalkframes = true
@@ -312,8 +288,58 @@ end
 
 --[[FUNCTIONS]]
 
+function ENT:PlayVoreGesture(gesture_type)
+    if VNPC_PlayNativeVoreGesture then
+        return VNPC_PlayNativeVoreGesture(self, gesture_type)
+    end
+    return false
+end
+
+function ENT:PlayBonePoseAnimation(anim_type)
+    if VNPC_PlayBonePoseAnimation then
+        return VNPC_PlayBonePoseAnimation(self, anim_type)
+    end
+    return false
+end
+
+function ENT:AnimatedBoneOffsets()
+    if VNPC_AnimatedBoneOffsets then
+        VNPC_AnimatedBoneOffsets(self)
+    end
+end
+
+function ENT:IsFemaleModel(mdl)
+    if self.IsFemalePredator or self.FemaleModel or self.IsFemale then
+        return true
+    end
+    if VNPC_HasFemaleModelBones and VNPC_HasFemaleModelBones(self) then
+        return true
+    end
+    mdl = string.lower(mdl or self:GetModel() or "")
+    return (mdl:find("female") or mdl:find("alyx") or mdl:find("mossman") or mdl:find("loona") or mdl:find("lovander") or mdl:find("noelle") or mdl:find("rouge") or mdl:find("rogue") or mdl:find("roxy") or mdl:find("sybil") or mdl:find("taroth") or mdl:find("purslime") or mdl:find("slime")) ~= nil
+end
+
+function ENT:IsFemaleNPC()
+    return self:IsFemaleModel()
+end
+
+function ENT:EatGroup(targets)
+    if not istable(targets) then return self:EatEntity(targets) end
+    local count = 0
+    for _, ent in ipairs(targets) do
+        if IsValid(ent) and not ent.Vored and not ent.VNPC_Vored then
+            if self:EatEntity(ent) then
+                count = count + 1
+            end
+        end
+    end
+    return count > 0, count
+end
+
 function ENT:EatEntity(ent)
-	if not IsValid(ent) or self.Swallowing or ent.Vored or self.Vored then return end
+	if not IsValid(ent) or (self.Swallowing and not self._InClumpVore) or ent.Vored or self.Vored then return end
+	if ent.VNPC_DigestedBone or ent.VNPC_BoneOwner or ent.VNPC_NoVore then return end
+	if VNPC_CanSwallowOwnSpecies and not VNPC_CanSwallowOwnSpecies(self, ent) then return end
 	if not ent:GetModel() or ent:GetClass():find("func") then return end
 
 	local result = false
@@ -324,23 +350,61 @@ function ENT:EatEntity(ent)
 	print(ent, ent:GetClass()) --get rid of this one day
 	
 	if self.Belly:AddPrey(ent) then
+		self:PlayVoreGesture("swallow")
 		local swallow_sound = GetRandomFromTable(self.VoreSounds["swallow"])
 		self:EmitSound(swallow_sound, 100, 100)
 
-		timer.Simple(1, function()
+		if not self._InClumpVore and VNPC_GetClumpedPreyGroup then
+			self._InClumpVore = true
+			local group = VNPC_GetClumpedPreyGroup(self, ent)
+			if #group > 1 then
+				for i = 2, #group do
+					local extraPrey = group[i]
+					if IsValid(extraPrey) and not extraPrey.Vored and not extraPrey.VNPC_Vored then
+						pcall(self.EatEntity, self, extraPrey)
+					end
+				end
+			end
+			self._InClumpVore = nil
+		end
+
+		local animList = nil
+		if VNPC_GetAnimatedBoneList then
+			animList = VNPC_GetAnimatedBoneList(self)
+		end
+		local tSwallow = (animList and animList[1] and animList[1].length) or 1.0
+		local tGulp = (animList and animList[4] and animList[4].length) or 1.0
+		local calm_swallow_cv = GetConVar("vnpcs_calm_swallow_animation")
+		if calm_swallow_cv and calm_swallow_cv:GetBool() and not IsValid(self:GetEnemy()) then
+			tSwallow = 5.0
+			tGulp = 1.0
+		end
+		local tFull = tSwallow + tGulp
+
+		timer.Simple(tSwallow, function()
 			if self and IsValid(self) then
-				self:SetFacialExpression(4)
+				if IsValid(self.Belly) and self.Belly.DigestionPhase == 1 then
+					self:SetFacialExpression(4)
+				end
 			end
 		end)
 
-		timer.Simple(2, function()
+		timer.Simple(tFull, function()
 			if self and IsValid(self) then
-				self:SetFacialExpression(2)
+				if IsValid(self.Belly) and (self.Belly.DigestionPhase ~= 0 or (self.Belly.Prey and #self.Belly.Prey > 0)) then
+					self:SetFacialExpression(2)
+				else
+					self:SetFacialExpression(0)
+				end
 			end
 		end)
 
 		if not patrolling:GetBool() then
-			self:ClearPatrols()
+			if self.ClearPatrols then
+				pcall(self.ClearPatrols, self)
+			elseif VNPC_ClearPatrols then
+				VNPC_ClearPatrols(self)
+			end
 		end
 
 		self:PostEntityEaten(ent)
@@ -370,10 +434,11 @@ function ENT:Burp(big)
 	end
 
 	self:SetFacialExpression(3) -- Burp face
+	self:PlayVoreGesture("burp")
 	local length = (big and 1.5 or 1.2)/self.VoreSoundPitch
     timer.Simple(length, function()
         if self and IsValid(self) then
-			if self.Belly.DigestionPhase == 0 then
+			if not IsValid(self.Belly) or self.Belly.DigestionPhase == 0 or (self.Belly.Prey and #self.Belly.Prey == 0) then
 				self:SetFacialExpression(0) -- Normal face
 			else
 				self:SetFacialExpression(2) -- Digestion face
@@ -424,8 +489,6 @@ if SERVER then --setup functions
 		end
 		
 		self:SetupBelly(anchor)
-		self:InitTraits()
-		self:InitSmartAI()
 
 		for i, walk in ipairs({
 			self.RunAnimation,
@@ -446,6 +509,10 @@ if SERVER then --setup functions
 		self:SetFacialExpression(0)
 		self:SetWeight(self.BoneScale)
 
+		self.BoneBlendState = self.BoneBlendState or {}
+		self.LastFacialPhase = self.LastFacialPhase or 0
+		self.FacialPhaseStartTime = self.FacialPhaseStartTime or CurTime()
+
 		self:PostInitalize()
 	end
 
@@ -456,8 +523,8 @@ if SERVER then --setup functions
 		end
 		self:UpdateFacialExpressions()
 		self:CheckOpenDoors()
-		self:SmartAIThink()
 
+		self:AnimatedBoneOffsets()
 		self:PostThink() --hook
 	end
 

@@ -37,6 +37,10 @@ ENT.VoreSettings.WeightGainBones = {
     "ValveBiped.Bip01_L_Breast1",
     "ValveBiped.Bip01_R_Breast0",
     "ValveBiped.Bip01_R_Breast1",
+    "ValveBiped.Bip01_lpectoral",
+    "ValveBiped.Bip01_rpectoral",
+    "ValveBiped.Bip01_lpectoral",
+    "ValveBiped.Bip01_rpectoral",
 
     "ValveBiped.Bip01_L_Thigh",
     "ValveBiped.Bip01_R_Thigh",
@@ -52,7 +56,7 @@ ENT.VoreSettings.WeightGainBones = {
 }
 
 ENT.VoreSettings.WeightGainSettings = {
-	MaxBoob = 1.5;
+	MaxBoob = 2.2;
 	MaxThigh = 2;
 	MaxCalf = 1.7;
 	MaxArm = 0.8;
@@ -81,6 +85,15 @@ ENT.VoreSettings.BoneOffsets = {
 		["Angle"] = Angle(0,1,0),
 	} 
 }
+
+ENT.EyeBone = "ValveBiped.Bip01_Head1"
+ENT.VoreSettings.FlexFaces = VNPC_FEMALE_FLEX_FACES
+
+if CLIENT then
+    function ENT:CustomHeadTurn(yaw, pitch, roll)
+        return Angle(pitch * 0.8, -yaw * 0.9, roll * 0.5)
+    end
+end
 
 -- DO NOT TOUCH --
 AddCSLuaFile()

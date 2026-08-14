@@ -12,9 +12,15 @@ if not CLIENT then return end
 VNPCS_BellyRT = VNPCS_BellyRT or {}
 
 local BellyRT = VNPCS_BellyRT
-local RT_SIZE = 512
-local CAPTURES_PER_FRAME = 1
-local SIGNATURE_POLL_RATE = 0.15
+
+local function getRTSize()
+    local cv_size = GetConVar("vnpcs_belly_rt_size")
+    local sz = cv_size and cv_size:GetInt() or 512
+    if sz < 128 then return 128 end
+    if sz > 2048 then return 2048 end
+    return sz
+end
+
 local DUPLICATE_ORIGIN = Vector(0, 0, 0)
 local WHITE = Color(255, 255, 255, 255)
 local ZERO_ANGLE = Angle(0, 0, 0)
@@ -23,6 +29,26 @@ local ONE_VECTOR = Vector(1, 1, 1)
 local states = {}
 local captureQueue = {}
 local nextUID = 0
+
+function BellyRT.ClearAll()
+    for belly, state in pairs(states) do
+        if IsValid(state.clone) then
+            state.clone:Remove()
+        end
+    end
+    table.Empty(states)
+    table.Empty(captureQueue)
+end
+
+function BellyRT.RefreshAll()
+    for belly, _ in pairs(states) do
+        BellyRT.MarkDirty(belly)
+    end
+end
+
+cvars.AddChangeCallback("vnpcs_belly_rt_size", function()
+    BellyRT.ClearAll()
+end, "VNPCS_BellyRT_SizeChanged")
 
 local torsoBones = {
     "ValveBiped.Bip01_Pelvis",
@@ -43,41 +69,6 @@ local torsoBones = {
     "bip_spine_1",
     "bip_spine_2"
 }
-
--- Bones matching these keywords get flattened to nothing on the offscreen
--- capture clone only (the real predator model is never touched) so the
--- render-target sample doesn't bake breast geometry/shading into the belly
--- skin. Same naming convention already used by npc_modules/weight_gain.lua.
-local excludedBoneKeywords = {
-    "breast",
-    "boob",
-    "chest_l",
-    "chest_r",
-    "chestl",
-    "chestr",
-    "tit",
-}
-
-local function isExcludedBoneName(name)
-    name = string.lower(name)
-    for _, keyword in ipairs(excludedBoneKeywords) do
-        if name:find(keyword, 1, true) then return true end
-    end
-    return false
-end
-
-local function flattenExcludedBones(ent)
-    local boneCount = ent:GetBoneCount() or 0
-    for id = 0, boneCount - 1 do
-        local name = ent:GetBoneName(id)
-        if name and isExcludedBoneName(name) then
-            ent:ManipulateBoneScale(id, Vector(0.001, 0.001, 0.001))
-            ent:ManipulateBonePosition(id, vector_origin)
-            ent:ManipulateBoneAngles(id, ZERO_ANGLE)
-        end
-    end
-end
-
 
 local tPoseSequences = {
     "reference",
@@ -218,7 +209,8 @@ local function copyVisualState(src, dst)
     end
 
     dst:SetSkin(src:GetSkin() or 0)
-    dst:SetModelScale(src:GetModelScale() or 1, 0)
+    -- Keep the RT T-Pose clone at 1.0 unscaled size so the camera never has to raise or adjust as the NPC grows
+    dst:SetModelScale(1, 0)
     dst:SetMaterial(src:GetMaterial() or "")
     dst:SetColor(src:GetColor() or WHITE)
     dst:SetRenderMode(src:GetRenderMode() or RENDERMODE_NORMAL)
@@ -300,8 +292,6 @@ local function getTorsoTarget(ent)
     return center, mins, maxs
 end
 
-
-
 local function ensureDuplicate(state, predator)
     if IsValid(state.clone) then return state.clone end
 
@@ -321,12 +311,23 @@ end
 local function createState(belly)
     nextUID = nextUID + 1
 
+    local rtSize = getRTSize()
     local rtName = "vnpcs_belly_rt_" .. belly:EntIndex() .. "_" .. nextUID
     local matName = "vnpcs_belly_rt_mat_" .. belly:EntIndex() .. "_" .. nextUID
-    local rt = GetRenderTarget(rtName, RT_SIZE, RT_SIZE)
-    local mat = CreateMaterial(matName, "UnlitGeneric", {
+    local rt = GetRenderTarget(rtName, rtSize, rtSize)
+    local mat = CreateMaterial(matName, "VertexLitGeneric", {
         ["$basetexture"] = rt:GetName(),
-        ["$ignorez"] = "0"
+        ["$bumpmap"] = "models/wormonlooker/belly/normal",
+        ["$ambientocclusion"] = "0",
+        ["$surfaceprop"] = "Flesh",
+        ["$halflambert"] = "1",
+        ["$phong"] = "1",
+        ["$phongboost"] = "0.5",
+        ["$phongexponent"] = "10",
+        ["$phongfresnelranges"] = "[0.05 0.3 1]",
+        ["$ignorez"] = "0",
+        ["$model"] = "1",
+        ["$vertexcolor"] = "0"
     })
     mat:SetTexture("$basetexture", rt)
 
@@ -344,21 +345,51 @@ local function createState(belly)
     return state
 end
 
-local function queueCapture(state)
+local function isInBattle(predator)
+    if not IsValid(predator) then return false end
+    local enemy = safeCall(predator, "GetEnemy")
+    if IsValid(enemy) then return true end
+    local drgEnemy = safeCall(predator, "GetNW2Entity", "DrGBaseEnemy")
+    if IsValid(drgEnemy) then return true end
+    local drgTarget = safeCall(predator, "GetNW2Entity", "DrGBaseTarget")
+    if IsValid(drgTarget) then return true end
+    local nwEnemy = safeCall(predator, "GetNWEntity", "Enemy")
+    if IsValid(nwEnemy) then return true end
+    if SCHED_CHASE_ENEMY and safeCall(predator, "IsCurrentSchedule", SCHED_CHASE_ENEMY) then return true end
+    if SCHED_COMBAT_FACE and safeCall(predator, "IsCurrentSchedule", SCHED_COMBAT_FACE) then return true end
+    local wep = safeCall(predator, "GetActiveWeapon")
+    if IsValid(wep) and IsValid(enemy) then return true end
+    return false
+end
+
+function BellyRT.IsPredatorInBattle(predator)
+    return isInBattle(predator)
+end
+
+local function queueCapture(state, predator)
     if state.queued then return end
     state.queued = true
-    captureQueue[#captureQueue + 1] = state
+    if isInBattle(predator) then
+        state.priority = true
+        table.insert(captureQueue, 1, state)
+    else
+        state.priority = false
+        table.insert(captureQueue, state)
+    end
 end
 
 local function pollState(state, predator)
     local now = CurTime()
     if state.nextPoll > now then return end
-    state.nextPoll = now + SIGNATURE_POLL_RATE
+    local battle_rate = GetConVar("vnpcs_belly_rt_battle_poll_rate")
+    local idle_rate = GetConVar("vnpcs_belly_rt_poll_rate")
+    local pollRate = isInBattle(predator) and (battle_rate and battle_rate:GetFloat() or 0.05) or (idle_rate and idle_rate:GetFloat() or 0.15)
+    state.nextPoll = now + pollRate
 
     local signature = buildSignature(predator)
     if signature ~= state.signature then
         state.signature = signature
-        queueCapture(state)
+        queueCapture(state, predator)
     end
 end
 
@@ -368,39 +399,39 @@ local function captureTorso(state, predator)
 
     copyVisualState(predator, clone)
     forceTPose(clone)
-    flattenExcludedBones(clone) --keep breasts/chest bulges out of the belly skin sample
 
     local target, mins, maxs = getTorsoTarget(clone)
     local height = math.max(maxs.z - mins.z, 32)
     local width = math.max(maxs.y - mins.y, 24)
-    local distance = math.max(height * 0.72, width * 1.45, 36)
-    local camPos = target + Vector(distance, 0, height * 0.02)
+    local distance = math.max(height * 0.5, width * 1.0, 26)
+    local camPos = target + Vector(distance, 0, height * 0.01)
     local camAng = (target - camPos):Angle()
-    local fov = math.Clamp(32 + (width / height) * 10, 28, 46)
+    local fov = math.Clamp(24 + (width / height) * 8, 20, 36)
 
     local oldX, oldY, oldW, oldH = 0, 0, ScrW(), ScrH()
     if render.GetViewPort then
         oldX, oldY, oldW, oldH = render.GetViewPort()
     end
 
+    local rtSize = getRTSize()
     render.PushRenderTarget(state.rt)
-    render.SetViewPort(0, 0, RT_SIZE, RT_SIZE)
+    render.SetViewPort(0, 0, rtSize, rtSize)
     render.Clear(0, 0, 0, 255, true, true)
     render.ClearDepth()
 
     if render.FogMode then render.FogMode(MATERIAL_FOG_NONE) end
     render.SuppressEngineLighting(true)
-    render.ResetModelLighting(0.82, 0.82, 0.82)
-    render.SetModelLighting(BOX_FRONT, 1.25, 1.25, 1.25)
-    render.SetModelLighting(BOX_BACK, 0.35, 0.35, 0.35)
-    render.SetModelLighting(BOX_LEFT, 0.7, 0.7, 0.7)
-    render.SetModelLighting(BOX_RIGHT, 0.7, 0.7, 0.7)
-    render.SetModelLighting(BOX_TOP, 0.55, 0.55, 0.55)
-    render.SetModelLighting(BOX_BOTTOM, 0.35, 0.35, 0.35)
+    render.ResetModelLighting(0.95, 0.95, 0.95)
+    render.SetModelLighting(BOX_FRONT, 1.05, 1.05, 1.05)
+    render.SetModelLighting(BOX_BACK, 0.85, 0.85, 0.85)
+    render.SetModelLighting(BOX_LEFT, 0.92, 0.92, 0.92)
+    render.SetModelLighting(BOX_RIGHT, 0.92, 0.92, 0.92)
+    render.SetModelLighting(BOX_TOP, 0.95, 0.95, 0.95)
+    render.SetModelLighting(BOX_BOTTOM, 0.88, 0.88, 0.88)
     render.SetColorModulation(1, 1, 1)
     render.SetBlend(1)
 
-    cam.Start3D(camPos, camAng, fov, 0, 0, RT_SIZE, RT_SIZE, 1, distance + height * 2)
+    cam.Start3D(camPos, camAng, fov, 0, 0, rtSize, rtSize, 1, distance + height * 2)
         cam.IgnoreZ(false)
         clone:DrawModel()
     cam.End3D()
@@ -433,11 +464,21 @@ local function getPredatorForBelly(belly)
     if not IsValid(predator) then
         predator = belly:GetNWEntity("NPCParent")
     end
-
+    if not IsValid(predator) then
+        predator = belly:GetParent()
+    end
+    if not IsValid(predator) then
+        predator = belly:GetOwner()
+    end
+    if not IsValid(predator) and belly.GetNPC and isfunction(belly.GetNPC) then
+        predator = belly:GetNPC()
+    end
     return predator
 end
 
 function BellyRT.GetMaterial(belly)
+    local cv_en = GetConVar("vnpcs_belly_rt_enabled")
+    if cv_en and not cv_en:GetBool() then return nil end
     if not IsValid(belly) then return nil end
 
     local predator = getPredatorForBelly(belly)
@@ -445,6 +486,11 @@ function BellyRT.GetMaterial(belly)
 
     local state = states[belly] or createState(belly)
     pollState(state, predator)
+
+    if not state.ready and state.queued then
+        captureTorso(state, predator)
+        state.queued = false
+    end
 
     if state.ready then
         return state.material
@@ -482,15 +528,21 @@ end)
 
 hook.Add("PostRender", "VNPCS_BellyRT_Capture", function()
     local captures = 0
+    local cv_max = GetConVar("vnpcs_belly_rt_max_captures")
+    local cv_battle = GetConVar("vnpcs_belly_rt_battle_captures")
+    local max_captures = cv_max and cv_max:GetInt() or 1
     local queueIndex = 1
 
-    while captureQueue[queueIndex] and captures < CAPTURES_PER_FRAME do
+    while captureQueue[queueIndex] and captures < max_captures do
         local state = table.remove(captureQueue, queueIndex)
         if state then
             state.queued = false
             local belly = state.belly
             local predator = IsValid(belly) and getPredatorForBelly(belly) or nil
             if IsValid(belly) and IsValid(predator) then
+                if state.priority or isInBattle(predator) then
+                    max_captures = math.max(max_captures, cv_battle and cv_battle:GetInt() or 4)
+                end
                 captureTorso(state, predator)
                 captures = captures + 1
             end

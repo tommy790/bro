@@ -1,27 +1,12 @@
 VNPCs = VNPCs or {}
 VNPCs.Icon = "vnpcs/vnpcsicon16.png"
 
-if SERVER then
-    util.AddNetworkString("VNPC_SetTrait")
-end
-
-net.Receive("VNPC_SetTrait", function(len, ply)
-    local ent = net.ReadEntity()
-    local name = net.ReadString()
-    local value = net.ReadFloat()
-
-    if not IsValid(ply) or not IsValid(ent) then return end
-    if not ent.Predator or not ent.SetTrait then return end
-
-    ent:SetTrait(name, value)
-end)
-
 properties.Add("vnpcs_eatme", {
 	MenuLabel = "Eat me!",
 	Order = 999,
 	MenuIcon = VNPCs.Icon,
 	Filter = function(self, ent, ply)
-		if not ent.IsDrGNextbot then return false end
+		if not ent.IsDrGNextbot and not ent.VNPC_FemaleModelVore then return false end
 		if not ent.Predator then return false end
 		return true
 	end,
@@ -32,30 +17,49 @@ properties.Add("vnpcs_eatme", {
 	end,
 	Receive = function(self, len, ply)
 		local ent = net.ReadEntity()
+        if ent.EatEntity then
+            ent:EatEntity(ply)
+            return
+        end
         --print(ent, SERVER) blehhhh
-        ent:ClearPatrols()
+        if ent.ClearPatrols then
+            pcall(ent.ClearPatrols, ent)
+        elseif VNPC_ClearPatrols then
+            VNPC_ClearPatrols(ent)
+        end
         ent:SetEntityRelationship(ply, D_HT, 99999)
         ent:SetEnemy(ply)
         ent:SpotEntity(ply)
 	end
 })
 
-properties.Add("vnpcs_status_menu", {
-	MenuLabel = "Vore Status...",
-	Order = 998,
+properties.Add("vnpcs_regurgitate", {
+	MenuLabel = "Regurgitate Prey",
+	Order = 1000,
 	MenuIcon = VNPCs.Icon,
 	Filter = function(self, ent, ply)
-		if not ent.IsDrGNextbot then return false end
-		if not ent.Predator then return false end
-		return true
+		local belly = ent.VNPC_Belly or ent.Belly
+		if IsValid(belly) and belly.Prey and #belly.Prey > 0 then return true end
+		return false
 	end,
 	Action = function(self, ent)
-		if CLIENT and OpenVoreStatusMenu then
-			OpenVoreStatusMenu(ent)
-		end
+        self:MsgStart()
+		net.WriteEntity(ent)
+		self:MsgEnd()
 	end,
+	Receive = function(self, len, ply)
+		local ent = net.ReadEntity()
+		if IsValid(ent) and ent.ReleaseAllPrey then
+			ent:ReleaseAllPrey()
+		elseif IsValid(ent) and ent.Belly and ent.Belly.Regurgitate then
+			for _, p_tbl in ipairs(ent.Belly.Prey or {}) do
+				if p_tbl and IsValid(p_tbl.Entity) then
+					pcall(ent.Belly.Regurgitate, ent.Belly, p_tbl.Entity)
+				end
+			end
+		end
+	end
 })
-
 
 hook.Add("EntityEmitSound", "MuffleVoredSounds", function( sound_info )
     --local server_or_client = SERVER and "SERVER" or "CLIENT"

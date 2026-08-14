@@ -136,6 +136,17 @@ function ENT:StruggleAnimation(aliveFactor)
     else
         struggleMulti = struggleMulti * global_struggle_multi:GetFloat()
     end
+    if VNPC_GetPreyPersonality and self.Prey and istable(self.Prey) and #self.Prey > 0 then
+        for _, p_tbl in ipairs(self.Prey) do
+            if p_tbl and IsValid(p_tbl.Entity) then
+                local _, prey_data = VNPC_GetPreyPersonality(p_tbl.Entity)
+                if prey_data and prey_data.struggle_multiplier then
+                    struggleMulti = struggleMulti * prey_data.struggle_multiplier
+                    break
+                end
+            end
+        end
+    end
 
     local freq = alive_struggle_speed == 0 and 10 or 0.3/alive_struggle_speed
     if self.PreyStruggleTimer > freq then 
@@ -208,30 +219,35 @@ function ENT:Think() --this code is realllyyyyy stupid
         local wantedAngleOffset = 0
         if belly_clipping:GetBool() and not self:GetNWBool("NoClipFix", false) then
             local bone_matrix = self:GetBoneMatrix(1)
-            local pos = bone_matrix:GetTranslation()
-            local offset = 4
+            if not bone_matrix then
+                self:SetupBones()
+                bone_matrix = self:GetBoneMatrix(1)
+            end
+            if bone_matrix then
+                local pos = bone_matrix:GetTranslation()
+                local offset = 4
 
-            local box = vector_one * newSize * 5
+                local box = vector_one * newSize * 5
 
-            local tr = util.TraceHull({
-                start = pos + vector_up * offset,
-                endpos = pos + (-vector_up * 200),
-                maxs = box,
-		        mins = -box,
-                filter = {self, self.NPC}
-            })
+                local tr = util.TraceHull({
+                    start = pos + vector_up * offset,
+                    endpos = pos + (-vector_up * 200),
+                    maxs = box,
+		            mins = -box,
+                    filter = {self, self.NPC}
+                })
 
-            if tr.Hit then
-                local dist = tr.HitPos:Distance(pos) + (newSize * 5) + offset  
-                local belly_size_messurement_aprox = 36 * newSize
-                local clipCalc = dist - belly_size_messurement_aprox 
+                if tr.Hit then
+                    local dist = tr.HitPos:Distance(pos) + (newSize * 5) + offset  
+                    local belly_size_messurement_aprox = 36 * newSize
+                    local clipCalc = dist - belly_size_messurement_aprox 
 
-                if clipCalc < 0 then
-                 wantedAngleOffset = 50 * math.exp((5 * clipCalc)/math.pow(dist, 1.2)) - 50
+                    if clipCalc < 0 then
+                        wantedAngleOffset = 50 * math.exp((5 * clipCalc)/math.pow(dist, 1.2)) - 50
+                    end
                 end
             end
         end
-
         self.RotationSpring = do_spring(self.RotationSpring, wantedAngleOffset)
     end
 
@@ -239,24 +255,7 @@ function ENT:Think() --this code is realllyyyyy stupid
         local modelSize = math.Clamp(newSize * (self.FoldMulti or 1), 0, self.MaxFolds)
         self:ManipulateBoneAngles(main_bone, Angle(0, 0, self.RotationSpring.pos))
 
-        --[[ DYNAMIC WEIGHT PAINTING & MESH DEFORM ]]
-        --blends towards the actual shape of whatever's inside (wide vs tall
-        --vs long) instead of always inflating uniformly, so the belly reads
-        --like it's actually holding that specific prey - and, when there's
-        --more than one body in there, like it's actually holding more than
-        --one body. Purely geometric (bounding-box packing in
-        --basic_visual.lua's GetBellyShapeVector), no physics simulation.
-        local wantedShape = self:GetNWVector("BellyShape", vector_one)
-        self.ShapeBlend = self.ShapeBlend or vector_one
-        self.ShapeBlend = LerpVector(getLerpTime(FrameTime(), 3), self.ShapeBlend, wantedShape)
-
-        local scaleVec = Vector(
-            newSize * self.ShapeBlend.x,
-            newSize * self.ShapeBlend.y,
-            newSize * self.ShapeBlend.z
-        )
-
-        self:ManipulateBoneScale(main_bone, scaleVec)
+        self:ManipulateBoneScale(main_bone, vector_one * newSize)
         
         local ughhhhhh = math.min(-(1 - newSize) * 3.5, 0)
         self:ManipulateBonePosition(main_bone, Vector(0, ughhhhhh * 1.2, ughhhhhh * 0.9))
@@ -267,16 +266,18 @@ function ENT:Think() --this code is realllyyyyy stupid
         self:StruggleAnimation(aliveFactor)
     else
         self:DigestAnimation()
-
     end
 end
 
-
 function ENT:InteralCameraPos(entPos, ang)
     local bone_matrix = self:GetBoneMatrix(1)
-    local bone_pos = bone_matrix:GetTranslation()
-    local bone_ang = bone_matrix:GetAngles()
-    local bone_scale = bone_matrix:GetScale()
+    if not bone_matrix then
+        self:SetupBones()
+        bone_matrix = self:GetBoneMatrix(1)
+    end
+    local bone_pos = bone_matrix and bone_matrix:GetTranslation() or self:GetPos()
+    local bone_ang = bone_matrix and bone_matrix:GetAngles() or self:GetAngles()
+    local bone_scale = bone_matrix and bone_matrix:GetScale() or Vector(1, 1, 1)
 
     entPos = bone_pos - vector_up + bone_ang:Right() * bone_scale * -15
 

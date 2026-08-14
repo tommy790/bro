@@ -77,19 +77,25 @@ function ENT:GetAdjustedSpeeds() --weight speed mechanics are here
 		return self.WalkSpeed, self.RunSpeed
 	end
 
+	-- Belly physics engine: live mass simulation applies its own slowdown curve
+	-- (trait-aware via weight_resistance). We take the harsher of the two so a
+	-- heavy belly always feels heavy.
+	local physSlow = 1.0
+	if VNPC_GetBellyWeightSlow then
+		physSlow = VNPC_GetBellyWeightSlow(self) or 1.0
+	end
+
 	local ogWalk, ogRun = self.WalkSpeed, self.RunSpeed
 	local multi = fatSpeedMutli:GetFloat() or 1
-
-	if self.GetTrait then
-		multi = multi * self:GetTrait("StaminaPenalty")
-	end
 
 	local newRun = math.max(ogWalk, ogRun - WEIGHT_VALUE * 0.7 * multi)
 	local newWalk = math.max(ogWalk/2, ogWalk - WEIGHT_VALUE * 0.1 * multi)
 	
+	newRun = math.min(newRun, ogRun * physSlow)
+	newWalk = math.min(newWalk, ogWalk * physSlow)
+	
 	return newWalk, newRun
 end
-
 
 function ENT:OnUpdateSpeed()
 	local walkspeed, runspeed = self:GetAdjustedSpeeds() 
@@ -152,16 +158,26 @@ end
 function ENT:UpdateRelations()
 	self:SetSelfClassRelationship(D_LI)
 
-	if hungryNPCs:GetBool() then
-		self:SetDefaultRelationship(D_HT, 2)
-	else
-		self:SetDefaultRelationship(D_NU, 2)
+	local pers, pers_data = "opportunistic", nil
+	if VNPC_GetPredatorPersonality then
+		pers, pers_data = VNPC_GetPredatorPersonality(self)
 	end
 
-	if hungryPlayers:GetBool() then
-		self:SetPlayersRelationship(D_HT, 2)
-	else
+	if pers_data and pers_data.only_enemies then
+		self:SetDefaultRelationship(D_NU, 2)
 		self:SetPlayersRelationship(D_NU, 3)
+	else
+		if hungryNPCs:GetBool() or pers == "aggressive" or pers == "glutton" then
+			self:SetDefaultRelationship(D_HT, 2)
+		else
+			self:SetDefaultRelationship(D_NU, 2)
+		end
+
+		if hungryPlayers:GetBool() or pers == "aggressive" or pers == "glutton" then
+			self:SetPlayersRelationship(D_HT, 2)
+		else
+			self:SetPlayersRelationship(D_NU, 3)
+		end
 	end
 end
 
@@ -235,7 +251,15 @@ function ENT:OnReachedPatrol()
 end
 
 function ENT:OnIdle()
-	if (self.Belly and self.Belly.DigestionPhase ~= 0) and not patrolling:GetBool() then return end
+	if self.Belly and (self.Belly.DigestionPhase ~= 0 or (self.Belly.Prey and #self.Belly.Prey > 0)) then
+		if VNPC_IsPredatorCalm and VNPC_IsPredatorCalm(self) then
+			if self.ClearPatrols then pcall(self.ClearPatrols, self) end
+			return
+		elseif not patrolling:GetBool() then
+			if self.ClearPatrols then pcall(self.ClearPatrols, self) end
+			return
+		end
+	end
 	self:AddPatrolPos(self:RandomPos(1000))
 end
 
