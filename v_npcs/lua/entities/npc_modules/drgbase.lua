@@ -80,11 +80,16 @@ function ENT:GetAdjustedSpeeds() --weight speed mechanics are here
 	local ogWalk, ogRun = self.WalkSpeed, self.RunSpeed
 	local multi = fatSpeedMutli:GetFloat() or 1
 
+	if self.GetTrait then
+		multi = multi * self:GetTrait("StaminaPenalty")
+	end
+
 	local newRun = math.max(ogWalk, ogRun - WEIGHT_VALUE * 0.7 * multi)
 	local newWalk = math.max(ogWalk/2, ogWalk - WEIGHT_VALUE * 0.1 * multi)
 	
 	return newWalk, newRun
 end
+
 
 function ENT:OnUpdateSpeed()
 	local walkspeed, runspeed = self:GetAdjustedSpeeds() 

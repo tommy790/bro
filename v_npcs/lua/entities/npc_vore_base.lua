@@ -8,10 +8,14 @@ AddCSLuaFile("npc_modules/weight_gain.lua")
 AddCSLuaFile("npc_modules/faces.lua")
 AddCSLuaFile("npc_modules/client.lua")
 AddCSLuaFile("npc_modules/drgbase.lua")
+AddCSLuaFile("npc_modules/traits.lua")
+AddCSLuaFile("npc_modules/smart_ai.lua")
 include("npc_modules/belly.lua")
 include("npc_modules/weight_gain.lua")
 include("npc_modules/faces.lua")
 include("npc_modules/drgbase.lua")
+include("npc_modules/traits.lua")
+include("npc_modules/smart_ai.lua")
 
 local global_burps = CreateConVar("vnpcs_burps", "1", {FCVAR_ARCHIVE, FCVAR_NOTIFY, FCVAR_REPLICATED})
 local force_burps = CreateConVar("vnpcs_global_burps", "0", {FCVAR_ARCHIVE, FCVAR_REPLICATED})
@@ -86,6 +90,30 @@ ENT.VoreSettings.BurpsEnabled = true
 ENT.VoreSettings.HasWeightGain = true
 ENT.VoreSettings.WeightGainBones = {}
 ENT.VoreSettings.WeightGainSettings = {}
+
+--[[
+    TRAITS (see npc_modules/traits.lua)
+    Override any of these per-npc-type to give them a distinct "personality"
+    without writing any extra code, e.g:
+
+    ENT.VoreSettings.Traits = {
+        MetabolismSpeed = 1.4, --digests quicker than average
+        AcidResistance = 0.8, --easier to digest if this npc gets eaten itself
+        MaxCapacity = 3, --can only hold 3 living prey at once
+        StaminaPenalty = 1.2, --slows down a bit more than average when full
+    }
+]]
+ENT.VoreSettings.Traits = ENT.VoreSettings.Traits or {}
+
+--[[
+    SMART AI (see npc_modules/smart_ai.lua)
+]]
+ENT.VoreSettings.SmartAI = ENT.VoreSettings.SmartAI or {
+    PackHunting = true, --coordinates with other v-npcs hunting the same target
+    Ambushes = true, --will try to hide near patrol routes and wait to strike
+    HearingRange = 700, --how far away this npc can hear loud noises (running, gunfire, etc)
+    FlashlightSpotRange = 900, --how far away a flashlight beam can catch this npc's attention
+}
 ENT.VoreSettings.FlexFaces = { --default, based on hl2 flexes
     [0] = { -- Neutral (rest)
         ["right_puckerer"] = 0,
@@ -396,6 +424,8 @@ if SERVER then --setup functions
 		end
 		
 		self:SetupBelly(anchor)
+		self:InitTraits()
+		self:InitSmartAI()
 
 		for i, walk in ipairs({
 			self.RunAnimation,
@@ -426,6 +456,7 @@ if SERVER then --setup functions
 		end
 		self:UpdateFacialExpressions()
 		self:CheckOpenDoors()
+		self:SmartAIThink()
 
 		self:PostThink() --hook
 	end

@@ -20,8 +20,48 @@ function ENT:GetBellySize() --this gets the scale of all the stuff in the stomac
     return adjustedScale
 end
 
+--[[
+    DYNAMIC WEIGHT PAINTING & MESH DEFORM
+
+    Instead of just inflating the belly uniformly, this looks at the actual
+    shape (width/depth/height) of whatever is currently inside and returns a
+    bias vector around (1,1,1). A short, wide prey pushes the belly out
+    sideways more than up; a tall prey does the opposite. This is what lets
+    one generic belly model adapt to almost any swallowed entity without a
+    bespoke pre-made shape for it.
+]]
+function ENT:GetBellyShapeVector()
+    if #self.Prey == 0 then return Vector(1, 1, 1) end
+
+    local widthSum, depthSum, heightSum, weightSum = 0, 0, 0, 0
+    for _, info in ipairs(self.Prey) do
+        if info.Absorbing then continue end
+
+        local ext = info.HalfExtents or Vector(8, 8, 8)
+        local weight = math.max(info.Value, 1)
+
+        widthSum = widthSum + ext.x * weight
+        depthSum = depthSum + ext.y * weight
+        heightSum = heightSum + ext.z * weight
+        weightSum = weightSum + weight
+    end
+
+    if weightSum <= 0 then return Vector(1, 1, 1) end
+
+    local avgWidth, avgDepth, avgHeight = widthSum / weightSum, depthSum / weightSum, heightSum / weightSum
+    local avg = (avgWidth + avgDepth + avgHeight) / 3
+    if avg <= 0 then return Vector(1, 1, 1) end
+
+    return Vector(
+        math.Clamp(avgWidth / avg, 0.7, 1.6),
+        math.Clamp(avgDepth / avg, 0.7, 1.6),
+        math.Clamp(avgHeight / avg, 0.7, 1.6)
+    )
+end
+
 function ENT:SetBellySize()
     self:SetNWFloat("BellySize", self:GetBellySize())
+    self:SetNWVector("BellyShape", self:GetBellyShapeVector())
 end
 
 function ENT:SetBaseScale(num)

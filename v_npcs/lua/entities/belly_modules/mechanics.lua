@@ -37,6 +37,12 @@ local function getModelBounds(ent)
     return max_bounds:Length() * ent:GetModelScale()
 end
 
+local function getModelHalfExtents(ent) --used for shape-aware belly deformation
+    local mins, maxs = ent:GetModelBounds()
+    if not mins or not maxs then return Vector(8,8,8) end
+    return (maxs - mins) * 0.5 * ent:GetModelScale()
+end
+
 local function GetFlags(ent)
     return {
         Solid = ent:GetSolid(),
@@ -84,6 +90,26 @@ function ENT:ChangeDigestionPhase(new) --this is here just for the hook
     end
 
     self:OnDigestionPhaseChanged(new, old)
+end
+
+--default capacity gate, driven by the predator's "MaxCapacity" trait
+--(Modular Status & Trait System). Custom belly types that define their own
+--ENT:EatCondition (like ent_grower_vore) override this entirely.
+function ENT:EatCondition(prey)
+    local npc = self.NPC
+    if not npc or not npc.GetTrait then return true end
+
+    local maxCapacity = npc:GetTrait("MaxCapacity")
+    if not maxCapacity or maxCapacity <= 0 then return true end --0 = unlimited
+
+    local livingCount = 0
+    for _, info in ipairs(self.Prey) do
+        if info.Alive and not info.Absorbing then
+            livingCount = livingCount + 1
+        end
+    end
+
+    return livingCount < maxCapacity
 end
 
 function ENT:AddPrey(prey)
@@ -156,6 +182,12 @@ function ENT:AddPrey(prey)
         Entity = prey;
         Absorbing = false;
         OldFlags = old_flags;
+        HalfExtents = getModelHalfExtents(prey); --used for shape-aware belly deformation (Dynamic Mesh Deform)
+        Rag = { --Ragdoll Matrix simulated struggle position, see belly_modules/ragdoll_matrix.lua
+            Pos = Vector(0, 0, 0),
+            Vel = Vector(0, 0, 0),
+        };
+        NextImpulse = 0; --next time a fresh random struggle impulse is picked (non-player prey)
     }
 
     local prey_index = table.insert(self.Prey, prey_table)
@@ -178,6 +210,10 @@ function ENT:AbsorbPrey(dt)
         absorptionPower = global_absorption_multi:GetFloat()
     else
         absorptionPower = absorptionPower * global_absorption_multi:GetFloat()
+    end
+
+    if self.NPC and self.NPC.GetTrait then
+        absorptionPower = absorptionPower * self.NPC:GetTrait("MetabolismSpeed")
     end
 
     for i = #self.Prey, 1, -1 do
@@ -252,6 +288,10 @@ function ENT:DigestPrey(dt)
         digestionPower = digestionPower * global_digestion_multi:GetFloat()
     end
 
+    if self.NPC and self.NPC.GetTrait then
+        digestionPower = digestionPower * self.NPC:GetTrait("MetabolismSpeed")
+    end
+
     digestionPower = digestionPower * dt * 2 --its x2 for legacy value support, dumb but..uhhhhh
 
     for i = #self.Prey, 1, -1 do
@@ -276,15 +316,21 @@ function ENT:DigestPrey(dt)
 			    dmg_i:SetInflictor(npc)
             end
 			dmg_i:SetDamageType(DMG_REMOVENORAGDOLL)
-            dmg_i:SetDamage(digestionPower)
-            prey:TakeDamageInfo(dmg_i)
 
-            totalHeal = totalHeal + digestionPower
-            if oldHealth == prey:Health() and not prey_table.Alive then
-                prey:SetHealth(oldHealth - digestionPower)
+            local appliedDamage = digestionPower
+            if prey.GetTrait then --Acid Resistance trait, defends whoever is being digested
+                appliedDamage = appliedDamage / prey:GetTrait("AcidResistance")
             end
 
-            self:OnPreyDigesting(i, digestionPower)
+            dmg_i:SetDamage(appliedDamage)
+            prey:TakeDamageInfo(dmg_i)
+
+            totalHeal = totalHeal + appliedDamage
+            if oldHealth == prey:Health() and not prey_table.Alive then
+                prey:SetHealth(oldHealth - appliedDamage)
+            end
+
+            self:OnPreyDigesting(i, appliedDamage)
         else
             self:AbsorbSpecificPrey(i)
         end

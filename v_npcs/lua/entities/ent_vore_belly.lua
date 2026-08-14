@@ -8,11 +8,13 @@ AddCSLuaFile("belly_modules/sounds.lua")
 AddCSLuaFile("belly_modules/basic_visual.lua")
 AddCSLuaFile("belly_modules/animations.lua")
 AddCSLuaFile("belly_modules/npc.lua")
+AddCSLuaFile("belly_modules/ragdoll_matrix.lua")
 
 include("belly_modules/mechanics.lua")
 include("belly_modules/sounds.lua")
 include("belly_modules/basic_visual.lua")
 include("belly_modules/npc.lua")
+include("belly_modules/ragdoll_matrix.lua")
 
 ENT.Type = "anim"
 ENT.Base = "base_anim"

@@ -1,6 +1,21 @@
 VNPCs = VNPCs or {}
 VNPCs.Icon = "vnpcs/vnpcsicon16.png"
 
+if SERVER then
+    util.AddNetworkString("VNPC_SetTrait")
+end
+
+net.Receive("VNPC_SetTrait", function(len, ply)
+    local ent = net.ReadEntity()
+    local name = net.ReadString()
+    local value = net.ReadFloat()
+
+    if not IsValid(ply) or not IsValid(ent) then return end
+    if not ent.Predator or not ent.SetTrait then return end
+
+    ent:SetTrait(name, value)
+end)
+
 properties.Add("vnpcs_eatme", {
 	MenuLabel = "Eat me!",
 	Order = 999,
@@ -24,6 +39,23 @@ properties.Add("vnpcs_eatme", {
         ent:SpotEntity(ply)
 	end
 })
+
+properties.Add("vnpcs_status_menu", {
+	MenuLabel = "Vore Status...",
+	Order = 998,
+	MenuIcon = VNPCs.Icon,
+	Filter = function(self, ent, ply)
+		if not ent.IsDrGNextbot then return false end
+		if not ent.Predator then return false end
+		return true
+	end,
+	Action = function(self, ent)
+		if CLIENT and OpenVoreStatusMenu then
+			OpenVoreStatusMenu(ent)
+		end
+	end,
+})
+
 
 hook.Add("EntityEmitSound", "MuffleVoredSounds", function( sound_info )
     --local server_or_client = SERVER and "SERVER" or "CLIENT"

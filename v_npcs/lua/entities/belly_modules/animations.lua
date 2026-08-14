@@ -238,10 +238,34 @@ function ENT:Think() --this code is realllyyyyy stupid
         local modelSize = math.Clamp(newSize * (self.FoldMulti or 1), 0, self.MaxFolds)
         self:ManipulateBoneAngles(main_bone, Angle(0, 0, self.RotationSpring.pos))
 
-        self:ManipulateBoneScale(main_bone, vector_one * newSize)
+        --[[ DYNAMIC WEIGHT PAINTING & MESH DEFORM ]]
+        --blends towards the actual shape of whatever's inside (wide vs tall
+        --vs long) instead of always inflating uniformly, so the belly reads
+        --like it's actually holding that specific prey.
+        local wantedShape = self:GetNWVector("BellyShape", vector_one)
+        self.ShapeBlend = self.ShapeBlend or vector_one
+        self.ShapeBlend = LerpVector(getLerpTime(FrameTime(), 2), self.ShapeBlend, wantedShape)
+
+        --[[ RAGDOLL MATRIX ]]
+        --live simulated struggle offset/force, shifts the bulge position and
+        --adds a bit of extra "jostle" so the belly visibly bounces around
+        --wherever the prey currently is.
+        local ragOffset = self:GetNWVector("RagOffset", vector_origin)
+        local ragForce = self:GetNWFloat("RagForce", 0)
+        self.RagBlend = self.RagBlend or vector_origin
+        self.RagBlend = LerpVector(getLerpTime(FrameTime(), 9), self.RagBlend, ragOffset)
+
+        local scaleVec = Vector(
+            newSize * self.ShapeBlend.x,
+            newSize * self.ShapeBlend.y,
+            newSize * self.ShapeBlend.z
+        ) * (1 + ragForce * 0.12)
+
+        self:ManipulateBoneScale(main_bone, scaleVec)
         
         local ughhhhhh = math.min(-(1 - newSize) * 3.5, 0)
-        self:ManipulateBonePosition(main_bone, Vector(0, ughhhhhh * 1.2, ughhhhhh * 0.9))
+        local jostle = self.RagBlend * 0.06
+        self:ManipulateBonePosition(main_bone, Vector(jostle.x, ughhhhhh * 1.2 + jostle.y, ughhhhhh * 0.9 + jostle.z))
         self:ManipulateBoneScale(0, vector_one * modelSize) --fatrolls bone
     end
     --[[animations]]

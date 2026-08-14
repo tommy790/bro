@@ -7,6 +7,10 @@ ENT.WeightGainAmount = 0.5 --for each absorbption
 ENT.NextVoreThink = 0
 
 function ENT:NPCThink() --this has to be called by an npc
+    if self.UpdateRagdollMatrix then
+        self:UpdateRagdollMatrix() --Ragdoll Matrix runs every think for smooth physics, not gated by the 0.5s digestion tick
+    end
+
     --calls every 0.5 seconds
     local c_time = CurTime()
 	if c_time < self.NextVoreThink then return end
