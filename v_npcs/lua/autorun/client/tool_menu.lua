@@ -183,6 +183,67 @@ local function populate()
         panel:CheckBox("Hungry for NPCs", "vnpcspersonality_npcs")
     end)
 
+    spawnmenu.AddToolMenuOption("V-NPCs", "Status & Traits", "vnpcs_trait_settings", "Trait Settings", "", "", function(panel)
+        panel:ClearControls()
+        panel:Help("Modular Status & Trait System")
+        panel:CheckBox("Enable Traits", "vnpcs_traits_enabled")
+        panel:NumSlider("Random Trait Chance (per spawn)", "vnpcs_traits_random_chance", 0, 1, 2)
+        panel:ControlHelp("Traits modify metabolism (digestion speed), acid resistance, belly capacity, weight/stamina penalties, perception and more. Assign them with the Trait Editor tool or this menu.")
+        do
+            local btn = panel:Button("Open Trait Editor (Aimed NPC)")
+            btn.DoClick = function()
+                RunConsoleCommand("vnpcs_trait_menu_open")
+            end
+        end
+    end)
+
+    spawnmenu.AddToolMenuOption("V-NPCs", "Status & Traits", "vnpcs_belly_physics", "Belly Physics & Digestion", "", "", function(panel)
+        panel:ClearControls()
+        panel:Help("Physics-Driven Digestion (Ragdoll Matrix)")
+        panel:CheckBox("Enable Belly Physics", "vnpcs_belly_physics_enabled")
+        panel:NumSlider("Physics Rate (Hz)", "vnpcs_belly_physics_rate", 4, 30, 0)
+        panel:CheckBox("Ragdoll Matrix Visuals", "vnpcs_belly_ragdoll_visual")
+        panel:NumSlider("Max Matrix Ragdolls / Pred", "vnpcs_belly_ragdoll_max", 1, 12, 0)
+        panel:CheckBox("Struggle Kicks & Slosh", "vnpcs_belly_struggle_kick")
+        panel:NumSlider("Weight Slowdown Master", "vnpcs_belly_weight_slow", 0, 3, 2)
+        panel:ControlHelp("Prey now simulate as live masses inside the belly: they bounce, struggle, slosh and slow the predator down. Ragdoll copies of swallowed NPCs ride inside for the inside-camera.")
+        panel:Help("\\nMax Capacity (Modular Traits)\\n")
+        panel:CheckBox("Enforce Belly Capacity", "vnpcs_capacity_enabled")
+        panel:NumSlider("Base Capacity (value units)", "vnpcs_capacity_base", 200, 5000, 0)
+        panel:ControlHelp("Big Stomach / Small Stomach / Glutton traits raise or lower this per predator.")
+        do
+            local btn = panel:Button("Run Headless Physics Sim Test")
+            btn.DoClick = function()
+                RunConsoleCommand("vnpcs_belly_physics_sim")
+            end
+            local btn2 = panel:Button("Belly Physics Status")
+            btn2.DoClick = function()
+                RunConsoleCommand("vnpcs_belly_physics_status")
+            end
+        end
+    end)
+
+    spawnmenu.AddToolMenuOption("V-NPCs", "Status & Traits", "vnpcs_hunter_ai", "Hunter AI", "", "", function(panel)
+        panel:ClearControls()
+        panel:Help("Smart Nextbot AI & Navigation")
+        panel:CheckBox("Enable Hunter AI", "vnpcs_hunter_ai_enabled")
+        panel:CheckBox("Noise Tracking", "vnpcs_noise_tracking")
+        panel:NumSlider("Noise Base Range", "vnpcs_noise_base_range", 100, 1500, 0)
+        panel:CheckBox("Flashlight Tracking", "vnpcs_flashlight_tracking")
+        panel:NumSlider("Flashlight Range", "vnpcs_flashlight_range", 200, 2500, 0)
+        panel:CheckBox("Ambush & Stalk AI", "vnpcs_ambush_ai")
+        panel:CheckBox("Pack Cornering", "vnpcs_pack_cornering")
+        panel:CheckBox("Hazard Use (Barrels / Water)", "vnpcs_hazard_use")
+        panel:CheckBox("Hunter AI Debug Overlay", "vnpcs_hunter_debug")
+        panel:ControlHelp("Predators hear footsteps, spot flashlight beams, stalk from cover, flank as a pack and kick explosive barrels at targets.")
+        do
+            local btn = panel:Button("Hunter AI Status")
+            btn.DoClick = function()
+                RunConsoleCommand("vnpcs_hunter_ai_status")
+            end
+        end
+    end)
+
     spawnmenu.AddToolMenuOption("V-NPCs", "Info", "vnpcs_credits", "Credits", "", "", function(panel)
         panel:ClearControls()
 

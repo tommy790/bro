@@ -403,7 +403,11 @@ if SERVER then
                     ent.VNPC_BaseSightRange = ent.SightRange
                 end
                 if ent.VNPC_BaseSightRange then
-                    ent.SightRange = ent.VNPC_BaseSightRange * VNPC_GetHungerMultiplier(ent)
+                    local traitPerception = 1.0
+                    if VNPC_GetTraitStat then
+                        traitPerception = VNPC_GetTraitStat(ent, "perception")
+                    end
+                    ent.SightRange = ent.VNPC_BaseSightRange * VNPC_GetHungerMultiplier(ent) * traitPerception
                 end
 
                 -- Thirst & Water Drinking Engine: dynamically expand belly as they drink water

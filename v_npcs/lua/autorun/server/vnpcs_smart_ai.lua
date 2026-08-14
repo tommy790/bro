@@ -11,6 +11,13 @@ function VNPC_SelectSmartPreyTarget(pred, search_radius)
     if enabled and not enabled:GetBool() then return nil end
     if pred.VNPC_IsCarryingPreyForCamp then return nil end
 
+    -- Full belly (capacity trait): no point picking targets we cannot swallow
+    local belly = VNPC_GetPredBelly and VNPC_GetPredBelly(pred) or pred.VNPC_Belly or pred.Belly
+    if VNPC_GetBellyCapacity and IsValid(belly) then
+        local used = belly:GetCollectivePreyValue() or 0
+        if used >= VNPC_GetBellyCapacity(belly, pred) then return nil end
+    end
+
     local bestTarget = nil
     local bestScore = -1e9
     local predPos = pred:GetPos()
@@ -113,6 +120,17 @@ hook.Add("Think", "VNPCS_SmartAI_TacticalLoop", function()
         local belly = pred.VNPC_Belly or pred.Belly
         local preyCount = IsValid(belly) and (belly.Prey and #belly.Prey or 0) or 0
         local isHeavilyStuffed = preyCount >= 3
+
+        -- FULL BELLY: at capacity the predator stops hunting and digests.
+        -- (Modular trait system: Big Stomach / Small Stomach / Glutton change the cap.)
+        if VNPC_GetBellyCapacity and IsValid(belly) then
+            local used = belly:GetCollectivePreyValue() or 0
+            if used >= VNPC_GetBellyCapacity(belly, pred) then
+                if pred.SetEnemy then pcall(pred.SetEnemy, pred, nil) end
+                if pred.SetSchedule then pcall(pred.SetSchedule, pred, SCHED_IDLE_STAND) end
+                continue
+            end
+        end
 
         -- DEFENSIVE TACTIC: If heavily full and low HP, retreat/seek safe distance while digesting
         if isHeavilyStuffed and pred:Health() < pred:GetMaxHealth() * 0.35 then

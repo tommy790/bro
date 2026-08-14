@@ -37,11 +37,11 @@ local ANCHOR_ALTS = {
 }
 
 local SCALE_TARGETS = {
-    { names = { "ValveBiped.Bip01_Spine", "Spine", "spine" }, mul = Vector(0.28, 0.85, 0.22) },
-    { names = { "ValveBiped.Bip01_Spine1", "Spine1", "spine1" }, mul = Vector(0.22, 0.70, 0.18) },
-    { names = { "ValveBiped.Bip01_Pelvis", "Pelvis", "pelvis" }, mul = Vector(0.20, 0.55, 0.16) },
-    { names = { "ValveBiped.Bip01_L_Thigh", "L_Thigh", "l_thigh" }, mul = Vector(0.06, 0.18, 0.10) },
-    { names = { "ValveBiped.Bip01_R_Thigh", "R_Thigh", "r_thigh" }, mul = Vector(0.06, 0.18, 0.10) }
+    { names = { "ValveBiped.Bip01_Spine", "Spine", "spine" }, mul = Vector(0.28, 0.85, 0.22), paintKey = "spine" },
+    { names = { "ValveBiped.Bip01_Spine1", "Spine1", "spine1" }, mul = Vector(0.22, 0.70, 0.18), paintKey = "spine1" },
+    { names = { "ValveBiped.Bip01_Pelvis", "Pelvis", "pelvis" }, mul = Vector(0.20, 0.55, 0.16), paintKey = "pelvis" },
+    { names = { "ValveBiped.Bip01_L_Thigh", "L_Thigh", "l_thigh" }, mul = Vector(0.06, 0.18, 0.10), paintKey = "thighL" },
+    { names = { "ValveBiped.Bip01_R_Thigh", "R_Thigh", "r_thigh" }, mul = Vector(0.06, 0.18, 0.10), paintKey = "thighR" }
 }
 
 local function lookup(ent, names)
@@ -155,7 +155,21 @@ function VNPC_UpdateVirtualBellyBones(ent)
         radius = math.max(4.5, (ent.VNPC_BodyParts and ent.VNPC_BodyParts.torso and ent.VNPC_BodyParts.torso.width or 14) * 0.28)
     end
 
-    local root = LerpVector(0.38, pelvis, spine1) + fwd * (3.5 + radius * 0.22)
+    -- Dynamic weight painting: stretch the belly ellipsoid to the actual bounding
+    -- box of every consumed entity's shape blob (procedural, no fixed belly shapes).
+    local blobMetrics = nil
+    if VNPC_GetBellyDeformMetrics then
+        blobMetrics = VNPC_GetBellyDeformMetrics(ent)
+    end
+    local comShift = Vector(0, 0, 0)
+    if blobMetrics then
+        radius = math.max(radius, math.max(blobMetrics.rx, blobMetrics.ry, blobMetrics.rz) * 1.02)
+        if VNPC_GetBellyComShift then
+            comShift = VNPC_GetBellyComShift(ent)
+        end
+    end
+
+    local root = LerpVector(0.38, pelvis, spine1) + fwd * (3.5 + radius * 0.22) + comShift
     local mid = root + fwd * (radius * 0.58)
     local upper = root + up * (radius * 0.42) + fwd * (radius * 0.18)
     local lower = root - up * (radius * 0.48) + fwd * (radius * 0.32)
@@ -191,6 +205,8 @@ function VNPC_UpdateVirtualBellyBones(ent)
         up = up,
         rightDir = right,
         right = right,
+        blobMetrics = blobMetrics,
+        comShift = comShift,
         root = bone("VNPC_Belly_Root", root, radius * 0.55, nil),
         upper = bone("VNPC_Belly_Upper", upper, radius * 0.42, "VNPC_Belly_Root"),
         mid = bone("VNPC_Belly_Mid", mid, radius, "VNPC_Belly_Root"),
@@ -633,6 +649,15 @@ function VNPC_ApplyGeneratedBellyBoneScale(ent, chain)
     if not chain then return end
 
     local extra = math.Clamp((chain.size or 0) * 0.85, 0, 1.35)
+    -- Weight painting: when prey shape blobs are present, use the blob-driven
+    -- per-axis / per-side bone scales instead of the flat multiplier.
+    local painted = nil
+    if VNPC_GetWeightPaintBoneScale then
+        painted = VNPC_GetWeightPaintBoneScale(ent, chain)
+        if painted then
+            extra = painted.extra
+        end
+    end
     if extra < 0.03 then
         if ent.VNPC_GPUBellyScaled then
             for _, spec in ipairs(SCALE_TARGETS) do
@@ -650,7 +675,14 @@ function VNPC_ApplyGeneratedBellyBoneScale(ent, chain)
         local id = lookup(ent, spec.names)
         if id and spec.mul then
             local w = spec.mul
-            ent:ManipulateBoneScale(id, Vector(1 + extra * w.x, 1 + extra * w.y, 1 + extra * w.z))
+            local scaleVec
+            if painted then
+                local key = spec.paintKey
+                scaleVec = painted[key] or Vector(1 + extra * w.x, 1 + extra * w.y, 1 + extra * w.z)
+            else
+                scaleVec = Vector(1 + extra * w.x, 1 + extra * w.y, 1 + extra * w.z)
+            end
+            ent:ManipulateBoneScale(id, scaleVec)
         end
     end
     ent.VNPC_GPUBellyScaled = true
@@ -761,6 +793,13 @@ if CLIENT then
                 local push = VNPC_ApplyGPUBellyStruggleDeform(lp, spots)
                 if push > 0 then
                     world = world + nrm * (push * (chain.radius or 8))
+                end
+                -- Dynamic weight painting: per-prey volumetric lumps (procedural mesh deform)
+                if VNPC_ApplyWeightPaintDeform then
+                    local wd = VNPC_ApplyWeightPaintDeform(world, lp, ent, chain)
+                    if wd and wd:LengthSqr() > 0.01 then
+                        world = world + wd
+                    end
                 end
                 local gpush = VNPC_ApplyGPUBellyGulpDeform(world, gulps)
                 if gpush and gpush:LengthSqr() > 0.01 then

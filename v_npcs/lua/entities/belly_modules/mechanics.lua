@@ -98,6 +98,38 @@ end
 
 --[[     HOOKS      ]]
 
+CreateConVar("vnpcs_capacity_enabled", "1", {FCVAR_REPLICATED, FCVAR_ARCHIVE}, "Enforce a max belly capacity per predator (modular trait system can raise/lower it)")
+CreateConVar("vnpcs_capacity_base", "1600", {FCVAR_REPLICATED, FCVAR_ARCHIVE}, "Base belly capacity in prey-value units (~1 human = 100-250 value)")
+
+-- Max capacity in prey-value units for a belly, scaled by the predator's
+-- capacity trait (big_stomach, small_stomach, glutton, ...) and level bonus.
+function VNPC_GetBellyCapacity(belly, npc)
+    local cv = GetConVar("vnpcs_capacity_enabled")
+    if cv and not cv:GetBool() then return math.huge end
+    local base = GetConVar("vnpcs_capacity_base")
+    local cap = base and base:GetFloat() or 1600
+
+    if VNPC_GetTraitStat and IsValid(npc) then
+        cap = cap * VNPC_GetTraitStat(npc, "capacity")
+    end
+    if IsValid(belly) and belly.VNPC_LevelCapacityBonus then
+        cap = cap + belly.VNPC_LevelCapacityBonus * 120
+    end
+    return math.max(50, cap)
+end
+
+function VNPC_GetBellyRemainingCapacity(belly)
+    if not IsValid(belly) or not istable(belly.Prey) then return 0 end
+    local cap = VNPC_GetBellyCapacity(belly, belly.NPC)
+    local used = 0
+    for _, info in ipairs(belly.Prey) do
+        if istable(info) and not info.Absorbing then
+            used = used + (info.Value or 0)
+        end
+    end
+    return math.max(0, cap - used)
+end
+
 --when a prey gets eaten
 function ENT:OnPreyAdded(prey_index, value, npc) end --number, number, ent
 
@@ -232,6 +264,7 @@ end)
 hook.Add("OnEntityCreated", "VNPC_PreventSwallowedDuplicateRagdoll", function(ent)
     timer.Simple(0, function()
         if not IsValid(ent) then return end
+        if ent.VNPC_RagdollMatrix then return end -- belly-physics matrix copies are fine
         if ent:GetClass() == "prop_ragdoll" or ent.VNPC_IsCorpse then
             local owner = ent:GetOwner()
             if IsValid(owner) and (owner.Vored or owner.VNPC_Vored or owner.VNPC_IsDeadAndAbsorbed) then
@@ -385,6 +418,19 @@ function ENT:AddPrey(prey)
         end
     end
 
+    -- Max capacity gate (checked BEFORE any state mutation so a refused meal
+    -- never leaves the prey vored/hidden). The trait system (capacity stat) and
+    -- leveling (VNPC_LevelCapacityBonus) modify the limit.
+    if VNPC_GetBellyCapacity then
+        local capacity = VNPC_GetBellyCapacity(self, self.NPC)
+        local used = self:GetCollectivePreyValue() or 0
+        local incoming = getModelBounds(prey)
+        if (used + incoming) > capacity then
+            hook.Run("VNPC_OnBellyFull", self.NPC or self:GetOwner(), self, prey)
+            return false
+        end
+    end
+
     prey.Vored = true
     if VNPC_UnfreezeRagdollPhysics then
         VNPC_UnfreezeRagdollPhysics(prey)
@@ -525,6 +571,17 @@ function ENT:TransferPreyFrom(otherPredOrBelly)
             end
         end
         if alreadyIn then continue end
+
+        -- Capacity gate during transfers too
+        if VNPC_GetBellyCapacity then
+            local capacity = VNPC_GetBellyCapacity(self, self.NPC)
+            local used = self:GetCollectivePreyValue() or 0
+            local incoming = p_table.Value or 10
+            if (used + incoming) > capacity then
+                table.insert(oldBelly.Prey, p_table)
+                continue
+            end
+        end
 
         -- Update player notification / parenting
         local is_player = preyEnt:IsPlayer()
@@ -709,6 +766,10 @@ function ENT:DigestPrey(dt)
             digestionPower = digestionPower * pred_data.digestion_multiplier
         end
     end
+    -- Modular trait system: metabolism speed of the predator scales digestion rate
+    if VNPC_GetTraitStat and IsValid(self.NPC) then
+        digestionPower = digestionPower * VNPC_GetTraitStat(self.NPC, "metabolism")
+    end
 
     digestionPower = digestionPower * dt * 2 --its x2 for legacy value support, dumb but..uhhhhh
 
@@ -746,6 +807,10 @@ function ENT:DigestPrey(dt)
                 if prey_data and prey_data.digestion_resistance then
                     effectiveDmg = effectiveDmg * prey_data.digestion_resistance
                 end
+            end
+            -- Modular trait system: acid resistance of the prey reduces digestion damage
+            if VNPC_GetTraitStat and IsValid(prey) then
+                effectiveDmg = effectiveDmg * (1.0 / math.max(VNPC_GetTraitStat(prey, "acid_resistance"), 0.05))
             end
             dmg_i:SetDamage(effectiveDmg)
             prey:TakeDamageInfo(dmg_i)

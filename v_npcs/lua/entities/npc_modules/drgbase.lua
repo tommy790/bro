@@ -77,11 +77,22 @@ function ENT:GetAdjustedSpeeds() --weight speed mechanics are here
 		return self.WalkSpeed, self.RunSpeed
 	end
 
+	-- Belly physics engine: live mass simulation applies its own slowdown curve
+	-- (trait-aware via weight_resistance). We take the harsher of the two so a
+	-- heavy belly always feels heavy.
+	local physSlow = 1.0
+	if VNPC_GetBellyWeightSlow then
+		physSlow = VNPC_GetBellyWeightSlow(self) or 1.0
+	end
+
 	local ogWalk, ogRun = self.WalkSpeed, self.RunSpeed
 	local multi = fatSpeedMutli:GetFloat() or 1
 
 	local newRun = math.max(ogWalk, ogRun - WEIGHT_VALUE * 0.7 * multi)
 	local newWalk = math.max(ogWalk/2, ogWalk - WEIGHT_VALUE * 0.1 * multi)
+	
+	newRun = math.min(newRun, ogRun * physSlow)
+	newWalk = math.min(newWalk, ogWalk * physSlow)
 	
 	return newWalk, newRun
 end
