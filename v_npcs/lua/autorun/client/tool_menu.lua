@@ -210,17 +210,6 @@ local function populate()
 
     spawnmenu.AddToolMenuOption("V-NPCs", "Status & Traits", "vnpcs_belly_physics", "Belly Physics & Digestion", "", "", function(panel)
         panel:ClearControls()
-        panel:Help("Prey-Driven Belly Shape")
-        panel:CheckBox("Belly shape follows prey", "vnpcs_prey_belly_shape")
-        panel:NumSlider("Shape Intensity", "vnpcs_prey_belly_intensity", 0.5, 2.5, 2)
-        panel:NumSlider("Body Nest Tightness", "vnpcs_prey_belly_nest", 0.55, 1.0, 2)
-        panel:ControlHelp("Measures each swallowed prey and packs them shoulder-to-shoulder. 1 tall prey, 1 wide prey, or 2 people side-by-side all change the belly differently.")
-        do
-            local btnS = panel:Button("Prey Belly Shape Status")
-            btnS.DoClick = function()
-                RunConsoleCommand("vnpcs_prey_belly_status")
-            end
-        end
         panel:Help("Belly Weight Slowdown & GPU Weight Paint")
         panel:CheckBox("Enable Belly Weight Slowdown", "vnpcs_belly_physics_enabled")
         panel:NumSlider("Weight Slowdown Master", "vnpcs_belly_weight_slow", 0, 3, 2)

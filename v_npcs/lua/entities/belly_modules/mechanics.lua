@@ -40,66 +40,6 @@ local function getModelBounds(ent, scale)
     return max_bounds:Length() * (scale or ent:GetModelScale() or 1)
 end
 
--- Snapshot prey dimensions for prey-driven belly shape (half-extents: x=depth, y=width, z=height)
-local function measurePreySize(ent)
-    if not IsValid(ent) then return Vector(8, 8, 7), 0 end
-    local scale = 1
-    if ent.GetModelScale then
-        local ok, s = pcall(ent.GetModelScale, ent)
-        if ok and isnumber(s) and s > 0 then scale = s end
-    end
-
-    local curl = 0
-    if VNPC_GetPreyShapeBlob then
-        local blob = VNPC_GetPreyShapeBlob(ent)
-        if blob then
-            -- blob rx=side, ry=depth, rz=height
-            local hx = math.Clamp(blob.ry or 8, 3, 50)
-            local hy = math.Clamp(blob.rx or 8, 3, 55)
-            local hz = math.Clamp(blob.rz or 7, 3, 50)
-            if ent:IsPlayer() or ent:IsNPC() or ent:IsNextBot() or ent.IsDrGNextbot then
-                curl = 0.9
-            end
-            return Vector(hx, hy, hz), curl
-        end
-    end
-
-    if VNPC_MeasureBodyParts then
-        local ok, parts = pcall(VNPC_MeasureBodyParts, ent)
-        if ok and istable(parts) and parts.torso then
-            local tw = tonumber(parts.torso.width) or 14
-            local th = tonumber(parts.torso.height) or 16
-            local tl = tonumber(parts.torso.length) or 20
-            local pw = (parts.pelvis and tonumber(parts.pelvis.width)) or tw * 0.9
-            local hw = (parts.head and tonumber(parts.head.width)) or 7.5
-            local hy = math.max(tw, pw, hw) * 0.52 * scale
-            local hx = math.max(tl * 0.28, tw * 0.30) * scale
-            local hz = math.max(th * 0.42, hw * 0.55) * scale
-            return Vector(
-                math.Clamp(hx, 3, 50),
-                math.Clamp(hy, 3.5, 55),
-                math.Clamp(hz, 3, 50)
-            ), 0.95
-        end
-    end
-
-    local mins, maxs = nil, nil
-    if ent.GetModelBounds then
-        local ok, a, b = pcall(ent.GetModelBounds, ent)
-        if ok then mins, maxs = a, b end
-    end
-    if mins and maxs then
-        local ext = (maxs - mins) * 0.5 * scale
-        if ent:IsPlayer() or ent:IsNPC() or ent:IsNextBot() then
-            curl = 0.85
-        elseif ext.z > ext.y * 1.1 and ext.z > ext.x * 1.1 then
-            curl = 0.5
-        end
-        return ext, curl
-    end
-    return Vector(8, 8, 7), curl
-end
-
 local function GetFlags(ent)
     local solid, move, flags = SOLID_BBOX, MOVETYPE_STEP, 0
     if ent.GetSolid then
@@ -573,7 +513,6 @@ function ENT:AddPrey(prey)
         prey:SetHealth(preyValue * 3.5)
     end
 
-    local preySize, preyCurl = measurePreySize(prey)
     local prey_table = {
         Value = preyValue;
         TrueValue = preyValue;
@@ -581,8 +520,6 @@ function ENT:AddPrey(prey)
         Entity = prey;
         Absorbing = false;
         OldFlags = old_flags;
-        PreySize = preySize; -- half-extents for prey-driven belly shape
-        PreyCurl = preyCurl or 0; -- biped fetal-curl amount 0..1
     }
 
     local prey_index = table.insert(self.Prey, prey_table)
