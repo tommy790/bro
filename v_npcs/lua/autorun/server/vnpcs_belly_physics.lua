@@ -45,6 +45,46 @@ function VNPC_GetBellyWeightSlow(pred)
 end
 
 if SERVER then
+    -- Keep bounding-box blob layouts replicated to clients while prey is inside.
+    -- (Previously the deleted Ragdoll Matrix Think loop called VNPC_SyncPaintBlobNW;
+    -- without this, clients never see packed multi-body belly shapes.)
+    hook.Add("Think", "VNPC_BellyBlobPack_Sync", function()
+        local enabled = GetConVar("vnpcs_weight_paint_enabled")
+        if enabled and not enabled:GetBool() then return end
+        if not VNPC_SyncPaintBlobNW then return end
+
+        local now = CurTime()
+        if (VNPC_NextBellyBlobPackSync or 0) > now then return end
+        VNPC_NextBellyBlobPackSync = now + 0.5
+
+        for _, pred in ipairs(ents.GetAll()) do
+            if not IsValid(pred) then continue end
+            if not (pred.Predator or pred.VNPC_FemaleModelVore or pred.IsDrGNextbot or pred.EatEntity) then
+                continue
+            end
+            local belly = pred.VNPC_Belly or pred.Belly
+            if not IsValid(belly) then continue end
+            local hasPrey = istable(belly.Prey) and #belly.Prey > 0
+            local hasPhase = (belly.DigestionPhase or 0) > 0
+            if not hasPrey and not hasPhase and not pred.VNPC_IsPregnant then
+                -- Clear stale client blobs once empty.
+                if (pred.VNPC_LastPaintBlobN or 0) > 0 then
+                    pred.VNPC_BellyBlobMetrics = nil
+                    pred.VNPC_BellyBlobs = nil
+                    pcall(VNPC_SyncPaintBlobNW, pred)
+                    pred.VNPC_LastPaintBlobN = 0
+                end
+                continue
+            end
+            pred.VNPC_BellyBlobMetrics = nil
+            pcall(VNPC_SyncPaintBlobNW, pred)
+            pred.VNPC_LastPaintBlobN = (pred.GetNWInt and pred:GetNWInt("VNPC_PaintBlobN", 0)) or 0
+            if IsValid(belly) and belly.SetBellySize then
+                pcall(belly.SetBellySize, belly)
+            end
+        end
+    end)
+
     concommand.Add("vnpcs_belly_physics_status", function(ply)
         print("===============================================================")
         print("        V-NPCs BELLY WEIGHT STATUS (bounding-box driven)      ")

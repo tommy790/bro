@@ -157,30 +157,36 @@ function VNPC_UpdateVirtualBellyBones(ent)
 
     -- Dynamic weight painting: stretch the belly ellipsoid to the actual bounding
     -- box of every consumed entity's shape blob (procedural, no fixed belly shapes).
+    -- Uses the packed shelf layout so 2 side-by-side bodies make a wider belly,
+    -- not just a rounder single blob.
     local blobMetrics = nil
     if VNPC_GetBellyDeformMetrics then
         blobMetrics = VNPC_GetBellyDeformMetrics(ent)
     end
     local comShift = Vector(0, 0, 0)
+    local halfW, halfD, halfH = radius, radius, radius
     if blobMetrics then
-        radius = math.max(radius, math.max(blobMetrics.rx, blobMetrics.ry, blobMetrics.rz) * 1.02)
+        halfW = math.max(radius * 0.85, (blobMetrics.rx or radius) * 1.05)
+        halfD = math.max(radius * 0.90, (blobMetrics.ry or radius) * 1.08)
+        halfH = math.max(radius * 0.80, (blobMetrics.rz or radius) * 1.02)
+        radius = math.max(radius, halfW, halfD, halfH)
         if VNPC_GetBellyComShift then
             comShift = VNPC_GetBellyComShift(ent)
         end
     end
 
-    local root = LerpVector(0.38, pelvis, spine1) + fwd * (3.5 + radius * 0.22) + comShift
-    local mid = root + fwd * (radius * 0.58)
-    local upper = root + up * (radius * 0.42) + fwd * (radius * 0.18)
-    local lower = root - up * (radius * 0.48) + fwd * (radius * 0.32)
+    local root = LerpVector(0.38, pelvis, spine1) + fwd * (3.5 + halfD * 0.22) + comShift
+    local mid = root + fwd * (halfD * 0.58)
+    local upper = root + up * (halfH * 0.42) + fwd * (halfD * 0.18)
+    local lower = root - up * (halfH * 0.48) + fwd * (halfD * 0.32)
     if lthigh and rthigh then
         local hip = LerpVector(0.5, lthigh, rthigh)
-        lower = LerpVector(0.35, lower, hip + fwd * (radius * 0.4))
+        lower = LerpVector(0.35, lower, hip + fwd * (halfD * 0.4))
     end
-    local left = root - right * (radius * 0.52) + fwd * (radius * 0.22)
-    local rightB = root + right * (radius * 0.52) + fwd * (radius * 0.22)
-    local gulpNeck = (neck or head or spine2 or (pelvis + up * 28)) + fwd * (3.0 + radius * 0.06)
-    local gulpChest = (spine2 or spine1 or (gulpNeck - up * 8)) + fwd * (4.2 + radius * 0.10)
+    local left = root - right * (halfW * 0.95) + fwd * (halfD * 0.22)
+    local rightB = root + right * (halfW * 0.95) + fwd * (halfD * 0.22)
+    local gulpNeck = (neck or head or spine2 or (pelvis + up * 28)) + fwd * (3.0 + halfD * 0.06)
+    local gulpChest = (spine2 or spine1 or (gulpNeck - up * 8)) + fwd * (4.2 + halfD * 0.10)
     local ang = fwd:Angle()
 
     local function bone(name, pos, r, parent)
@@ -198,21 +204,25 @@ function VNPC_UpdateVirtualBellyBones(ent)
         hasModelBellyBones = VNPC_ModelHasBellyBones(ent),
         size = size,
         radius = radius,
-        width = radius * 2.05,
-        height = radius * 1.75,
-        depth = radius * 1.55,
+        -- True packed bounding box extents (width = side-to-side of shelf pack).
+        width = halfW * 2.05,
+        height = halfH * 1.85,
+        depth = halfD * 1.65,
+        halfW = halfW,
+        halfD = halfD,
+        halfH = halfH,
         forward = fwd,
         up = up,
         rightDir = right,
         right = right,
         blobMetrics = blobMetrics,
         comShift = comShift,
-        root = bone("VNPC_Belly_Root", root, radius * 0.55, nil),
-        upper = bone("VNPC_Belly_Upper", upper, radius * 0.42, "VNPC_Belly_Root"),
-        mid = bone("VNPC_Belly_Mid", mid, radius, "VNPC_Belly_Root"),
-        lower = bone("VNPC_Belly_Lower", lower, radius * 0.62, "VNPC_Belly_Root"),
-        left = bone("VNPC_Belly_L", left, radius * 0.48, "VNPC_Belly_Root"),
-        right = bone("VNPC_Belly_R", rightB, radius * 0.48, "VNPC_Belly_Root"),
+        root = bone("VNPC_Belly_Root", root, math.max(halfW, halfD, halfH) * 0.55, nil),
+        upper = bone("VNPC_Belly_Upper", upper, halfH * 0.55, "VNPC_Belly_Root"),
+        mid = bone("VNPC_Belly_Mid", mid, math.max(halfW, halfD) * 0.95, "VNPC_Belly_Root"),
+        lower = bone("VNPC_Belly_Lower", lower, halfH * 0.70, "VNPC_Belly_Root"),
+        left = bone("VNPC_Belly_L", left, halfW * 0.55, "VNPC_Belly_Root"),
+        right = bone("VNPC_Belly_R", rightB, halfW * 0.55, "VNPC_Belly_Root"),
         gulpNeck = bone("VNPC_Gulp_Neck", gulpNeck, math.max(3.4, 5.2), "VNPC_Belly_Upper"),
         gulpChest = bone("VNPC_Gulp_Chest", gulpChest, math.max(4.0, 6.0), "VNPC_Gulp_Neck")
     }

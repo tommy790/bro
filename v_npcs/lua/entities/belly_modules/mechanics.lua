@@ -528,6 +528,18 @@ function ENT:AddPrey(prey)
     self:OnPreyAdded(prey_index, preyValue, prey)
     self:SetNWInt("AliveFactor", self:GetAliveFactor()) --uhhh probably shouldnt be in mechanics but idc, this number is used for animations
 
+    -- Refresh bounding-box belly packing AFTER prey is in the list so shape matches contents.
+    if IsValid(self.NPC) then
+        self.NPC.VNPC_BellyBlobMetrics = nil
+        self.NPC.VNPC_BellyBlobs = nil
+        if VNPC_SyncPaintBlobNW then
+            pcall(VNPC_SyncPaintBlobNW, self.NPC)
+        end
+        if self.SetBellySize then
+            pcall(self.SetBellySize, self)
+        end
+    end
+
     hook.Run("VNPC_OnPreySwallowed", self.NPC or self:GetOwner() or self, prey, self)
     self:TransferPreyFrom(prey)
 
@@ -696,6 +708,13 @@ function ENT:AbsorbPrey(dt)
 
             if VNPC_ScheduleDigestedBoneSpit then
                 VNPC_ScheduleDigestedBoneSpit(self.NPC or self:GetOwner() or self:GetParent(), self)
+            end
+
+            if IsValid(self.NPC) then
+                self.NPC.VNPC_BellyBlobMetrics = nil
+                self.NPC.VNPC_BellyBlobs = nil
+                if VNPC_SyncPaintBlobNW then pcall(VNPC_SyncPaintBlobNW, self.NPC) end
+                if self.SetBellySize then pcall(self.SetBellySize, self) end
             end
 
             if #self.Prey == 0 then
@@ -876,7 +895,12 @@ function ENT:Regurgitate(index)
     prey.VNPC_Vored = false
     prey.VNPC_IsDeadAndAbsorbed = nil
 
-    
+    if IsValid(self.NPC) then
+        self.NPC.VNPC_BellyBlobMetrics = nil
+        self.NPC.VNPC_BellyBlobs = nil
+        if VNPC_SyncPaintBlobNW then pcall(VNPC_SyncPaintBlobNW, self.NPC) end
+        if self.SetBellySize then pcall(self.SetBellySize, self) end
+    end
 
     self:OnRegurgitate(prey)
 
@@ -958,6 +982,12 @@ function ENT:WipeAllPrey()
         end
     end
     self.Prey = keep
+    if IsValid(self.NPC) then
+        self.NPC.VNPC_BellyBlobMetrics = nil
+        self.NPC.VNPC_BellyBlobs = nil
+        if VNPC_SyncPaintBlobNW then pcall(VNPC_SyncPaintBlobNW, self.NPC) end
+        if self.SetBellySize then pcall(self.SetBellySize, self) end
+    end
     if #self.Prey == 0 then
         self:ChangeDigestionPhase(0)
     end
