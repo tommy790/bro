@@ -36,7 +36,7 @@ local function isPredatorCandidate(ent)
     if ent.VNPC_IsSleeping or ent.VNPC_IsReturningToCampToSleep then return false end
     if ent.Swallowing then return false end
     if ent.VNPC_IsCarryingPreyForCamp or ent.VNPC_IsCarryingMateForCamp then return false end
-    if IsValid(ent:GetEnemy()) then return false end
+    if IsValid(VNPC_GetEntityEnemy and VNPC_GetEntityEnemy(ent) or nil) then return false end
     return (ent.IsDrGNextbot or ent.VNPC_FemaleModelVore or ent.Predator or ent.EatEntity ~= nil) == true
 end
 
@@ -86,10 +86,10 @@ local function setFriendlyWithCamp(pred, camp, like)
                 pcall(mem.AddEntityRelationship, mem, pred, rel, prio)
             end
             if like then
-                if mem.GetEnemy and mem:GetEnemy() == pred and mem.SetEnemy then
+                if mem.SetEnemy and (VNPC_GetEntityEnemy and VNPC_GetEntityEnemy(mem) == pred) then
                     pcall(mem.SetEnemy, mem, nil)
                 end
-                if pred.GetEnemy and pred:GetEnemy() == mem and pred.SetEnemy then
+                if pred.SetEnemy and (VNPC_GetEntityEnemy and VNPC_GetEntityEnemy(pred) == mem) then
                     pcall(pred.SetEnemy, pred, nil)
                 end
             end

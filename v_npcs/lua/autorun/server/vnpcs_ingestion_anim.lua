@@ -358,7 +358,7 @@ function VNPC_StartIngestionAnimation(pred, prey, belly)
     local dur_cv = GetConVar("vnpcs_ingestion_duration")
     local duration = dur_cv and dur_cv:GetFloat() or 1.2
     local calm_swallow_cv = GetConVar("vnpcs_calm_swallow_animation")
-    if calm_swallow_cv and calm_swallow_cv:GetBool() and pred.GetEnemy and not IsValid(pred:GetEnemy()) then
+    if calm_swallow_cv and calm_swallow_cv:GetBool() and pred.GetEnemy and not IsValid(VNPC_GetEntityEnemy and VNPC_GetEntityEnemy(pred) or nil) then
         duration = 5.0
     end
     if duration <= 0.1 then return false end

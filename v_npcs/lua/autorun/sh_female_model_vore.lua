@@ -1973,6 +1973,14 @@ concommand.Add("vnpcs_set_moveset", function(ply, cmd, args)
     print("[V-NPCs] Set entity #" .. id .. " moveset to: " .. name)
 end)
 
+-- Safe enemy lookup for HL2 NPCs and custom nextbots that may lack GetEnemy.
+function VNPC_GetEntityEnemy(ent)
+    if not IsValid(ent) or not ent.GetEnemy then return nil end
+    local ok, enemy = pcall(ent.GetEnemy, ent)
+    if ok and IsValid(enemy) then return enemy end
+    return nil
+end
+
 function VNPC_IsPredatorCalm(pred)
     if not IsValid(pred) then return false end
 
@@ -1982,7 +1990,7 @@ function VNPC_IsPredatorCalm(pred)
     end
 
     -- 2. Check if currently fighting an enemy
-    local enemy = pred:GetEnemy()
+    local enemy = VNPC_GetEntityEnemy(pred)
     if IsValid(enemy) and enemy ~= pred and not enemy.Vored and not enemy.VNPC_Vored then
         return false
     end
@@ -1998,15 +2006,21 @@ function VNPC_IsPredatorCalm(pred)
         if isPrey then
             if ent:IsPlayer() then
                 return false
-            elseif pred.GetRelationship and (pred:GetRelationship(ent) == D_HT or pred:GetRelationship(ent) == D_FR) then
-                return false
+            elseif pred.GetRelationship then
+                local ok, rel = pcall(pred.GetRelationship, pred, ent)
+                if ok and (rel == D_HT or rel == D_FR) then
+                    return false
+                end
             elseif (ent:GetClass() == "prop_ragdoll" or ent.VNPC_IsCorpse) and pred.CanEatCorpse and pred:CanEatCorpse(ent) then
                 if predPos:DistToSqr(ent:GetPos()) < (250 * 250) then
                     return false
                 end
             elseif ent.IsDrGNextbot or ent.VNPC_FemaleModelVore or ent.Predator then
-                if pred.GetRelationship and pred:GetRelationship(ent) == D_HT then
-                    return false
+                if pred.GetRelationship then
+                    local ok, rel = pcall(pred.GetRelationship, pred, ent)
+                    if ok and rel == D_HT then
+                        return false
+                    end
                 end
             end
         end

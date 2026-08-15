@@ -30,7 +30,7 @@ hook.Add("Think", "VNPCS_SleepSystem_Loop", function()
         if (ent.VNPC_NextSleepThink or 0) > now then continue end
         ent.VNPC_NextSleepThink = now + 1.0
 
-        local inCombat = IsValid(ent:GetEnemy()) or (ent.IsMoving and ent:IsMoving() and not ent.VNPC_IsReturningToCampToSleep)
+        local inCombat = IsValid(VNPC_GetEntityEnemy and VNPC_GetEntityEnemy(ent) or nil) or (ent.IsMoving and ent:IsMoving() and not ent.VNPC_IsReturningToCampToSleep)
 
         if ent.VNPC_IsSleeping then
             -- Drain sleepiness bar while sleeping and regenerate health from peaceful rest

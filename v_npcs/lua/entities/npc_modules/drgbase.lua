@@ -203,7 +203,7 @@ function ENT:ShouldIgnore(ent)
 	if self.VNPC_CampID and ent.VNPC_CampID and self.VNPC_CampID ~= "wild" and self.VNPC_CampID == ent.VNPC_CampID then
 		return true
 	end
-	if self:GetEnemy() ~= ent then
+	if (VNPC_GetEntityEnemy and VNPC_GetEntityEnemy(self) or nil) ~= ent then
 		return ent.Predator --change this later? maybe?
 	end
 	return false 

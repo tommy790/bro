@@ -982,7 +982,7 @@ function VNPC_WildFamilyDefense_AI(now)
             if not isPredThreat then continue end
 
             for _, p in ipairs(protectees) do
-                if threat:GetPos():DistToSqr(p:GetPos()) <= (750 * 750) or threat:GetEnemy() == p then
+                if threat:GetPos():DistToSqr(p:GetPos()) <= (750 * 750) or (VNPC_GetEntityEnemy and VNPC_GetEntityEnemy(threat) == p) then
                     -- Mother / Mate fiercely rushes to defend their family!
                     w.VNPC_ProtectorResilience = now + 10.0
                     if w.SetEnemy then pcall(w.SetEnemy, w, threat) end
@@ -992,7 +992,7 @@ function VNPC_WildFamilyDefense_AI(now)
                     -- Alert nearby wild allies to converge and defend the family!
                     for _, ally in ipairs(ents.FindInSphere(wPos, 1400)) do
                         if IsValid(ally) and ally ~= w and ally ~= threat and (ally:IsNPC() or ally.IsDrGNextbot) and not ally.Vored then
-                            if ally.VNPC_WildType == w.VNPC_WildType and not IsValid(ally:GetEnemy()) then
+                            if ally.VNPC_WildType == w.VNPC_WildType and not IsValid(VNPC_GetEntityEnemy and VNPC_GetEntityEnemy(ally) or nil) then
                                 if ally.SetEnemy then pcall(ally.SetEnemy, ally, threat) end
                                 if ally.SetSchedule then pcall(ally.SetSchedule, ally, SCHED_FORCED_GO_RUN) end
                             end
@@ -1084,7 +1084,7 @@ hook.Add("Think", "VNPC_WildEcology_AI_Loop", function()
             end
         end
 
-        if not IsValid(ent:GetEnemy()) and not (VNPC_IsBusyMating and VNPC_IsBusyMating(ent)) and not ent.VNPC_IsPregnant then
+        if not IsValid(VNPC_GetEntityEnemy and VNPC_GetEntityEnemy(ent) or nil) and not (VNPC_IsBusyMating and VNPC_IsBusyMating(ent)) and not ent.VNPC_IsPregnant then
             local angle = math.rad(math.random(0, 360))
             local dist = math.random(500, 1100)
             local targetPos = pos + Vector(math.cos(angle) * dist, math.sin(angle) * dist, 0)

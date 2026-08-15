@@ -47,7 +47,12 @@ hook.Add("Think", "VNPC_BellyRubComfort_Loop", function()
         if VNPC_IsPredatorCalm then
             isCalm = VNPC_IsPredatorCalm(pred)
         else
-            isCalm = not IsValid(pred:GetEnemy()) and not (pred.IsMoving and pred:IsMoving())
+            local enemy = VNPC_GetEntityEnemy and VNPC_GetEntityEnemy(pred) or nil
+            if not enemy and pred.GetEnemy then
+                local ok, en = pcall(pred.GetEnemy, pred)
+                if ok then enemy = en end
+            end
+            isCalm = not IsValid(enemy) and not (pred.IsMoving and pred:IsMoving())
         end
 
         if isCalm then

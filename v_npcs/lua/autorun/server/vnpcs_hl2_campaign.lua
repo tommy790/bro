@@ -108,7 +108,7 @@ hook.Add("Think", "VNPCS_HL2Campaign_DirectorLoop", function()
         if not (npc.VNPC_FemaleModelVore or npc.IsDrGNextbot or npc.Predator) then continue end
 
         -- Ensure constant vore in campaign battles by driving predators to rush and swallow enemies
-        local enemy = npc:GetEnemy()
+        local enemy = VNPC_GetEntityEnemy and VNPC_GetEntityEnemy(npc) or nil
         if IsValid(enemy) and enemy ~= npc and not enemy.Vored and not enemy.VNPC_Vored then
             if VNPC_IsFamilyOrMate and VNPC_IsFamilyOrMate(npc, enemy) then continue end
             if not (npc.VNPC_IsWildWanderer and npc.VNPC_WildType == "predator") and VNPC_IsProtectedChildPrey and VNPC_IsProtectedChildPrey(enemy) then continue end
@@ -135,7 +135,7 @@ hook.Add("Think", "VNPCS_HL2Campaign_DirectorLoop", function()
                 -- Campaign Squad Coordination: alert nearby friendly predators to assist in surrounding the enemy
                 for _, ally in ipairs(ents.FindInSphere(npc:GetPos(), 300)) do
                     if IsValid(ally) and ally ~= npc and ally ~= enemy and ally:Health() > 0 and (ally.VNPC_FemaleModelVore or ally.IsDrGNextbot or ally.Predator) then
-                        if not IsValid(ally:GetEnemy()) then
+                        if not IsValid(VNPC_GetEntityEnemy and VNPC_GetEntityEnemy(ally) or nil) then
                             if ally.SetEnemy then pcall(ally.SetEnemy, ally, enemy) end
                             if ally.SetSchedule then pcall(ally.SetSchedule, ally, SCHED_CHASE_ENEMY) end
                         end
@@ -183,7 +183,8 @@ concommand.Add("vnpcs_hl2_campaign_status", function(ply)
     for _, npc in ipairs(ents.FindByClass("npc_*")) do
         if IsValid(npc) and (npc.VNPC_FemaleModelVore or npc.IsDrGNextbot or npc.Predator) then
             count = count + 1
-            local enemyName = IsValid(npc:GetEnemy()) and (npc:GetEnemy().PrintName or npc:GetEnemy():GetClass()) or "NONE"
+            local _en = VNPC_GetEntityEnemy and VNPC_GetEntityEnemy(npc) or nil
+            local enemyName = IsValid(_en) and (_en.PrintName or _en:GetClass()) or "NONE"
             local scripted = VNPC_IsHL2ScriptedScene(npc) and "YES (Bone Poses Suppressed)" or "NO (Active Combat/Patrol)"
             print(string.format(" - Campaign Predator #%d [%s]: Scripted Scene = %s | Target Enemy = %s", npc:EntIndex(), npc.PrintName or npc:GetClass(), scripted, enemyName))
         end

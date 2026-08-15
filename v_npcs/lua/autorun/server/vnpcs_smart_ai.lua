@@ -47,7 +47,7 @@ function VNPC_SelectSmartPreyTarget(pred, search_radius)
         if ent:IsPlayer() or ent:IsNPC() or ent.IsDrGNextbot then
             if pred.GetRelationship and pred:GetRelationship(ent) == D_HT then
                 isHostile = true
-            elseif pred.GetEnemy and pred:GetEnemy() == ent then
+            elseif (VNPC_GetEntityEnemy and VNPC_GetEntityEnemy(pred) == ent) then
                 isHostile = true
             end
         elseif ent:GetClass() == "prop_ragdoll" or ent.VNPC_IsCorpse then
@@ -151,7 +151,7 @@ hook.Add("Think", "VNPCS_SmartAI_TacticalLoop", function()
             local cls = prop:GetClass()
             if cls == "prop_physics" or cls == "prop_dynamic" or cls == "prop_ragdoll" or cls == "func_breakable" then
                 local dist = pred:GetPos():Distance(prop:GetPos())
-                if dist <= 70 or (pred.GetVelocity and pred:GetVelocity():Length2DSqr() < 16 and IsValid(pred:GetEnemy())) then
+                if dist <= 70 or (pred.GetVelocity and pred:GetVelocity():Length2DSqr() < 16 and IsValid(VNPC_GetEntityEnemy and VNPC_GetEntityEnemy(pred) or nil)) then
                     if pred.EatEntity then
                         pred:EatEntity(prop)
                     elseif IsValid(belly) and belly.AddPrey then

@@ -772,7 +772,7 @@ function VNPC_PreyCampLeaderDecision_AI(camp, now)
     camp.leaderDecision = decision
 
     -- Command Leader to visit their Leader Hut & Table
-    if IsValid(camp.leaderTable) and not IsValid(leader:GetEnemy()) and not leader.VNPC_IsCookingMeal and not leader.VNPC_IsEatingMeal and not (VNPC_IsBusyMating and VNPC_IsBusyMating(leader)) then
+    if IsValid(camp.leaderTable) and not IsValid(VNPC_GetEntityEnemy and VNPC_GetEntityEnemy(leader) or nil) and not leader.VNPC_IsCookingMeal and not leader.VNPC_IsEatingMeal and not (VNPC_IsBusyMating and VNPC_IsBusyMating(leader)) then
         local tblPos = camp.leaderTable:GetPos()
         local dSqr = leader:GetPos():DistToSqr(tblPos)
         if dSqr > (120 * 120) then
@@ -806,7 +806,7 @@ function VNPC_PreyTownBuilderRepair_AI(camp, now)
 
     for _, mem in ipairs(camp.members) do
         if not IsValid(mem) or mem:Health() <= 0 or mem.Vored or mem.VNPC_IsSleeping or mem:IsPlayer() then continue end
-        if (VNPC_HasTownRole and VNPC_HasTownRole(mem, "builder") or mem.VNPC_TownRole == "builder") and not IsValid(mem:GetEnemy()) and not mem.VNPC_IsCookingMeal and not mem.VNPC_IsEatingMeal then
+        if (VNPC_HasTownRole and VNPC_HasTownRole(mem, "builder") or mem.VNPC_TownRole == "builder") and not IsValid(VNPC_GetEntityEnemy and VNPC_GetEntityEnemy(mem) or nil) and not mem.VNPC_IsCookingMeal and not mem.VNPC_IsEatingMeal then
             local bestTarget = nil
             local bestDistSqr = 1200 * 1200
             for _, wall in ipairs(camp.walls or {}) do
@@ -854,7 +854,7 @@ function VNPC_PreyCampCooking_AI(camp, now)
 
     for _, mem in ipairs(camp.members) do
         if not IsValid(mem) or mem:Health() <= 0 or mem.Vored or mem.VNPC_IsSleeping then continue end
-        if IsValid(mem:GetEnemy()) or mem.VNPC_IsEatingMeal or mem.VNPC_IsCollectingScrap then continue end
+        if IsValid(VNPC_GetEntityEnemy and VNPC_GetEntityEnemy(mem) or nil) or mem.VNPC_IsEatingMeal or mem.VNPC_IsCollectingScrap then continue end
         if VNPC_IsBusyMating and VNPC_IsBusyMating(mem) then continue end
         local canCook = VNPC_IsFemalePreyCitizen(mem) or (VNPC_HasTownRole and (VNPC_HasTownRole(mem, "cook") or VNPC_HasTownRole(mem, "founder")))
         if not canCook then continue end
@@ -942,7 +942,7 @@ function VNPC_PreyMealConsumption_AI(camp, now)
         local bestDistSqr = 800 * 800
         for _, mem in ipairs(camp.members) do
             if not IsValid(mem) or mem:Health() <= 0 or mem.Vored or mem.VNPC_IsSleeping then continue end
-            if IsValid(mem:GetEnemy()) or mem.VNPC_IsCookingMeal or mem.VNPC_IsEatingMeal or mem.VNPC_IsCollectingScrap then continue end
+            if IsValid(VNPC_GetEntityEnemy and VNPC_GetEntityEnemy(mem) or nil) or mem.VNPC_IsCookingMeal or mem.VNPC_IsEatingMeal or mem.VNPC_IsCollectingScrap then continue end
             local hunger = VNPC_GetHunger and VNPC_GetHunger(mem) or 0
             local thirst = VNPC_GetThirst and VNPC_GetThirst(mem) or 0
             if hunger >= 30.0 or thirst >= 30.0 or prop.VNPC_MealCooker == mem then
@@ -1619,7 +1619,7 @@ function VNPC_PreyCampInfiltration_AI(now)
 
             for _, pred in ipairs(ents.FindByClass("npc_*")) do
                 if IsValid(pred) and pred:Health() > 0 and not pred.Vored and (pred.IsDrGNextbot or pred.VNPC_FemaleModelVore or pred.Predator) then
-                    if pred.VNPC_IsPermanentFortPredator or pred.VNPC_IsSleeping or pred.Swallowing or IsValid(pred:GetEnemy()) then continue end
+                    if pred.VNPC_IsPermanentFortPredator or pred.VNPC_IsSleeping or pred.Swallowing or IsValid(VNPC_GetEntityEnemy and VNPC_GetEntityEnemy(pred) or nil) then continue end
                     local dSqr = pred:GetPos():DistToSqr(camp.pos)
                     if dSqr <= bestDistSqr then
                         bestPred = pred
@@ -1789,7 +1789,7 @@ hook.Add("Think", "VNPC_PreyCamps_AI_Loop", function()
         -- StormFox 2 Weather Compatibility: During rainstorms or freezing weather, citizens not on patrol seek shelter inside fort huts/house
         if (VNPC_IsStormFox2Raining and VNPC_IsStormFox2Raining()) or (VNPC_GetStormFox2Temperature and VNPC_GetStormFox2Temperature() < 8.0) then
             for _, mem in ipairs(camp.members) do
-                if IsValid(mem) and mem:Health() > 0 and not mem.Vored and not mem.VNPC_IsSleeping and not mem.VNPC_IsCollectingScrap and not IsValid(mem:GetEnemy()) and not (VNPC_IsBusyMating and VNPC_IsBusyMating(mem)) then
+                if IsValid(mem) and mem:Health() > 0 and not mem.Vored and not mem.VNPC_IsSleeping and not mem.VNPC_IsCollectingScrap and not IsValid(VNPC_GetEntityEnemy and VNPC_GetEntityEnemy(mem) or nil) and not (VNPC_IsBusyMating and VNPC_IsBusyMating(mem)) then
                     if camp.huts and #camp.huts > 0 then
                         local hut = camp.huts[math.random(1, #camp.huts)]
                         local shelterPos = (VNPC_GetHutInteriorPos and VNPC_GetHutInteriorPos(hut)) or (hut and hut.pos) or nil
@@ -1837,7 +1837,7 @@ hook.Add("Think", "VNPC_PreyCamps_AI_Loop", function()
         -- Instruct idle prey members to take shelter inside/near built little huts
         if #camp.huts > 0 then
             for idx, mem in ipairs(camp.members) do
-                if IsValid(mem) and not IsValid(mem:GetEnemy()) and not (VNPC_IsBusyMating and VNPC_IsBusyMating(mem)) and not mem.VNPC_IsPregnant then
+                if IsValid(mem) and not IsValid(VNPC_GetEntityEnemy and VNPC_GetEntityEnemy(mem) or nil) and not (VNPC_IsBusyMating and VNPC_IsBusyMating(mem)) and not mem.VNPC_IsPregnant then
                     local targetHut = camp.huts[((idx - 1) % #camp.huts) + 1]
                     local hutPos = (VNPC_GetHutInteriorPos and VNPC_GetHutInteriorPos(targetHut)) or (targetHut and targetHut.pos) or nil
                     if hutPos and mem:GetPos():DistToSqr(hutPos) > (90 * 90) then
@@ -1911,7 +1911,7 @@ hook.Add("Think", "VNPC_PreyCamps_AI_Loop", function()
         if (camp.territoryRadius or 450.0) > 500.0 and (camp.lastPatrolOrderTime or 0) <= now then
             camp.lastPatrolOrderTime = now + 15.0
             for idx, mem in ipairs(camp.members) do
-                if IsValid(mem) and mem:Health() > 0 and not mem.VNPC_IsPregnant and not IsValid(mem:GetEnemy()) and not (VNPC_IsBusyMating and VNPC_IsBusyMating(mem)) then
+                if IsValid(mem) and mem:Health() > 0 and not mem.VNPC_IsPregnant and not IsValid(VNPC_GetEntityEnemy and VNPC_GetEntityEnemy(mem) or nil) and not (VNPC_IsBusyMating and VNPC_IsBusyMating(mem)) then
                     if mem.VNPC_PreyRole ~= "emissary" and not mem.VNPC_IsPermanentFortPredator then
                         local ang = math.rad(math.random(0, 360))
                         local r = math.random(300, camp.territoryRadius * 0.9)

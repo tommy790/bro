@@ -29,7 +29,7 @@ function VNPC_MakeSurrender(npc, pred)
     if IsValid(pred) then
         if npc.AddEntityRelationship then pcall(npc.AddEntityRelationship, npc, pred, D_LI, 99) end
         if pred.AddEntityRelationship then pcall(pred.AddEntityRelationship, pred, npc, D_LI, 99) end
-        if pred.SetEnemy and pred:GetEnemy() == npc then pcall(pred.SetEnemy, pred, nil) end
+        if pred.SetEnemy and (VNPC_GetEntityEnemy and VNPC_GetEntityEnemy(pred) == npc) then pcall(pred.SetEnemy, pred, nil) end
     end
 
     -- TURN OFF DIGESTION so swallowed prey stay alive inside her without digestion

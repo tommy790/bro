@@ -44,7 +44,7 @@ function VNPC_CheckRecognizedMateWelcome(predCamp, emissary, preyCamp)
     end
 
     -- 2. Her loved mate says YES immediately without requiring boredom
-    if not IsValid(lovedPred:GetEnemy()) and predCamp.state ~= "war" and not lovedPred.VNPC_IsVisitingPreyCamp then
+    if not IsValid(VNPC_GetEntityEnemy and VNPC_GetEntityEnemy(lovedPred) or nil) and predCamp.state ~= "war" and not lovedPred.VNPC_IsVisitingPreyCamp then
         local pers = (VNPC_GetPredatorPersonality and select(1, VNPC_GetPredatorPersonality(lovedPred))) or "opportunistic"
         if string.lower(tostring(pers)) == "shy" or (VNPC_IsShyPredator and VNPC_IsShyPredator(lovedPred)) then
             if VNPC_PredatorShyEmissaryHesitation then
@@ -80,7 +80,7 @@ function VNPC_PredatorCampMatesGreeting_AI(camp, now)
 
     for _, pred in ipairs(camp.members) do
         if not IsValid(pred) or pred:Health() <= 0 or pred.Vored or pred.VNPC_Vored then continue end
-        if IsValid(pred:GetEnemy()) or (now - (pred.VNPC_LastDamagedTime or 0)) < 15.0 then continue end
+        if IsValid(VNPC_GetEntityEnemy and VNPC_GetEntityEnemy(pred) or nil) or (now - (pred.VNPC_LastDamagedTime or 0)) < 15.0 then continue end
         if (pred.VNPC_NextMateHelloTime or 0) > now then continue end
 
         local predPos = pred:GetPos()

@@ -91,7 +91,7 @@ hook.Add("Think", "VNPC_TerritoryScent_AI_Loop", function()
 
             -- 1. Starving sister predators are drawn to forage at territory nodes
             if ent.IsDrGNextbot or ent.VNPC_FemaleModelVore or ent.Predator then
-                if not IsValid(ent:GetEnemy()) and (ent.VNPC_Hunger or 0) >= hungerThresh then
+                if not IsValid(VNPC_GetEntityEnemy and VNPC_GetEntityEnemy(ent) or nil) and (ent.VNPC_Hunger or 0) >= hungerThresh then
                     local belly = ent.VNPC_Belly or ent.Belly
                     local isEmpty = not IsValid(belly) or ((not belly.Prey or #belly.Prey == 0) and (belly.DigestionPhase or 0) == 0)
                     if isEmpty and (ent.VNPC_NextScentForageTime or 0) <= now then

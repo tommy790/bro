@@ -16,7 +16,7 @@ function VNPC_IsPredatorBoredForMating(pred, predCamp)
     if pred.VNPC_IsVisitingPreyCamp or pred.VNPC_IsPregnantWithSister or pred.VNPC_IsPregnantWithCitizen then return false end
 
     -- Must be calm (not in combat, not recently damaged)
-    if IsValid(pred:GetEnemy()) or (CurTime() - (pred.VNPC_LastDamagedTime or 0)) < 15.0 then return false end
+    if IsValid(VNPC_GetEntityEnemy and VNPC_GetEntityEnemy(pred) or nil) or (CurTime() - (pred.VNPC_LastDamagedTime or 0)) < 15.0 then return false end
 
     -- Predator camp must not be at war
     if predCamp and predCamp.state == "war" then return false end

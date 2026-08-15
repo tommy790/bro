@@ -355,7 +355,7 @@ function VNPC_UnbirthWillingCrawl_AI(now)
     for _, pred in ipairs(ents.FindByClass("npc_*")) do
         if not IsValid(pred) or pred:Health() <= 0 or pred.Vored or pred.VNPC_Vored then continue end
         if pred.VNPC_AssignedMoveset ~= "unbirth" then continue end
-        if IsValid(pred:GetEnemy()) or pred.VNPC_IsWillingUnbirthCrawl or pred.Swallowing then continue end
+        if IsValid(VNPC_GetEntityEnemy and VNPC_GetEntityEnemy(pred) or nil) or pred.VNPC_IsWillingUnbirthCrawl or pred.Swallowing then continue end
 
         local predPos = pred:GetPos()
         local predBack = -pred:GetForward()
