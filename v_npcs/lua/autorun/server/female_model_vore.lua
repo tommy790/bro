@@ -51,10 +51,15 @@ function VNPC_GiveFemaleModelVore(ent)
     if (ent.VNPC_IsUnbornBaby or ent.VNPC_IsGrowingBaby or ent.VNPC_ProtectedChild) and not ent.VNPC_ForceFemaleVore then
         return false
     end
-    if not ent.VNPC_ForceFemaleVore and not VNPC_IsFemaleModelNPC(ent) then return false end
+    local looksFemale = ent.VNPC_ForceFemaleVore
+        or (VNPC_IsFemaleModelNPC and VNPC_IsFemaleModelNPC(ent))
+        or (VNPC_IsAnyFemale and VNPC_IsAnyFemale(ent))
+        or (VNPC_ShouldBePredator and VNPC_ShouldBePredator(ent))
+    if not looksFemale then return false end
     
     ent.VNPC_FemaleModelVore = true
     ent.Predator = true
+    ent.VNPC_ForcedGender = ent.VNPC_ForcedGender or "female"
     ent.Belly_Angles = ent.Belly_Angles or Angle(0, 90, 90)
     ent.Belly_Offset = VNPC_GetFixedFemaleBellyOffset(ent)
     
@@ -546,17 +551,61 @@ function VNPC_GiveFemaleModelVore(ent)
     return true
 end
 
--- Hook OnEntityCreated to automatically give female model NPCs vore
+local function VNPC_TryAutoFemalePredator(ent)
+    if not IsValid(ent) then return false end
+    local enabled = GetConVar("vnpcs_female_model_vore")
+    if enabled and not enabled:GetBool() then return false end
+    local auto = GetConVar("vnpcs_auto_female_pred")
+    if auto and not auto:GetBool() then return false end
+    if ent.VNPC_IsUnbornBaby or ent.VNPC_IsGrowingBaby or ent.VNPC_ProtectedChild then return false end
+    if ent.Vored or ent.VNPC_Vored then return false end
+    if IsValid(ent.VNPC_Belly or ent.Belly) then return true end
+
+    -- Any female (custom models included) becomes a predator automatically.
+    local isFemale = (VNPC_ShouldBePredator and VNPC_ShouldBePredator(ent))
+        or (VNPC_IsAnyFemale and VNPC_IsAnyFemale(ent))
+        or (VNPC_IsFemaleModelNPC and VNPC_IsFemaleModelNPC(ent))
+        or ent.VNPC_ForceFemaleVore
+    if not isFemale then return false end
+
+    -- Skip pure male-coded entities that somehow matched a weak heuristic.
+    if VNPC_IsAnyMale and VNPC_IsAnyMale(ent) and not (VNPC_IsAnyFemale and VNPC_IsAnyFemale(ent)) then
+        return false
+    end
+
+    ent.VNPC_ForceFemaleVore = true
+    return VNPC_GiveFemaleModelVore(ent) and true or false
+end
+
+-- Hook OnEntityCreated to automatically give ANY female NPC/nextbot vore
 hook.Add("OnEntityCreated", "VNPC_AutoGiveFemaleModelVore", function(ent)
-    timer.Simple(0.1, function()
-        if not IsValid(ent) then return end
-        local enabled = GetConVar("vnpcs_female_model_vore")
-        if enabled and not enabled:GetBool() then return end
-        if ent.VNPC_IsUnbornBaby or ent.VNPC_IsGrowingBaby or ent.VNPC_ProtectedChild then return end
-        if VNPC_IsFemaleModelNPC(ent) then
-            VNPC_GiveFemaleModelVore(ent)
-        end
+    timer.Simple(0.15, function()
+        VNPC_TryAutoFemalePredator(ent)
     end)
+    -- Custom models sometimes finish SetModel after spawn; retry once.
+    timer.Simple(0.75, function()
+        VNPC_TryAutoFemalePredator(ent)
+    end)
+end)
+
+-- Periodic sweep so late-set models / workshop NPCs still get pred roles.
+hook.Add("Think", "VNPC_AutoFemalePredator_Sweep", function()
+    local enabled = GetConVar("vnpcs_female_model_vore")
+    if enabled and not enabled:GetBool() then return end
+    local auto = GetConVar("vnpcs_auto_female_pred")
+    if auto and not auto:GetBool() then return end
+    local now = CurTime()
+    if (VNPC_NextAutoFemaleSweep or 0) > now then return end
+    VNPC_NextAutoFemaleSweep = now + 2.5
+
+    for _, ent in ipairs(ents.GetAll()) do
+        if not IsValid(ent) then continue end
+        if not (ent:IsNPC() or ent:IsNextBot() or ent.IsDrGNextbot) then continue end
+        if ent.VNPC_FemaleModelVore or IsValid(ent.VNPC_Belly or ent.Belly) then continue end
+        if (ent.VNPC_NextAutoFemaleTry or 0) > now then continue end
+        ent.VNPC_NextAutoFemaleTry = now + 8.0
+        VNPC_TryAutoFemalePredator(ent)
+    end
 end)
 
 -- Continuous Belly Think and Attachment Loop for Female Model Vore NPCs
@@ -565,12 +614,15 @@ hook.Add("Think", "VNPC_FemaleModelVore_Think", function()
     if enabled and not enabled:GetBool() then return end
     
     local now = CurTime()
-    for _, npc in ipairs(ents.FindByClass("npc_*")) do
+    -- Include custom nextbots (not just npc_* HL2 classes).
+    for _, npc in ipairs(ents.GetAll()) do
         if not IsValid(npc) then continue end
+        if not (npc:IsNPC() or npc:IsNextBot() or npc.IsDrGNextbot or npc.VNPC_FemaleModelVore) then continue end
         if not IsValid(npc.VNPC_Belly or npc.Belly) and (npc.VNPC_NextVoreCheckTime or 0) <= now then
             npc.VNPC_NextVoreCheckTime = now + 2.0
             if not (npc.VNPC_IsUnbornBaby or npc.VNPC_IsGrowingBaby or npc.VNPC_ProtectedChild) then
-                if npc.VNPC_ForceFemaleVore or VNPC_IsFemaleModelNPC(npc) then
+                if npc.VNPC_ForceFemaleVore or (VNPC_ShouldBePredator and VNPC_ShouldBePredator(npc)) or VNPC_IsFemaleModelNPC(npc) or (VNPC_IsAnyFemale and VNPC_IsAnyFemale(npc)) then
+                    npc.VNPC_ForceFemaleVore = true
                     VNPC_GiveFemaleModelVore(npc)
                 end
             end
@@ -640,7 +692,7 @@ hook.Add("Think", "VNPC_FemaleModelVore_AI", function()
     local grab_dist = GetConVar("vnpcs_female_model_vore_grab_range"):GetFloat() or 75
     local detect_dist = GetConVar("vnpcs_female_model_vore_range"):GetFloat() or 600
     
-    for _, npc in ipairs(ents.FindByClass("npc_*")) do
+    for _, npc in ipairs(ents.GetAll()) do
         if not IsValid(npc) or not npc.VNPC_FemaleModelVore then continue end
         if (npc.VNPC_NextAIThink or 0) > now then continue end
         npc.VNPC_NextAIThink = now + 0.5

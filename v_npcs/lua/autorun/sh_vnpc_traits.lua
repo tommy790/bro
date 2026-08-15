@@ -214,7 +214,14 @@ end
 
 function VNPC_IsPredatorEntity(ent)
     if not IsValid(ent) then return false end
-    return ent.Predator or ent.VNPC_FemaleModelVore or ent.IsDrGNextbot or ent.EatEntity ~= nil
+    if ent.Predator or ent.VNPC_FemaleModelVore or ent.IsDrGNextbot or ent.EatEntity ~= nil then
+        return true
+    end
+    -- Universal roles: any female is a predator (custom NPCs included).
+    if VNPC_ShouldBePredator and VNPC_ShouldBePredator(ent) then
+        return true
+    end
+    return false
 end
 
 -- Returns the trait table { id = true } for an entity, initializing on first call.

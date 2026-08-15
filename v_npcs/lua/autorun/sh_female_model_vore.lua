@@ -165,15 +165,28 @@ function VNPC_HasFemaleModelBones(ent)
 end
 
 function VNPC_IsFemaleModelNPC(ent)
-    if not IsValid(ent) or not ent:IsNPC() then return false end
+    if not IsValid(ent) then return false end
+    -- Dedicated V-NPC nextbots already have their own pred path.
     if ent.IsDrGNextbot or ent.Base == "npc_vore_base" then return false end
-    if ent:GetClass():find("func_") or ent:IsWeapon() or ent:IsPlayer() then return false end
-    if ent.VNPC_ForceFemaleVore then return true end
+    if ent:IsWeapon() or ent:IsPlayer() then return false end
     local cls = string.lower(ent:GetClass() or "")
-    if cls == "npc_metropolice" or cls == "npc_combine_s" or cls == "npc_vortigaunt" then return true end
+    if cls:find("func_") then return false end
+    if not (ent:IsNPC() or ent:IsNextBot()) then return false end
+    if ent.VNPC_ForceFemaleVore then return true end
+
+    -- Universal roles: any female-looking NPC/nextbot (including custom workshop models).
+    if VNPC_IsAnyFemale and VNPC_IsAnyFemale(ent) then
+        return true
+    end
+
+    -- Legacy fallbacks when gender module is missing / disabled.
     if VNPC_HasFemaleModelBones(ent) then return true end
     local mdl = string.lower(ent:GetModel() or "")
-    return (mdl:find("female") or mdl:find("alyx") or mdl:find("mossman")) ~= nil
+    if mdl:find("female") or mdl:find("alyx") or mdl:find("mossman") or mdl:find("girl") or mdl:find("woman") then
+        return true
+    end
+    if cls:find("alyx") or cls:find("mossman") then return true end
+    return false
 end
 
 CreateConVar("vnpcs_citizen_same_species_restrict", "1", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Female citizen predators only swallow other citizens/humans when very hungry")

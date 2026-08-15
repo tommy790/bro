@@ -39,8 +39,15 @@ function VNPC_MakeWildWanderer(ent)
     }
     local preyPersList = { "fighter", "passive", "panicked", "stubborn", "willing" }
 
-    if ent.IsDrGNextbot or ent.VNPC_FemaleModelVore or ent.Predator then
+    local asPred = ent.IsDrGNextbot or ent.VNPC_FemaleModelVore or ent.Predator
+        or (VNPC_ShouldBePredator and VNPC_ShouldBePredator(ent))
+        or (VNPC_IsAnyFemale and VNPC_IsAnyFemale(ent))
+    if asPred then
         ent.VNPC_WildType = "predator"
+        if not ent.VNPC_FemaleModelVore and VNPC_GiveFemaleModelVore then
+            ent.VNPC_ForceFemaleVore = true
+            pcall(VNPC_GiveFemaleModelVore, ent)
+        end
         local scale = pred_danger:GetFloat() or 1.35
         local curMax = ent:GetMaxHealth() or 100
         ent:SetMaxHealth(math.floor(curMax * scale))
@@ -218,20 +225,34 @@ function VNPC_FindWildernessSpawnPos()
     return nil
 end
 
-local WILD_PREDATOR_CLASSES = {
-    { cls = "npc_vortigaunt",  mdl = nil },
-    { cls = "npc_metropolice", mdl = nil },
-    { cls = "npc_combine_s",   mdl = nil },
-    { cls = "npc_zombie",      mdl = nil },
+-- Fallback HL2 lists used only when the custom NPC catalog is empty/disabled.
+local WILD_PREDATOR_FALLBACK = {
     { cls = "npc_alyx",        mdl = "models/alyx.mdl" },
     { cls = "npc_mossman",     mdl = "models/mossman.mdl" },
     { cls = "npc_citizen",     mdl = "models/Humans/Group01/Female_01.mdl" },
-    { cls = "npc_citizen",     mdl = "models/Humans/Group01/Female_02.mdl" }
+    { cls = "npc_citizen",     mdl = "models/Humans/Group01/Female_02.mdl" },
+    { cls = "npc_citizen",     mdl = "models/Humans/Group01/Female_03.mdl" },
+    { cls = "npc_citizen",     mdl = "models/Humans/Group01/Female_04.mdl" },
+    { cls = "npc_citizen",     mdl = "models/Humans/Group01/Female_06.mdl" },
+    { cls = "npc_citizen",     mdl = "models/Humans/Group01/Female_07.mdl" },
+}
+
+local WILD_PREY_FALLBACK = {
+    { cls = "npc_citizen", mdl = "models/Humans/Group01/Male_01.mdl", danger = false },
+    { cls = "npc_citizen", mdl = "models/Humans/Group01/Male_02.mdl", danger = false },
+    { cls = "npc_citizen", mdl = "models/Humans/Group01/Male_03.mdl", danger = false },
+    { cls = "npc_citizen", mdl = "models/Humans/Group01/Male_04.mdl", danger = false },
+    { cls = "npc_citizen", mdl = "models/Humans/Group01/Male_05.mdl", danger = false },
+    { cls = "npc_citizen", mdl = "models/Humans/Group01/Male_07.mdl", danger = false },
+    { cls = "npc_citizen", mdl = "models/Humans/Group01/Male_09.mdl", danger = false },
+    { cls = "npc_headcrab", danger = false },
+    { cls = "npc_antlion", danger = true },
 }
 
 function VNPC_ForceGiveWildPredatorVore(ent)
     if not IsValid(ent) then return false end
     ent.VNPC_ForceFemaleVore = true
+    ent.VNPC_ForcedGender = "female"
     if VNPC_GiveFemaleModelVore then
         VNPC_GiveFemaleModelVore(ent)
     end
@@ -246,14 +267,6 @@ function VNPC_ForceGiveWildPredatorVore(ent)
     return true
 end
 
-local WILD_PREY_CLASSES = {
-    { cls = "npc_citizen",       danger = false },
-    { cls = "npc_headcrab",      danger = false },
-    { cls = "npc_antlion",       danger = true },
-    { cls = "npc_antlionguard",  danger = true },
-    { cls = "npc_headcrab_fast", danger = true }
-}
-
 function VNPC_IsDangerousPrey(ent)
     if not IsValid(ent) then return false end
     if ent.VNPC_IsDangerousPreyFlag then return true end
@@ -264,6 +277,51 @@ function VNPC_IsDangerousPrey(ent)
     return false
 end
 
+local function pickWildPredatorSpawnInfo()
+    local useCustom = GetConVar("vnpcs_wild_use_custom_npcs")
+    if (not useCustom or useCustom:GetBool()) and VNPC_PickRandomFemaleSpawnInfo then
+        local info = VNPC_PickRandomFemaleSpawnInfo()
+        if info and info.cls then return info end
+    end
+    return WILD_PREDATOR_FALLBACK[math.random(1, #WILD_PREDATOR_FALLBACK)]
+end
+
+local function pickWildPreySpawnInfo()
+    local useCustom = GetConVar("vnpcs_wild_use_custom_npcs")
+    if (not useCustom or useCustom:GetBool()) and VNPC_PickRandomMaleSpawnInfo then
+        -- ~80% male humanoids from catalog, 20% classic animal/monster prey.
+        if math.random() < 0.80 then
+            local info = VNPC_PickRandomMaleSpawnInfo()
+            if info and info.cls then
+                info = table.Copy and table.Copy(info) or { cls = info.cls, mdl = info.mdl }
+                info.danger = false
+                return info
+            end
+        end
+    end
+    return WILD_PREY_FALLBACK[math.random(1, #WILD_PREY_FALLBACK)]
+end
+
+local function tryCreateSpawned(info, spawnPos)
+    if not info or not info.cls then return nil end
+    local ent = ents.Create(info.cls)
+    if not IsValid(ent) then return nil end
+    if info.mdl and ent.SetModel then
+        pcall(ent.SetModel, ent, info.mdl)
+    end
+    ent:SetPos(spawnPos)
+    ent:SetAngles(Angle(0, math.random(0, 360), 0))
+    local ok = pcall(function()
+        ent:Spawn()
+        ent:Activate()
+    end)
+    if not ok or not IsValid(ent) then
+        if IsValid(ent) then ent:Remove() end
+        return nil
+    end
+    return ent
+end
+
 function VNPC_SpawnWildNPC(isPredator, posOverride)
     if not ecology_enabled:GetBool() then return nil end
     local spawnPos = posOverride or VNPC_FindWildernessSpawnPos()
@@ -271,16 +329,18 @@ function VNPC_SpawnWildNPC(isPredator, posOverride)
 
     local ent = nil
     if isPredator then
-        local info = WILD_PREDATOR_CLASSES[math.random(1, #WILD_PREDATOR_CLASSES)]
-        ent = ents.Create(info.cls)
+        -- Try a few catalog entries in case a custom class fails to create.
+        for _ = 1, 4 do
+            local info = pickWildPredatorSpawnInfo()
+            ent = tryCreateSpawned(info, spawnPos)
+            if IsValid(ent) then break end
+        end
+        if not IsValid(ent) then
+            ent = tryCreateSpawned(WILD_PREDATOR_FALLBACK[1], spawnPos)
+        end
         if IsValid(ent) then
-            if info.mdl then
-                ent:SetModel(info.mdl)
-            end
-            ent:SetPos(spawnPos)
-            ent:SetAngles(Angle(0, math.random(0, 360), 0))
-            ent:Spawn()
-            ent:Activate()
+            -- Ensure she is treated as female even if the custom model path is ambiguous.
+            ent.VNPC_ForcedGender = "female"
             VNPC_ForceGiveWildPredatorVore(ent)
             VNPC_MakeWildWanderer(ent)
             if VNPC_AssignPredatorToCamp then
@@ -288,17 +348,36 @@ function VNPC_SpawnWildNPC(isPredator, posOverride)
             end
         end
     else
-        local info = WILD_PREY_CLASSES[math.random(1, #WILD_PREY_CLASSES)]
-        ent = ents.Create(info.cls)
+        for _ = 1, 4 do
+            local info = pickWildPreySpawnInfo()
+            ent = tryCreateSpawned(info, spawnPos)
+            if IsValid(ent) then
+                ent.VNPC_IsDangerousPreyFlag = info.danger and true or false
+                -- Male catalog entries are forced male so they stay prey.
+                if not ent.VNPC_IsDangerousPreyFlag then
+                    ent.VNPC_ForcedGender = "male"
+                end
+                break
+            end
+        end
+        if not IsValid(ent) then
+            ent = tryCreateSpawned(WILD_PREY_FALLBACK[1], spawnPos)
+            if IsValid(ent) then ent.VNPC_ForcedGender = "male" end
+        end
         if IsValid(ent) then
-            ent:SetPos(spawnPos)
-            ent:SetAngles(Angle(0, math.random(0, 360), 0))
-            ent:Spawn()
-            ent:Activate()
-            ent.VNPC_IsDangerousPreyFlag = info.danger
-            VNPC_MakeWildWanderer(ent)
-            if VNPC_AssignPreyToCamp then
-                VNPC_AssignPreyToCamp(ent)
+            -- If a "prey" spawn accidentally looks female, promote to predator instead.
+            if VNPC_IsAnyFemale and VNPC_IsAnyFemale(ent) then
+                ent.VNPC_ForcedGender = "female"
+                VNPC_ForceGiveWildPredatorVore(ent)
+                VNPC_MakeWildWanderer(ent)
+                if VNPC_AssignPredatorToCamp then
+                    VNPC_AssignPredatorToCamp(ent)
+                end
+            else
+                VNPC_MakeWildWanderer(ent)
+                if VNPC_AssignPreyToCamp then
+                    VNPC_AssignPreyToCamp(ent)
+                end
             end
         end
     end
@@ -429,16 +508,12 @@ function VNPC_IsMaleWildWanderer(ent)
     if not IsValid(ent) or ent:Health() <= 0 or ent.Vored or ent.VNPC_Vored then return false end
     if ent.VNPC_IsPregnant then return false end
     if VNPC_IsAdultPreyCitizen and not VNPC_IsAdultPreyCitizen(ent) then return false end
+    if VNPC_IsAnyFemale and VNPC_IsAnyFemale(ent) then return false end
+    if VNPC_IsAnyMale and VNPC_IsAnyMale(ent) then return true end
     if VNPC_IsMalePreyCitizen and VNPC_IsMalePreyCitizen(ent) then return true end
     if VNPC_ModelLooksFemale and VNPC_ModelLooksFemale(ent) then return false end
     if ent.VNPC_ChildGender == "male" then return true end
-    local mdl = string.lower(ent:GetModel() or "")
-    local cls = string.lower(ent:GetClass() or "")
-    if cls:find("citizen") or cls:find("rebel") or cls:find("refugee") then
-        if mdl:find("male") or mdl:find("m_") or mdl:find("group01/male") or not (mdl:find("female") or mdl:find("alyx") or mdl:find("mossman") or mdl:find("girl") or mdl:find("woman")) then
-            return true
-        end
-    end
+    if VNPC_ShouldBePrey and VNPC_ShouldBePrey(ent) then return true end
     return false
 end
 
@@ -447,15 +522,10 @@ function VNPC_IsFemaleWildWanderer(ent)
     if ent.VNPC_IsPregnant then return false end
     if VNPC_IsAdultPreyCitizen and not VNPC_IsAdultPreyCitizen(ent) then return false end
     if ent.VNPC_WildType == "predator" or ent.IsDrGNextbot or ent.VNPC_FemaleModelVore or ent.Predator then return true end
+    if VNPC_IsAnyFemale and VNPC_IsAnyFemale(ent) then return true end
+    if VNPC_ShouldBePredator and VNPC_ShouldBePredator(ent) then return true end
     if VNPC_IsFemalePreyCitizen and VNPC_IsFemalePreyCitizen(ent) then return true end
     if VNPC_ModelLooksFemale and VNPC_ModelLooksFemale(ent) then return true end
-    local mdl = string.lower(ent:GetModel() or "")
-    local cls = string.lower(ent:GetClass() or "")
-    if cls:find("citizen") or cls:find("rebel") or cls:find("refugee") or cls:find("alyx") or cls:find("mossman") then
-        if mdl:find("female") or mdl:find("alyx") or mdl:find("mossman") or mdl:find("f_") or mdl:find("girl") or mdl:find("woman") or mdl:find("lady") then
-            return true
-        end
-    end
     return false
 end
 

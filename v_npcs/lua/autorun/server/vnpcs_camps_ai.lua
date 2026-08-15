@@ -570,9 +570,13 @@ hook.Add("Think", "VNPC_PredatorCamps_AI_Loop", function()
     -- 1. Ensure all female V-NPC predators belong to a camp
     for _, pred in ipairs(ents.GetAll()) do
         if not IsValid(pred) or pred:Health() <= 0 then continue end
-        local isPred = (pred.IsDrGNextbot or pred.VNPC_FemaleModelVore or pred.Predator or (VNPC_IsFemaleModelNPC and VNPC_IsFemaleModelNPC(pred)))
+        local isPred = (pred.IsDrGNextbot or pred.VNPC_FemaleModelVore or pred.Predator
+            or (VNPC_ShouldBePredator and VNPC_ShouldBePredator(pred))
+            or (VNPC_IsAnyFemale and VNPC_IsAnyFemale(pred))
+            or (VNPC_IsFemaleModelNPC and VNPC_IsFemaleModelNPC(pred)))
         if not isPred then continue end
         if not pred.VNPC_FemaleModelVore and VNPC_GiveFemaleModelVore then
+            pred.VNPC_ForceFemaleVore = true
             VNPC_GiveFemaleModelVore(pred)
         end
         if pred.VNPC_IsSecretAssassin then continue end

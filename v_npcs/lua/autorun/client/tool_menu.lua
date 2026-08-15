@@ -68,6 +68,18 @@ local function populate()
         panel:CheckBox("Shape-aware belly (bounding-box deform)", "vnpcs_shape_deform")
         panel:ControlHelp("Belly shape adapts to the actual size/shape of what's inside, and widens/splits into rows for multiple prey, instead of inflating as one uniform blob.")
 
+        panel:Help("\nUniversal Gender Roles\n")
+        panel:CheckBox("Any female = predator / any male = prey", "vnpcs_universal_gender_roles")
+        panel:CheckBox("Auto-give vore to all females", "vnpcs_auto_female_pred")
+        panel:CheckBox("Wild spawn uses custom NPCs", "vnpcs_wild_use_custom_npcs")
+        panel:ControlHelp("Custom workshop NPCs work automatically from model/bones/name — no manual class lists. Females become predators; males become prey.")
+        do
+            local btn = panel:Button("Gender Catalog Status")
+            btn.DoClick = function()
+                RunConsoleCommand("vnpcs_gender_catalog_status")
+            end
+        end
+
         panel:Help("\nMultipliers\n")
         panel:ControlHelp("(Multiplies the NPC's settings)")
 

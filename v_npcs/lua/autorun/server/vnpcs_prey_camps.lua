@@ -300,13 +300,21 @@ function VNPC_IsEligiblePreyNPC(ent)
     if ent.IsDrGNextbot or ent.VNPC_FemaleModelVore or ent.Predator then return false end
     if ent.VNPC_IsSecretAssassin then return false end
     if VNPC_IsShyPredator and VNPC_IsShyPredator(ent) then return false end
-    return (ent:IsNPC() or ent:IsNextBot())
+    if not (ent:IsNPC() or ent:IsNextBot()) then return false end
+
+    -- Universal roles: males (and non-female person-likes) are prey; females are preds.
+    if VNPC_ShouldBePredator and VNPC_ShouldBePredator(ent) then return false end
+    if VNPC_ShouldBePrey and VNPC_ShouldBePrey(ent) then return true end
+    if VNPC_IsAnyFemale and VNPC_IsAnyFemale(ent) then return false end
+    if VNPC_IsAnyMale and VNPC_IsAnyMale(ent) then return true end
+    return true
 end
 
 function VNPC_ModelLooksFemale(ent)
     if not IsValid(ent) then return false end
     if ent.VNPC_ChildGender == "female" then return true end
     if ent.VNPC_ChildGender == "male" then return false end
+    if VNPC_IsAnyFemale and VNPC_IsAnyFemale(ent) then return true end
     if VNPC_HasFemaleModelBones and VNPC_HasFemaleModelBones(ent) then return true end
     if VNPC_IsFemaleModelNPC and VNPC_IsFemaleModelNPC(ent) then return true end
     local mdl = string.lower(ent:GetModel() or "")
@@ -375,10 +383,16 @@ function VNPC_IsFemalePreyCitizen(ent)
 end
 
 function VNPC_IsMalePreyCitizen(ent)
-    if not VNPC_IsEligiblePreyNPC(ent) then return false end
-    if VNPC_IsFemalePreyCitizen(ent) then return false end
-    if VNPC_ModelLooksFemale(ent) then return false end
+    if not IsValid(ent) or ent:Health() <= 0 then return false end
+    if VNPC_IsFemalePreyCitizen and VNPC_IsFemalePreyCitizen(ent) then return false end
+    if VNPC_ModelLooksFemale and VNPC_ModelLooksFemale(ent) then return false end
     if VNPC_IsAdultPreyCitizen and not VNPC_IsAdultPreyCitizen(ent) then return false end
+    if VNPC_IsAnyMale and VNPC_IsAnyMale(ent) then return true end
+    if not VNPC_IsEligiblePreyNPC(ent) then return false end
+    -- Person-like unknowns without female markers count as male prey (custom NPCs).
+    if VNPC_ShouldBePrey and VNPC_ShouldBePrey(ent) and not (VNPC_IsAnyFemale and VNPC_IsAnyFemale(ent)) then
+        return true
+    end
     local mdl = string.lower(ent:GetModel() or "")
     local cls = string.lower(ent:GetClass() or "")
     if mdl:find("male") or mdl:find("/m_") or mdl:find("_m_") or mdl:find("barney") or mdl:find("monk") or mdl:find("eli") then

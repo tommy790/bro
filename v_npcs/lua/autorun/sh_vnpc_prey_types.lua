@@ -92,6 +92,8 @@ end
 function VNPC_IsFemalePredator(ent)
     if not IsValid(ent) or ent:Health() <= 0 then return false end
     if ent.Vored or ent.VNPC_Vored then return false end
+    if VNPC_ShouldBePredator and VNPC_ShouldBePredator(ent) then return true end
+    if VNPC_IsAnyFemale and VNPC_IsAnyFemale(ent) then return true end
     if not (ent.IsDrGNextbot or ent.VNPC_FemaleModelVore or ent.Predator or ent.VNPC_WildType == "predator") then
         return false
     end

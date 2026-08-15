@@ -147,10 +147,20 @@ function VNPC_IsPreyNPC(ent)
     if not (ent:IsNPC() or ent:IsNextBot()) then return false end
     if ent.IsDrGNextbot or ent.VNPC_FemaleModelVore or ent.Predator or ent.EatEntity then return false end
     if ent.Vored or ent.VNPC_Vored or ent.VNPC_Surrendered then return false end
-    local cls = string.lower(ent:GetClass() or "")
-    if cls:find("citizen") or cls:find("rebel") or cls:find("refugee") or cls:find("alyx") or cls:find("mossman") or ent.VNPC_PreyCampID or (ent.Classify and ent:Classify() == CLASS_CITIZEN) then
+    if ent.VNPC_IsSecretAssassin then return false end
+
+    -- Universal roles: any male (and non-female person-likes) are prey.
+    if VNPC_ShouldBePrey and VNPC_ShouldBePrey(ent) then
         return true
     end
+
+    -- Legacy fallbacks.
+    if ent.VNPC_PreyCampID then return true end
+    local cls = string.lower(ent:GetClass() or "")
+    if cls:find("citizen") or cls:find("rebel") or cls:find("refugee") or (ent.Classify and ent:Classify() == CLASS_CITIZEN) then
+        return true
+    end
+    if VNPC_IsAnyMale and VNPC_IsAnyMale(ent) then return true end
     return false
 end
 
