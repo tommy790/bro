@@ -155,10 +155,8 @@ function VNPC_UpdateVirtualBellyBones(ent)
         radius = math.max(4.5, (ent.VNPC_BodyParts and ent.VNPC_BodyParts.torso and ent.VNPC_BodyParts.torso.width or 14) * 0.28)
     end
 
-    -- Dynamic weight painting: stretch the belly ellipsoid to the actual bounding
-    -- box of every consumed entity's shape blob (procedural, no fixed belly shapes).
-    -- Uses the packed shelf layout so 2 side-by-side bodies make a wider belly,
-    -- not just a rounder single blob.
+    -- Metaball / weight-paint metrics: per-axis half extents (not max-of-box),
+    -- volume floor, and gravity sag via COM shift.
     local blobMetrics = nil
     if VNPC_GetBellyDeformMetrics then
         blobMetrics = VNPC_GetBellyDeformMetrics(ent)
@@ -166,10 +164,18 @@ function VNPC_UpdateVirtualBellyBones(ent)
     local comShift = Vector(0, 0, 0)
     local halfW, halfD, halfH = radius, radius, radius
     if blobMetrics then
-        halfW = math.max(radius * 0.85, (blobMetrics.rx or radius) * 1.05)
-        halfD = math.max(radius * 0.90, (blobMetrics.ry or radius) * 1.08)
-        halfH = math.max(radius * 0.80, (blobMetrics.rz or radius) * 1.02)
-        radius = math.max(radius, halfW, halfD, halfH)
+        -- Keep elongation: use each axis independently instead of max(rx,ry,rz).
+        halfW = math.max(radius * 0.72, (blobMetrics.rx or radius) * 1.02)
+        halfD = math.max(radius * 0.78, (blobMetrics.ry or radius) * 1.05)
+        halfH = math.max(radius * 0.68, (blobMetrics.rz or radius) * 0.98)
+        -- Volume-correct floor so more mass = bigger belly even if tightly packed
+        if blobMetrics.volRadius and blobMetrics.volRadius > 0 then
+            local vr = blobMetrics.volRadius
+            halfW = math.max(halfW, vr * 0.70)
+            halfD = math.max(halfD, vr * 0.76)
+            halfH = math.max(halfH, vr * 0.62)
+        end
+        radius = (halfW + halfD + halfH) / 3
         if VNPC_GetBellyComShift then
             comShift = VNPC_GetBellyComShift(ent)
         end
@@ -804,11 +810,15 @@ if CLIENT then
                 if push > 0 then
                     world = world + nrm * (push * (chain.radius or 8))
                 end
-                -- Dynamic weight painting: per-prey volumetric lumps (procedural mesh deform)
+                -- Metaball iso-surface deform (merged prey bulges) + field normals
+                chain._lastMetaNormal = nil
                 if VNPC_ApplyWeightPaintDeform then
                     local wd = VNPC_ApplyWeightPaintDeform(world, lp, ent, chain)
                     if wd and wd:LengthSqr() > 0.01 then
                         world = world + wd
+                    end
+                    if chain._lastMetaNormal then
+                        nrm = chain._lastMetaNormal
                     end
                 end
                 local gpush = VNPC_ApplyGPUBellyGulpDeform(world, gulps)

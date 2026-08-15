@@ -1,28 +1,33 @@
--- V-NPCs Dynamic Weight Painting & Procedural Mesh Deform (sh_vnpc_weight_paint.lua)
--- Replaces the rigid "one fixed belly shape" approach with a procedural deformation
--- model: every swallowed entity becomes a volumetric mass blob (from measured body
--- parts: torso width/depth, head size, pelvis, model scale). Blob POSITIONS are laid
--- out by a deterministic bounding-box "shelf packing" (VNPC_DefaultBlobLayout below)
--- rather than a live physics simulation - an earlier "Ragdoll Matrix" mass-spring sim
--- + prop_ragdoll posing approach was tried in vnpcs_belly_physics.lua and removed
--- (it was fragile/crash-prone and, on top of that, never actually reached this file
--- due to a field-name bug, so the blob positions were already purely deterministic
--- in practice). The GPU belly mesh and the character's own bones are deformed
--- per-blob:
---   * the belly ellipsoid stretches to the bounding box of all blobs (long prey =
---     long belly, wide prey = wide belly, one-sided prey = asymmetric bulge),
---   * per-vertex gaussian weight painting adds local lumps at each prey's packed
---     position inside the belly ("weight painting" over the model surface),
---   * spine/pelvis/thigh bones are scaled asymmetrically from the blob layout so
---     even models without belly bones visibly stretch.
+-- V-NPCs Dynamic Weight Painting & Metaball Belly Deform (sh_vnpc_weight_paint.lua)
+--
+-- Prey become volumetric mass blobs (measured torso/head/limbs). Blobs pack into
+-- a shelf layout, then the GPU belly surface is the iso-surface of a smooth
+-- metaball field over those blobs (merged continuous bulges), not an AABB
+-- ellipsoid with disconnected gaussians.
+--
+-- Upgrade points over the old AABB approach:
+--   1. Metaball field F(p) = Σ w·wyvill(d)  → merged surface, arrangement-aware
+--   2. Multi-blob fetal curl per prey (torso + head + limb mass)
+--   3. Volume-correct base radius ∝ (Σ mass)^(1/3)
+--   4. Gravity sag / heavy lean on COM
+--   5. Client lerp of blob positions between NW syncs
+--   6. Analytical field gradient as vertex normals
 
-
-CreateConVar("vnpcs_weight_paint_enabled", "1", {FCVAR_REPLICATED, FCVAR_ARCHIVE}, "Enable dynamic weight-painted belly deformation from prey shape blobs")
-CreateConVar("vnpcs_weight_paint_lumps", "1", {FCVAR_REPLICATED, FCVAR_ARCHIVE}, "Draw per-prey lumps on the GPU belly mesh (weight-painted gaussian deform)")
-CreateConVar("vnpcs_weight_paint_amp", "1.0", {FCVAR_REPLICATED, FCVAR_ARCHIVE}, "Amplitude of weight-painted per-prey lumps")
+CreateConVar("vnpcs_weight_paint_enabled", "1", {FCVAR_REPLICATED, FCVAR_ARCHIVE}, "Enable dynamic weight-painted / metaball belly deformation from prey shape blobs")
+CreateConVar("vnpcs_weight_paint_lumps", "1", {FCVAR_REPLICATED, FCVAR_ARCHIVE}, "Evaluate metaball field on the GPU belly mesh (merged prey bulges)")
+CreateConVar("vnpcs_weight_paint_amp", "1.0", {FCVAR_REPLICATED, FCVAR_ARCHIVE}, "Amplitude of metaball surface push")
 CreateConVar("vnpcs_weight_paint_asymmetry", "1", {FCVAR_REPLICATED, FCVAR_ARCHIVE}, "Shift generated belly bones toward the prey center-of-mass (asymmetric bellies)")
+CreateConVar("vnpcs_weight_paint_metaballs", "1", {FCVAR_REPLICATED, FCVAR_ARCHIVE}, "Use metaball iso-surface instead of independent gaussian lumps")
+CreateConVar("vnpcs_weight_paint_curl", "1", {FCVAR_REPLICATED, FCVAR_ARCHIVE}, "Emit multi-blob fetal-curl chains per prey")
+CreateConVar("vnpcs_weight_paint_volume", "1", {FCVAR_REPLICATED, FCVAR_ARCHIVE}, "Scale base belly radius with cube-root of total prey mass")
+CreateConVar("vnpcs_weight_paint_sag", "1", {FCVAR_REPLICATED, FCVAR_ARCHIVE}, "Gravity sag: drop belly center and flatten bottom with mass")
+CreateConVar("vnpcs_weight_paint_lerp", "1", {FCVAR_REPLICATED, FCVAR_ARCHIVE}, "Client-side lerp of blob positions between network syncs")
 
-VNPC_MAX_PAINT_BLOBS = 8
+VNPC_MAX_PAINT_BLOBS = 12
+
+-- ---------------------------------------------------------------------------
+-- Prey measurement → one or more blobs
+-- ---------------------------------------------------------------------------
 
 -- Prey shape blob: radii are belly-local units (x = side-to-side, y = front-back, z = up-down)
 -- Blob local space: +x right, +y forward (toward belly front), +z up. Origin = belly center.
@@ -36,6 +41,7 @@ function VNPC_GetPreyShapeBlob(prey)
     if not isnumber(scale) or scale <= 0 then scale = 1 end
 
     local rx, ry, rz = 7.5 * scale, 9.0 * scale, 6.5 * scale
+    local headR, limbR = 3.2 * scale, 2.4 * scale
     if VNPC_MeasureBodyParts then
         local parts = VNPC_MeasureBodyParts(prey)
         if parts then
@@ -44,19 +50,20 @@ function VNPC_GetPreyShapeBlob(prey)
             local head = parts.head
             local arm = parts.arm
             local leg = parts.leg
-            -- Fetal curl: the belly wraps around a curled body, so the blob is
-            -- roughly the widest measured cross-section (torso/pelvis/head) and a
-            -- compressed length along the belly's front-back axis.
-            rx = math.max(torso and torso.width or 14, pelvis and pelvis.width or 12, head and head.width or 7.2) * 0.52 * scale
-            ry = math.max((torso and torso.length or 20) * 0.30, (leg and leg.length or 30) * 0.22, (arm and arm.length or 23) * 0.22) * scale
-            rz = math.max((torso and torso.height or 16) * 0.42, (head and head.height or 8.5) * 0.55) * scale
+            -- Curled mass: torso cross-section dominates; length is compressed.
+            rx = math.max(torso and torso.width or 14, pelvis and pelvis.width or 12, head and head.width or 7.2) * 0.48 * scale
+            ry = math.max((torso and torso.length or 20) * 0.26, (leg and leg.length or 30) * 0.18, (arm and arm.length or 23) * 0.18) * scale
+            rz = math.max((torso and torso.height or 16) * 0.38, (head and head.height or 8.5) * 0.48) * scale
+            headR = math.max((head and head.width or 7.2) * 0.38, 2.4) * scale
+            limbR = math.max((arm and arm.length or 20) * 0.08, 1.8) * scale
         end
     end
-    rx = math.Clamp(rx, 3.5, 60)
-    ry = math.Clamp(ry, 3.5, 70)
-    rz = math.Clamp(rz, 3.0, 55)
+    rx = math.Clamp(rx, 3.2, 48)
+    ry = math.Clamp(ry, 3.2, 55)
+    rz = math.Clamp(rz, 2.8, 45)
+    headR = math.Clamp(headR, 2.0, 14)
+    limbR = math.Clamp(limbR, 1.5, 10)
 
-    -- Mass (kg-ish, drives physics + slowdown)
     local mass = 45 * scale
     if prey.GetPhysicsObject then
         local phys = prey:GetPhysicsObject()
@@ -70,24 +77,24 @@ function VNPC_GetPreyShapeBlob(prey)
         mass = math.max(mass * 0.8, (tonumber(val) or 0) * 0.22)
     end
 
+    local isPerson = prey:IsPlayer() or prey:IsNPC() or prey:IsNextBot() or prey.IsDrGNextbot
+        or (VNPC_IsAnyFemale and VNPC_IsAnyFemale(prey))
+        or (VNPC_IsAnyMale and VNPC_IsAnyMale(prey))
+
     return {
         id = prey:EntIndex(),
         rx = rx,
         ry = ry,
         rz = rz,
+        headR = headR,
+        limbR = limbR,
         mass = mass,
-        scale = scale
+        scale = scale,
+        person = isPerson and true or false,
     }
 end
 
--- Deterministic bounding-box "shelf packing" layout (Dynamic Weight
--- Painting & Mesh Deform, replacing the old physics-driven "Ragdoll
--- Matrix"). Bodies pack shoulder-to-shoulder along the belly's left-right
--- axis (using each blob's REAL measured width) until a row's width budget
--- is used up, then a new row starts further back into the belly. This is
--- pure math - no live simulation, so it can never desync, explode, or
--- freeze mid-pose the way a physics/ragdoll approach can; it's just a
--- function of who's currently inside and how big they measured out to be.
+-- Deterministic shelf packing for root (torso) blobs.
 function VNPC_DefaultBlobLayout(pred, blobs)
     if not istable(blobs) then return end
 
@@ -97,8 +104,6 @@ function VNPC_DefaultBlobLayout(pred, blobs)
     end
     if #order == 0 then return end
 
-    -- Biggest bodies define the silhouette; small stragglers (mostly
-    -- digested husks, tiny objects) shouldn't dominate the packing.
     table.sort(order, function(a, b)
         return (a.rx * a.ry * a.rz) > (b.rx * b.ry * b.rz)
     end)
@@ -110,8 +115,6 @@ function VNPC_DefaultBlobLayout(pred, blobs)
         biggestWidth = math.max(biggestWidth, w)
     end
     local avgWidth = totalWidth / #order
-    -- Adaptive row width budget: several similar-sized bodies pack into one
-    -- row, but any single body can always claim a row to itself.
     local maxRowWidth = math.max(avgWidth * 3.0, biggestWidth * 1.05)
 
     local rows = {}
@@ -128,30 +131,88 @@ function VNPC_DefaultBlobLayout(pred, blobs)
     end
     table.insert(rows, row)
 
-    -- Lay rows out from the belly's front surface (+y) backward. Later rows
-    -- (bodies that didn't fit shoulder-to-shoulder) sit further back rather
-    -- than making the belly absurdly wide.
     local depthCursor = 0
-    for rowIndex, r in ipairs(rows) do
+    for _, r in ipairs(rows) do
         local cursor = -r.width * 0.5
-        local rowY = 2.0 - depthCursor - r.depth * 0.5
+        local rowY = 1.6 - depthCursor - r.depth * 0.5
         for i, blob in ipairs(r.blobs) do
             local w = blob.rx * 2
             local x = cursor + w * 0.5
             cursor = cursor + w
-            -- small alternating vertical offset purely for visual variety,
-            -- not a stand-in for any physical simulation
             local jitter = ((i % 2) == 0) and -1 or 1
-            local z = -2.5 - jitter * math.min(2.5, blob.rz * 0.25)
+            local z = -2.2 - jitter * math.min(1.8, blob.rz * 0.18)
             blob.pos = Vector(x, rowY, z)
         end
-        depthCursor = depthCursor + r.depth
+        depthCursor = depthCursor + r.depth * 0.92
     end
 end
 
--- Build the list of shape blobs currently inside a predator's belly.
--- SERVER: reads belly.Prey and the physics sim state.
--- CLIENT: reads replicated blob NW (written by the physics module).
+-- Expand each root prey blob into a short fetal-curl chain (torso + head + limb).
+local function expandCurlChain(rootBlobs)
+    local curlOn = GetConVar("vnpcs_weight_paint_curl")
+    if curlOn and not curlOn:GetBool() then
+        return rootBlobs
+    end
+
+    local out = {}
+    local budget = VNPC_MAX_PAINT_BLOBS
+    for _, root in ipairs(rootBlobs) do
+        if #out >= budget then break end
+        root.part = root.part or "torso"
+        table.insert(out, root)
+
+        if not root.person and not root.womb then
+            continue
+        end
+        if root.phantom or root.womb then
+            continue
+        end
+
+        -- Stable hash from id for curl side / lean variation
+        local h = math.abs(tonumber(root.id) or 1)
+        local side = ((h % 2) == 0) and -1 or 1
+        local lean = ((h % 5) - 2) * 0.35
+        local base = root.pos or Vector(0, 0, 0)
+
+        -- Head sub-blob: curled toward upper-front of torso mass
+        if #out < budget then
+            local hr = root.headR or (math.min(root.rx, root.rz) * 0.55)
+            table.insert(out, {
+                id = (root.id or 0) + 100000,
+                pos = base + Vector(side * root.rx * 0.22 + lean, root.ry * 0.35, root.rz * 0.55),
+                rx = hr * 0.85,
+                ry = hr * 0.95,
+                rz = hr * 0.80,
+                mass = (root.mass or 40) * 0.18,
+                alive = root.alive,
+                swallowing = root.swallowing,
+                person = root.person,
+                part = "head",
+                parentId = root.id,
+            })
+        end
+
+        -- Limb/hip mass: lower-back of the curl (fills the C)
+        if #out < budget then
+            local lr = root.limbR or (math.min(root.rx, root.ry) * 0.4)
+            table.insert(out, {
+                id = (root.id or 0) + 200000,
+                pos = base + Vector(-side * root.rx * 0.28 + lean * 0.5, -root.ry * 0.15, -root.rz * 0.45),
+                rx = lr * 1.15,
+                ry = lr * 1.05,
+                rz = lr * 0.9,
+                mass = (root.mass or 40) * 0.22,
+                alive = root.alive,
+                swallowing = root.swallowing,
+                person = root.person,
+                part = "limb",
+                parentId = root.id,
+            })
+        end
+    end
+    return out
+end
+
 function VNPC_ComputeBellyBlobs(pred)
     if not IsValid(pred) then return {} end
     local blobs = {}
@@ -161,58 +222,113 @@ function VNPC_ComputeBellyBlobs(pred)
         if not IsValid(belly) then
             blobs = pred.VNPC_BellyBlobs or {}
         elseif istable(belly.Prey) then
+            local roots = {}
             for _, info in ipairs(belly.Prey) do
-                if #blobs >= VNPC_MAX_PAINT_BLOBS then break end
+                if #roots >= 6 then break end -- leave room for curl sub-blobs
                 if not istable(info) then continue end
-                if info.Absorbing then continue end
-                if info.WombPrey or info.NoDigest or (IsValid(info.Entity) and (info.Entity.VNPC_IsWombPrey or info.Entity.VNPC_IsUnbornBaby)) then continue end
+                if info.WombPrey or info.NoDigest or (IsValid(info.Entity) and (info.Entity.VNPC_IsWombPrey or info.Entity.VNPC_IsUnbornBaby)) then
+                    continue
+                end
                 local prey = info.Entity
+                local absorbing = info.Absorbing == true
+                local remain = 1
+                if absorbing and info.TrueValue and info.TrueValue > 0 then
+                    remain = math.Clamp((info.Value or 0) / info.TrueValue, 0, 1)
+                end
+                if remain < 0.04 then continue end
+
                 if not IsValid(prey) then
                     if info.Value and info.Value > 5 then
-                        -- digested husk still taking space; keep a small phantom blob
-                        table.insert(blobs, { id = info.preyId or (9000 + #blobs), rx = 4, ry = 5, rz = 3.5, mass = 8, phantom = true, alive = false })
+                        local shrink = remain ^ (1 / 3)
+                        table.insert(roots, {
+                            id = info.preyId or (9000 + #roots),
+                            rx = 4 * shrink, ry = 5 * shrink, rz = 3.5 * shrink,
+                            mass = 8 * remain,
+                            phantom = true,
+                            alive = false,
+                            person = true,
+                        })
                     end
                     continue
                 end
+
                 local blob = VNPC_GetPreyShapeBlob(prey)
                 if not blob then continue end
-                blob.alive = (prey:Health() > 0) and (info.Alive ~= false)
-                blob.absorbing = info.Absorbing == true
+                local shrink = remain ^ (1 / 3)
+                blob.rx = blob.rx * shrink
+                blob.ry = blob.ry * shrink
+                blob.rz = blob.rz * shrink
+                if blob.headR then blob.headR = blob.headR * shrink end
+                if blob.limbR then blob.limbR = blob.limbR * shrink end
+                blob.mass = (blob.mass or 40) * math.max(0.15, remain)
+                blob.alive = (prey:Health() > 0) and (info.Alive ~= false) and not absorbing
+                blob.absorbing = absorbing
                 blob.swallowing = prey.VNPC_IsBeingSwallowed == true
-                table.insert(blobs, blob)
+                blob.remain = remain
+                table.insert(roots, blob)
             end
+            VNPC_DefaultBlobLayout(pred, roots)
+            blobs = expandCurlChain(roots)
         end
 
-        VNPC_DefaultBlobLayout(pred, blobs)
         pred.VNPC_BellyBlobs = blobs
         return blobs
     end
 
-    -- CLIENT: read replicated blob data
+    -- CLIENT: read replicated blob data + optional lerp
     local n = (pred.GetNWInt and pred:GetNWInt("VNPC_PaintBlobN", 0)) or 0
     if n > 0 then
+        pred.VNPC_ClientBlobLerp = pred.VNPC_ClientBlobLerp or {}
+        local lerpOn = GetConVar("vnpcs_weight_paint_lerp")
+        local doLerp = not lerpOn or lerpOn:GetBool()
+        local now = CurTime()
+
         for i = 1, math.min(n, VNPC_MAX_PAINT_BLOBS) do
             local pos = (pred.GetNWVector and pred:GetNWVector("VNPC_PaintBlobPos" .. i, Vector(0, 0, 0))) or Vector(0, 0, 0)
             local radii = (pred.GetNWVector and pred:GetNWVector("VNPC_PaintBlobRadii" .. i, Vector(7, 9, 6))) or Vector(7, 9, 6)
             local mass = (pred.GetNWFloat and pred:GetNWFloat("VNPC_PaintBlobMass" .. i, 45)) or 45
             local flags = (pred.GetNWInt and pred:GetNWInt("VNPC_PaintBlobFlags" .. i, 0)) or 0
+            local id = (pred.GetNWInt and pred:GetNWInt("VNPC_PaintBlobID" .. i, i * 31)) or i * 31
+
+            local drawPos = pos
+            if doLerp then
+                local slot = pred.VNPC_ClientBlobLerp[id]
+                if not slot then
+                    slot = { prev = Vector(pos), target = Vector(pos), t0 = now, dur = 0.45 }
+                    pred.VNPC_ClientBlobLerp[id] = slot
+                else
+                    if slot.target:DistToSqr(pos) > 0.01 then
+                        slot.prev = Vector(slot.smooth or slot.target)
+                        slot.target = Vector(pos)
+                        slot.t0 = now
+                        slot.dur = 0.45
+                    end
+                    local u = math.Clamp((now - slot.t0) / math.max(slot.dur, 0.05), 0, 1)
+                    -- smoothstep
+                    u = u * u * (3 - 2 * u)
+                    drawPos = LerpVector(u, slot.prev, slot.target)
+                    slot.smooth = drawPos
+                end
+            end
+
             table.insert(blobs, {
-                id = (pred.GetNWInt and pred:GetNWInt("VNPC_PaintBlobID" .. i, i * 31)) or i * 31,
-                pos = pos,
-                rx = math.max(2.5, radii.x),
-                ry = math.max(2.5, radii.y),
-                rz = math.max(2.5, radii.z),
+                id = id,
+                pos = drawPos,
+                rx = math.max(2.0, radii.x),
+                ry = math.max(2.0, radii.y),
+                rz = math.max(2.0, radii.z),
                 mass = mass,
                 alive = bit.band(flags, 1) ~= 0,
                 swallowing = bit.band(flags, 2) ~= 0,
-                phantom = bit.band(flags, 4) ~= 0
+                phantom = bit.band(flags, 4) ~= 0,
+                womb = bit.band(flags, 8) ~= 0,
+                person = bit.band(flags, 16) ~= 0,
             })
         end
     end
     return blobs
 end
 
--- Pregnancy contributes its own low, round womb blob.
 function VNPC_GetPregnancyBlob(pred)
     if not IsValid(pred) then return nil end
     if not (pred.VNPC_IsPregnant or pred.VNPC_BabyGrowthValue or ((pred.VNPC_InChildbirthPose or 0) > CurTime())) then
@@ -227,12 +343,14 @@ function VNPC_GetPregnancyBlob(pred)
         rz = r * 0.48,
         mass = 20,
         womb = true,
-        alive = true
+        alive = true,
     }
 end
 
--- Aggregate blob bounding box + center of mass. Returns nil when the belly is
--- effectively empty (no shape to paint).
+-- ---------------------------------------------------------------------------
+-- Metrics: volume-correct radius, AABB still kept for bone anchors, COM + sag
+-- ---------------------------------------------------------------------------
+
 function VNPC_GetBellyDeformMetrics(pred)
     if not IsValid(pred) then return nil end
     local enabled = GetConVar("vnpcs_weight_paint_enabled")
@@ -246,9 +364,10 @@ function VNPC_GetBellyDeformMetrics(pred)
         return nil
     end
 
-    local minX, maxX, minY, maxY, minZ, maxZ = 0, 0, 0, 0, 0, 0
+    local minX, maxX, minY, maxY, minZ, maxZ = 1e9, -1e9, 1e9, -1e9, 1e9, -1e9
     local com = Vector(0, 0, 0)
     local totalMass = 0
+    local totalVol = 0
     for _, b in ipairs(blobs) do
         local px, py, pz = b.pos and b.pos.x or 0, b.pos and b.pos.y or 0, b.pos and b.pos.z or 0
         minX = math.min(minX, px - b.rx)
@@ -257,37 +376,74 @@ function VNPC_GetBellyDeformMetrics(pred)
         maxY = math.max(maxY, py + b.ry)
         minZ = math.min(minZ, pz - b.rz)
         maxZ = math.max(maxZ, pz + b.rz)
-        com = com + Vector(px, py, pz) * b.mass
-        totalMass = totalMass + b.mass
+        com = com + Vector(px, py, pz) * (b.mass or 1)
+        totalMass = totalMass + (b.mass or 1)
+        -- ellipsoid volume ~ 4/3 π r_x r_y r_z
+        totalVol = totalVol + (b.rx * b.ry * b.rz)
     end
     if totalMass > 0 then
         com = com / totalMass
     end
 
+    local boxRx = math.max(4.0, (maxX - minX) * 0.52)
+    local boxRy = math.max(4.5, (maxY - minY) * 0.55)
+    local boxRz = math.max(3.5, (maxZ - minZ) * 0.5)
+
+    -- Volume-correct isotropic radius from total mass/volume (cube root).
+    local volR = 0
+    local volOn = GetConVar("vnpcs_weight_paint_volume")
+    if not volOn or volOn:GetBool() then
+        -- reference: ~40 mass units ≈ radius 9
+        volR = math.max(5.5, (totalMass ^ (1 / 3)) * 2.55)
+        -- also respect packed volume so elongated meals aren't crushed to a sphere
+        local packVolR = (totalVol > 0) and ((totalVol) ^ (1 / 3)) * 1.35 or 0
+        volR = math.max(volR, packVolR)
+    end
+
+    -- Blend: extent-driven axes keep elongation; volume floor prevents underfill.
+    local rx = math.max(boxRx, volR * 0.72)
+    local ry = math.max(boxRy, volR * 0.78)
+    local rz = math.max(boxRz, volR * 0.65)
+    if #blobs == 1 then
+        local b = blobs[1]
+        rx = math.max(rx, b.rx * 0.95)
+        ry = math.max(ry, b.ry * 0.98)
+        rz = math.max(rz, b.rz * 0.92)
+    end
+
+    -- Gravity sag: drop COM and slightly squash height / stretch depth with mass
+    local sag = 0
+    local sagOn = GetConVar("vnpcs_weight_paint_sag")
+    if not sagOn or sagOn:GetBool() then
+        sag = math.Clamp(totalMass * 0.012, 0, 5.5)
+        rz = rz * (1.0 - math.min(0.18, totalMass * 0.00035))
+        ry = ry * (1.0 + math.min(0.14, totalMass * 0.00028))
+        com = Vector(com.x, com.y + sag * 0.08, com.z - sag * 0.55)
+    end
+
+    -- Metaball iso threshold: scale lightly with mass so surface stays tight
+    local iso = 0.42 + math.Clamp(totalMass * 0.0004, 0, 0.18)
+
     local metrics = {
         blobs = blobs,
         totalMass = totalMass,
+        totalVol = totalVol,
         com = com,
-        rx = math.max(4.0, (maxX - minX) * 0.52),
-        ry = math.max(4.5, (maxY - minY) * 0.55),
-        rz = math.max(3.5, (maxZ - minZ) * 0.5),
-        width = math.max(9, maxX - minX),
-        depth = math.max(10, maxY - minY),
-        height = math.max(8, maxZ - minZ)
+        rx = rx,
+        ry = ry,
+        rz = rz,
+        width = math.max(9, rx * 2),
+        depth = math.max(10, ry * 2),
+        height = math.max(8, rz * 2),
+        volRadius = volR,
+        sag = sag,
+        iso = iso,
     }
-    -- A single blob should inflate roughly to its own size, not a tight box.
-    if #blobs == 1 then
-        local b = blobs[1]
-        metrics.rx = math.max(metrics.rx, b.rx * 0.92)
-        metrics.ry = math.max(metrics.ry, b.ry * 0.95)
-        metrics.rz = math.max(metrics.rz, b.rz * 0.9)
-    end
 
     pred.VNPC_BellyBlobMetrics = metrics
     return metrics
 end
 
--- Replicates the current blob layout to clients (called by the physics module).
 function VNPC_SyncPaintBlobNW(pred)
     if not SERVER or not IsValid(pred) then return end
     local enabled = GetConVar("vnpcs_weight_paint_enabled")
@@ -305,11 +461,12 @@ function VNPC_SyncPaintBlobNW(pred)
         if b.swallowing then flags = bit.bor(flags, 2) end
         if b.phantom then flags = bit.bor(flags, 4) end
         if b.womb then flags = bit.bor(flags, 8) end
+        if b.person then flags = bit.bor(flags, 16) end
         if pred.SetNWVector then
             pred:SetNWVector("VNPC_PaintBlobPos" .. i, pos)
             pred:SetNWVector("VNPC_PaintBlobRadii" .. i, Vector(b.rx, b.ry, b.rz))
         end
-        if pred.SetNWFloat then pred:SetNWFloat("VNPC_PaintBlobMass" .. i, b.mass) end
+        if pred.SetNWFloat then pred:SetNWFloat("VNPC_PaintBlobMass" .. i, b.mass or 40) end
         if pred.SetNWInt then
             pred:SetNWInt("VNPC_PaintBlobID" .. i, b.id or i)
             pred:SetNWInt("VNPC_PaintBlobFlags" .. i, flags)
@@ -321,28 +478,62 @@ function VNPC_SyncPaintBlobNW(pred)
             pred:SetNWInt("VNPC_PaintBlobHead", bit.lshift(n, 8) + (blobs[1].id or 0) % 256)
         end
     end
+    -- Replicate volume metrics for client bone/mesh sizing without full recompute
+    local metrics = VNPC_GetBellyDeformMetrics(pred)
+    if metrics and pred.SetNWVector then
+        pred:SetNWVector("VNPC_BellyHalf", Vector(metrics.rx, metrics.ry, metrics.rz))
+        pred:SetNWFloat("VNPC_BellyMass", metrics.totalMass or 0)
+        pred:SetNWFloat("VNPC_BellySag", metrics.sag or 0)
+        pred:SetNWFloat("VNPC_BellyIso", metrics.iso or 0.45)
+    end
 end
 
--- Returns a normalized "how much does this vertex belong to prey X" weight for
--- a vertex local point (lp, in the -1..1 belly space) vs a blob's local center.
--- half = half-extents of the rendered mesh along (x, y, z) so the weight space
--- matches the mesh vertex space exactly.
-local function blobWeight(lp, blob, half)
-    if not blob or not blob.pos or not half then return 0 end
-    local dx = (lp.x * half.x) - blob.pos.x
-    local dy = (lp.y * half.y) - blob.pos.y
-    local dz = (lp.z * half.z) - blob.pos.z
-    local rx = math.max(blob.rx * 1.15, 4)
-    local ry = math.max(blob.ry * 1.15, 4)
-    local rz = math.max(blob.rz * 1.15, 3.5)
-    local nd = (dx * dx) / (rx * rx) + (dy * dy) / (ry * ry) + (dz * dz) / (rz * rz)
-    if nd > 4 then return 0 end
-    return math.exp(-nd)
+-- ---------------------------------------------------------------------------
+-- Metaball field
+-- Wyvill kernel: (1 - r²)³ for r < 1, else 0. Soft, cheap, merges cleanly.
+-- ---------------------------------------------------------------------------
+
+local function wyvill(nd)
+    -- nd = squared normalized distance already (dx²/rx² + ...)
+    if nd >= 1 then return 0 end
+    local t = 1 - nd
+    return t * t * t
 end
 
--- Weight-painted per-vertex displacement. worldPos is the undeformed vertex in
--- world space, lp is its position in the belly's local -1..1 ellipsoid space.
--- Returns a world-space offset vector (or nil for no change).
+-- Evaluate field and gradient at a belly-local point (x,y,z in same units as blob.pos).
+-- Returns fieldValue, gradX, gradY, gradZ
+local function metaballField(localPos, blobs)
+    local f, gx, gy, gz = 0, 0, 0, 0
+    for _, b in ipairs(blobs) do
+        if not b.pos then continue end
+        local rx = math.max(b.rx * 1.12, 2.5)
+        local ry = math.max(b.ry * 1.12, 2.5)
+        local rz = math.max(b.rz * 1.12, 2.2)
+        local dx = localPos.x - b.pos.x
+        local dy = localPos.y - b.pos.y
+        local dz = localPos.z - b.pos.z
+        local nd = (dx * dx) / (rx * rx) + (dy * dy) / (ry * ry) + (dz * dz) / (rz * rz)
+        if nd >= 1 then continue end
+        local w = (b.mass or 40) * 0.022
+        if b.part == "head" then w = w * 0.85 end
+        if b.part == "limb" then w = w * 0.75 end
+        if b.womb then w = w * 1.15 end
+        if b.phantom then w = w * 0.55 end
+        local t = 1 - nd
+        local kernel = t * t * t
+        f = f + w * kernel
+        -- d/d(nd) of (1-nd)³ = -3(1-nd)² ; chain through nd
+        local dK = -3 * t * t * w
+        gx = gx + dK * (2 * dx) / (rx * rx)
+        gy = gy + dK * (2 * dy) / (ry * ry)
+        gz = gz + dK * (2 * dz) / (rz * rz)
+    end
+    return f, gx, gy, gz
+end
+
+-- Radial march from undeformed ellipsoid surface point to metaball iso-surface.
+-- lp = unit-sphere local (-1..1 belly space). half = mesh half-extents.
+-- Returns world offset along radial + world normal (or nil).
 function VNPC_ApplyWeightPaintDeform(worldPos, lp, ent, chain)
     if not IsValid(ent) or not isvector(worldPos) or not istable(chain) then return nil end
     local enabled = GetConVar("vnpcs_weight_paint_enabled")
@@ -354,7 +545,7 @@ function VNPC_ApplyWeightPaintDeform(worldPos, lp, ent, chain)
     if amp <= 0 then return nil end
 
     local metrics = ent.VNPC_BellyBlobMetrics or VNPC_GetBellyDeformMetrics(ent)
-    if not metrics or #metrics.blobs == 0 then return nil end
+    if not metrics or not metrics.blobs or #metrics.blobs == 0 then return nil end
     if not chain.mid or not chain.mid.pos then return nil end
 
     local right = chain.right or chain.rightDir
@@ -362,56 +553,131 @@ function VNPC_ApplyWeightPaintDeform(worldPos, lp, ent, chain)
     local up = chain.up
     if not isvector(right) or not isvector(fwd) or not isvector(up) then return nil end
 
-    -- half-extents of the rendered mesh, matching the vertex loop in sh_vnpc_gpu_belly.lua
     local half = Vector(
         (chain.width or (metrics.rx * 2)) * 0.5,
         (chain.depth or (metrics.ry * 2)) * 0.5,
         (chain.height or (metrics.rz * 2)) * 0.5
     )
 
-    local offset = Vector(0, 0, 0)
-    for _, blob in ipairs(metrics.blobs) do
-        if blob.womb and not GetConVar("vnpcs_gpu_belly_preg_shape"):GetBool() then continue end
-        local w = blobWeight(lp, blob, half)
-        if w <= 0.02 then continue end
+    -- Local belly-space position of this vertex on the base ellipsoid
+    local localP = Vector(lp.x * half.x, lp.y * half.y, lp.z * half.z)
 
-        -- Push the surface outward along the belly radial direction, scaled by
-        -- the blob's size so bigger prey make bigger, softer lumps.
-        local blobCenter = chain.mid.pos + right * blob.pos.x + fwd * blob.pos.y + up * blob.pos.z
-        local radial = worldPos - (chain.mid.pos or blobCenter)
-        if radial:LengthSqr() < 0.001 then
-            radial = fwd
-        else
-            radial:Normalize()
+    local useMeta = GetConVar("vnpcs_weight_paint_metaballs")
+    if useMeta and not useMeta:GetBool() then
+        -- Legacy independent gaussians (fallback)
+        local offset = Vector(0, 0, 0)
+        for _, blob in ipairs(metrics.blobs) do
+            if blob.womb and GetConVar("vnpcs_gpu_belly_preg_shape") and not GetConVar("vnpcs_gpu_belly_preg_shape"):GetBool() then
+                continue
+            end
+            if not blob.pos then continue end
+            local dx = localP.x - blob.pos.x
+            local dy = localP.y - blob.pos.y
+            local dz = localP.z - blob.pos.z
+            local rx = math.max(blob.rx * 1.15, 4)
+            local ry = math.max(blob.ry * 1.15, 4)
+            local rz = math.max(blob.rz * 1.15, 3.5)
+            local nd = (dx * dx) / (rx * rx) + (dy * dy) / (ry * ry) + (dz * dz) / (rz * rz)
+            if nd > 4 then continue end
+            local w = math.exp(-nd)
+            if w <= 0.02 then continue end
+            local radial = worldPos - chain.mid.pos
+            if radial:LengthSqr() < 0.001 then radial = fwd else radial:Normalize() end
+            local lumpR = math.max(blob.rx, blob.rz) * 0.45
+            offset = offset + radial * (w * w * amp * lumpR * (0.5 + 0.4 * w))
         end
-        local lumpR = math.max(blob.rx, blob.rz) * 0.55
-        local push = w * w * amp * lumpR * (0.55 + 0.45 * w)
-        offset = offset + radial * push
+        if offset:LengthSqr() < 0.04 then return nil end
+        return offset
     end
 
-    if offset:LengthSqr() < 0.04 then return nil end
-    return offset
+    local iso = metrics.iso or 0.45
+    -- Newton / radial march: move along the surface radial to reach F ≈ iso
+    local p = Vector(localP)
+    local radialDir = Vector(lp.x * half.x, lp.y * half.y, lp.z * half.z)
+    if radialDir:LengthSqr() < 0.001 then
+        radialDir = Vector(0, 1, 0)
+    else
+        radialDir:Normalize()
+    end
+
+    local f, gx, gy, gz = metaballField(p, metrics.blobs)
+    -- If field is dead out here, mild pull toward any nearby mass still helps fill
+    if f < 0.02 then
+        -- small residual push from nearest blob only
+        local bestW, bestB = 0, nil
+        for _, b in ipairs(metrics.blobs) do
+            if not b.pos then continue end
+            local d = p:Distance(b.pos)
+            local r = math.max(b.rx, b.ry, b.rz) * 1.4
+            local w = 1 - math.Clamp(d / r, 0, 1)
+            if w > bestW then bestW, bestB = w, b end
+        end
+        if bestB and bestW > 0.05 then
+            local radial = worldPos - chain.mid.pos
+            if radial:LengthSqr() < 0.001 then radial = fwd else radial:Normalize() end
+            local push = bestW * bestW * amp * math.max(bestB.rx, bestB.rz) * 0.22
+            if push > 0.08 then return radial * push end
+        end
+        return nil
+    end
+
+    for _ = 1, 3 do
+        f, gx, gy, gz = metaballField(p, metrics.blobs)
+        local err = f - iso
+        if math.abs(err) < 0.02 then break end
+        -- Step along radial (stable) using field slope along that direction
+        local gDot = gx * radialDir.x + gy * radialDir.y + gz * radialDir.z
+        local step
+        if math.abs(gDot) > 1e-4 then
+            step = err / gDot
+        else
+            step = err * 2.5
+        end
+        step = math.Clamp(step, -half.x * 0.35, half.x * 0.35)
+        p = p - radialDir * step
+    end
+
+    local deltaLocal = p - localP
+    -- Soft-clamp so a single strong field never explodes a vertex
+    local maxPush = math.max(half.x, half.y, half.z) * 0.55 * amp
+    if deltaLocal:Length() > maxPush then
+        deltaLocal = deltaLocal:GetNormalized() * maxPush
+    end
+
+    -- Convert local delta to world
+    local worldOff = right * deltaLocal.x + fwd * deltaLocal.y + up * deltaLocal.z
+
+    -- Store gradient on chain for optional normal fix (caller may read)
+    f, gx, gy, gz = metaballField(p, metrics.blobs)
+    local gLen = math.sqrt(gx * gx + gy * gy + gz * gz)
+    if gLen > 1e-4 then
+        local gLocal = Vector(gx / gLen, gy / gLen, gz / gLen)
+        -- outward normal ≈ -gradient (field decreases outside)
+        local nWorld = right * (-gLocal.x) + fwd * (-gLocal.y) + up * (-gLocal.z)
+        if nWorld:LengthSqr() > 0.001 then
+            nWorld:Normalize()
+            chain._lastMetaNormal = nWorld
+        end
+    end
+
+    if worldOff:LengthSqr() < 0.03 then return nil end
+    return worldOff
 end
 
--- Per-blob gaussian influence used to nudge the generated belly bones toward the
--- center of mass (asymmetric bellies). Returns a local-space offset.
 function VNPC_GetBellyComShift(ent)
     if not IsValid(ent) then return Vector(0, 0, 0) end
     local asym = GetConVar("vnpcs_weight_paint_asymmetry")
     if asym and not asym:GetBool() then return Vector(0, 0, 0) end
     local metrics = ent.VNPC_BellyBlobMetrics or VNPC_GetBellyDeformMetrics(ent)
     if not metrics or not metrics.com then return Vector(0, 0, 0) end
-    -- Clamp so a lopsided meal shifts the belly a bit but never detaches it.
+    local sag = metrics.sag or 0
     return Vector(
-        math.Clamp(metrics.com.x * 0.35, -4.5, 4.5),
-        math.Clamp(metrics.com.y * 0.25, -3.0, 3.0),
-        math.Clamp(metrics.com.z * 0.2, -3.0, 3.0)
+        math.Clamp(metrics.com.x * 0.38, -5.0, 5.0),
+        math.Clamp(metrics.com.y * 0.22 + sag * 0.05, -3.5, 4.0),
+        math.Clamp(metrics.com.z * 0.28 - sag * 0.35, -6.0, 2.5)
     )
 end
 
--- Scaled bone multipliers for the character's own skeleton (weight painting on
--- the model mesh): the spine/pelvis stretch is driven by the blob bounding box,
--- and one side of the hips gets more scale when the meal sits to that side.
 function VNPC_GetWeightPaintBoneScale(ent, chain)
     if not IsValid(ent) or not istable(chain) then return nil end
     local enabled = GetConVar("vnpcs_weight_paint_enabled")
@@ -419,53 +685,61 @@ function VNPC_GetWeightPaintBoneScale(ent, chain)
     local metrics = ent.VNPC_BellyBlobMetrics or VNPC_GetBellyDeformMetrics(ent)
     if not metrics or #metrics.blobs == 0 then return nil end
 
-    local extra = math.Clamp(metrics.totalMass * 0.0011, 0.05, 1.4)
+    local extra = math.Clamp(metrics.totalMass * 0.00105, 0.05, 1.35)
+    -- Axis bias from packed extents so elongated meals stretch the right bones
+    local ax = math.Clamp(metrics.rx / math.max(metrics.rz, 4), 0.7, 1.5)
+    local ay = math.Clamp(metrics.ry / math.max(metrics.rz, 4), 0.7, 1.6)
     local com = metrics.com
-    -- Side heaviness: -1..1 (negative = prey sits to the left)
     local side = math.Clamp(com.x / math.max(metrics.rx, 6), -1, 1)
-    local sideL = 1 + extra * 0.10 * math.max(0, -side)
-    local sideR = 1 + extra * 0.10 * math.max(0, side)
+    local sideL = 1 + extra * 0.11 * math.max(0, -side)
+    local sideR = 1 + extra * 0.11 * math.max(0, side)
+    local lean = 0
+    if GetConVar("vnpcs_weight_paint_sag") and GetConVar("vnpcs_weight_paint_sag"):GetBool() then
+        lean = math.Clamp((metrics.sag or 0) * 0.04, 0, 0.25)
+    end
 
     return {
         extra = extra,
-        spine = Vector(1 + extra * 0.28, 1 + extra * 0.85, 1 + extra * 0.22),
-        spine1 = Vector(1 + extra * 0.22, 1 + extra * 0.70, 1 + extra * 0.18),
-        pelvis = Vector(1 + extra * 0.20, 1 + extra * 0.55, 1 + extra * 0.16),
-        thighL = Vector(sideL * (1 + extra * 0.06), 1 + extra * 0.18, sideL * (1 + extra * 0.10)),
-        thighR = Vector(sideR * (1 + extra * 0.06), 1 + extra * 0.18, sideR * (1 + extra * 0.10))
+        spine = Vector(1 + extra * 0.26 * ax, 1 + extra * (0.82 + lean) * ay, 1 + extra * 0.20),
+        spine1 = Vector(1 + extra * 0.20 * ax, 1 + extra * (0.68 + lean * 0.7) * ay, 1 + extra * 0.16),
+        pelvis = Vector(1 + extra * 0.18 * ax, 1 + extra * 0.52 * ay, 1 + extra * 0.15),
+        thighL = Vector(sideL * (1 + extra * 0.06), 1 + extra * 0.17, sideL * (1 + extra * 0.10)),
+        thighR = Vector(sideR * (1 + extra * 0.06), 1 + extra * 0.17, sideR * (1 + extra * 0.10)),
+        spineLean = lean, -- optional pitch hint for consumers
     }
 end
 
 concommand.Add("vnpcs_weight_paint_status", function(ply)
     print("===============================================================")
-    print("      V-NPCs DYNAMIC WEIGHT PAINTING & MESH DEFORM STATUS      ")
+    print("   V-NPCs METABALL WEIGHT PAINT / MESH DEFORM STATUS           ")
     print("===============================================================")
-    print(" - Weight Paint Enabled: " .. tostring(GetConVar("vnpcs_weight_paint_enabled"):GetBool()))
-    print(" - Per-Prey Lumps: " .. tostring(GetConVar("vnpcs_weight_paint_lumps"):GetBool()) .. " amp=" .. tostring(GetConVar("vnpcs_weight_paint_amp"):GetFloat()))
-    print(" - Asymmetric Bones: " .. tostring(GetConVar("vnpcs_weight_paint_asymmetry"):GetBool()))
+    print(" - Enabled: " .. tostring(GetConVar("vnpcs_weight_paint_enabled"):GetBool()))
+    print(" - Metaballs: " .. tostring(GetConVar("vnpcs_weight_paint_metaballs"):GetBool())
+        .. "  curl=" .. tostring(GetConVar("vnpcs_weight_paint_curl"):GetBool())
+        .. "  volume=" .. tostring(GetConVar("vnpcs_weight_paint_volume"):GetBool())
+        .. "  sag=" .. tostring(GetConVar("vnpcs_weight_paint_sag"):GetBool())
+        .. "  lerp=" .. tostring(GetConVar("vnpcs_weight_paint_lerp"):GetBool()))
+    print(" - Lumps amp=" .. tostring(GetConVar("vnpcs_weight_paint_amp"):GetFloat())
+        .. "  asymmetry=" .. tostring(GetConVar("vnpcs_weight_paint_asymmetry"):GetBool()))
     print("-----------------------------------------")
     local count = 0
-    for _, ent in ipairs(ents.FindByClass("npc_*")) do
+    for _, ent in ipairs(ents.GetAll()) do
         if IsValid(ent) and (ent.Predator or ent.VNPC_FemaleModelVore or ent.IsDrGNextbot or ent.VNPC_Belly or ent.Belly) then
             local metrics = VNPC_GetBellyDeformMetrics(ent)
-            if metrics and #metrics.blobs > 0 then
+            if metrics and metrics.totalMass and metrics.totalMass > 0 then
                 count = count + 1
-                print(string.format(" -> #%d [%s] blobs=%d mass=%.1f R(x/y/z)=%.1f/%.1f/%.1f com=(%.1f, %.1f, %.1f)",
-                    ent:EntIndex(), ent.PrintName or ent:GetClass(), #metrics.blobs, metrics.totalMass,
-                    metrics.rx, metrics.ry, metrics.rz, metrics.com.x, metrics.com.y, metrics.com.z))
-                for i, b in ipairs(metrics.blobs) do
-                    print(string.format("      blob[%d] id=%d pos=(%.1f,%.1f,%.1f) r=(%.1f,%.1f,%.1f) mass=%.1f %s%s",
-                        i, b.id or 0, b.pos and b.pos.x or 0, b.pos and b.pos.y or 0, b.pos and b.pos.z or 0,
-                        b.rx, b.ry, b.rz, b.mass, b.alive and "ALIVE" or "dead", b.womb and " WOMB" or ""))
-                end
+                print(string.format(
+                    " -> #%d [%s] blobs=%d mass=%.1f volR=%.1f half=(%.1f,%.1f,%.1f) sag=%.1f iso=%.2f",
+                    ent:EntIndex(), ent.PrintName or ent:GetClass(),
+                    #metrics.blobs, metrics.totalMass, metrics.volRadius or 0,
+                    metrics.rx, metrics.ry, metrics.rz, metrics.sag or 0, metrics.iso or 0
+                ))
             end
         end
     end
-    if count == 0 then print(" - No predators with belly content currently spawned.") end
+    if count == 0 then print(" - No predators with belly blobs.") end
     print("===============================================================")
-    if IsValid(ply) then
-        ply:ChatPrint("[V-NPCs] Weight paint status printed to console. Painted predators: " .. count)
-    end
+    if IsValid(ply) then ply:ChatPrint("[V-NPCs] Weight paint status printed (" .. count .. " preds).") end
 end)
 
 concommand.Add("vnpcs_test_paint_blob", function(ply, _, args)
@@ -485,10 +759,10 @@ concommand.Add("vnpcs_test_paint_blob", function(ply, _, args)
         ry = d * 0.5,
         rz = h * 0.5,
         mass = 70,
-        alive = true
+        alive = true,
+        person = true,
     }
     target.VNPC_PaintTestBlob = testBlob
-    -- make sure metrics pick it up on both realms
     target.VNPC_BellyBlobMetrics = nil
     if SERVER then
         target.VNPC_BellyBlobs = target.VNPC_BellyBlobs or {}
