@@ -255,28 +255,45 @@ function ENT:Think() --this code is realllyyyyy stupid
         local modelSize = math.Clamp(newSize * (self.FoldMulti or 1), 0, self.MaxFolds)
         self:ManipulateBoneAngles(main_bone, Angle(0, 0, self.RotationSpring.pos))
 
-        --[[ DYNAMIC WEIGHT PAINTING & MESH DEFORM ]]
-        --blends towards the actual shape of whatever's inside (wide vs tall
-        --vs long) instead of always inflating uniformly, so the belly reads
-        --like it's actually holding that specific prey - and, when there's
-        --more than one body in there, like it's actually holding more than
-        --one body. Purely geometric (bounding-box packing in
-        --basic_visual.lua's GetBellyShapeVector), no physics simulation.
+        --[[ BOUNDING-BOX BELLY SHAPE (enhanced) ]]
+        -- Lerps toward packed width/depth/height bias so multi-prey layouts
+        -- read as wide/deep instead of a uniform sphere. Side bias + occupant
+        -- count add a slight offset and fatfold push for a two-body silhouette.
         local wantedShape = self:GetNWVector("BellyShape", vector_one)
+        local sideBias = self:GetNWFloat("BellyShapeBias", 0)
+        local occupants = self:GetNWInt("BellyOccupants", 0)
         self.ShapeBlend = self.ShapeBlend or vector_one
-        self.ShapeBlend = LerpVector(getLerpTime(FrameTime(), 3), self.ShapeBlend, wantedShape)
+        -- Faster catch-up when shape jumps (new swallow), slower settle after.
+        local shapeSpeed = 3.2
+        local deltaShape = (wantedShape - self.ShapeBlend):Length()
+        if deltaShape > 0.35 then shapeSpeed = 5.5 end
+        self.ShapeBlend = LerpVector(getLerpTime(FrameTime(), shapeSpeed), self.ShapeBlend, wantedShape)
+        self.ShapeBiasBlend = Lerp(getLerpTime(FrameTime(), 2.8), self.ShapeBiasBlend or 0, sideBias)
 
-        local scaleVec = Vector(
-            newSize * self.ShapeBlend.x,
-            newSize * self.ShapeBlend.y,
-            newSize * self.ShapeBlend.z
-        )
+        local sx = newSize * self.ShapeBlend.x
+        local sy = newSize * self.ShapeBlend.y
+        local sz = newSize * self.ShapeBlend.z
+        -- Soft floor so a very flat bias never collapses a bone axis.
+        sx = math.max(sx, newSize * 0.45)
+        sy = math.max(sy, newSize * 0.45)
+        sz = math.max(sz, newSize * 0.40)
 
+        local scaleVec = Vector(sx, sy, sz)
         self:ManipulateBoneScale(main_bone, scaleVec)
-        
+
         local ughhhhhh = math.min(-(1 - newSize) * 3.5, 0)
-        self:ManipulateBonePosition(main_bone, Vector(0, ughhhhhh * 1.2, ughhhhhh * 0.9))
-        self:ManipulateBoneScale(0, vector_one * modelSize) --fatrolls bone
+        -- Multi-body: push belly slightly forward and off-center so two packed
+        -- bodies don't look like a centered balloon.
+        local multiPush = math.Clamp((occupants - 1) * 0.55, 0, 1.6)
+        local sidePush = self.ShapeBiasBlend * newSize * 4.5
+        self:ManipulateBonePosition(main_bone, Vector(
+            sidePush,
+            ughhhhhh * 1.2 - multiPush * 1.8,
+            ughhhhhh * 0.9 - multiPush * 0.6
+        ))
+
+        local foldBoost = 1.0 + math.Clamp((occupants - 1) * 0.12, 0, 0.4)
+        self:ManipulateBoneScale(0, vector_one * math.min(modelSize * foldBoost, (self.MaxFolds or 1) * 1.15)) --fatrolls bone
     end
     --[[animations]]
     if currentPhase == 1 then
