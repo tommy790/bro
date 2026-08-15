@@ -659,6 +659,36 @@ function VNPC_IsFamilyOrMate(entA, entB)
     if entA.VNPC_MotherRef == entB or entB.VNPC_MotherRef == entA then return true end
     if entA.VNPC_FatherRef == entB or entB.VNPC_FatherRef == entA then return true end
     if entA.VNPC_LovedPartner == entB or entB.VNPC_LovedPartner == entA then return true end
+    if entA.VNPC_MatingPartner == entB or entB.VNPC_MatingPartner == entA then return true end
+
+    -- Same predator camp = sisters / campmates. Never swallow each other.
+    local campA = entA.VNPC_CampID
+    local campB = entB.VNPC_CampID
+    if campA and campB and campA ~= "wild" and campA == campB then
+        return true
+    end
+
+    -- Same prey fort when both are permanent fort predators / camp defenders.
+    local preyA = entA.VNPC_PreyCampID
+    local preyB = entB.VNPC_PreyCampID
+    if preyA and preyB and preyA == preyB then
+        local aAlly = entA.VNPC_IsPermanentFortPredator or entA.VNPC_IsSecretAssassin
+        local bAlly = entB.VNPC_IsPermanentFortPredator or entB.VNPC_IsSecretAssassin
+        -- Two predators sharing a prey camp as allies (not a night-raid assassin vs prey).
+        if aAlly and bAlly then
+            return true
+        end
+        -- Predator enrolled in a prey camp must not eat other members of that fort
+        -- unless she is mid night-raid (assassin flag allows camp swallow).
+        local aPred = entA.Predator or entA.VNPC_FemaleModelVore or entA.IsDrGNextbot or entA.EatEntity
+        local bPred = entB.Predator or entB.VNPC_FemaleModelVore or entB.IsDrGNextbot or entB.EatEntity
+        if aPred and not bPred and not entA.VNPC_AssassinAllowCampSwallow and not (VNPC_IsAssassinNightHunting and VNPC_IsAssassinNightHunting(entA)) then
+            return true
+        end
+        if bPred and not aPred and not entB.VNPC_AssassinAllowCampSwallow and not (VNPC_IsAssassinNightHunting and VNPC_IsAssassinNightHunting(entB)) then
+            return true
+        end
+    end
 
     local clsA = string.lower(entA:GetClass() or "")
     local mdlA = string.lower(entA:GetModel() or "")
@@ -674,6 +704,13 @@ function VNPC_IsFamilyOrMate(entA, entB)
     if isEliB and isAlyxA then return true end
 
     return false
+end
+
+-- True when both entities belong to the same predator camp (or same ally fort).
+function VNPC_IsSamePredatorCamp(entA, entB)
+    if not IsValid(entA) or not IsValid(entB) then return false end
+    local a, b = entA.VNPC_CampID, entB.VNPC_CampID
+    return a ~= nil and b ~= nil and a ~= "wild" and a == b
 end
 
 function VNPC_WildGiveBirth(mother)

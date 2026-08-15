@@ -338,14 +338,26 @@ end
 
 function ENT:EatEntity(ent)
 	if not IsValid(ent) or (self.Swallowing and not self._InClumpVore) or ent.Vored or self.Vored then return end
+	if ent == self then return end
 	if ent.VNPC_DigestedBone or ent.VNPC_BoneOwner or ent.VNPC_NoVore then return end
+	if VNPC_IsFamilyOrMate and VNPC_IsFamilyOrMate(self, ent) then return end
+	if self.VNPC_CampID and ent.VNPC_CampID and self.VNPC_CampID ~= "wild" and self.VNPC_CampID == ent.VNPC_CampID then return end
+	if VNPC_IsPreyEmissary and VNPC_IsPreyEmissary(ent) then return end
+	if VNPC_IsAssassinUndercover and VNPC_IsAssassinUndercover(self) then return end
+	if ent.VNPC_PreyCampID and self.VNPC_PreyCampID and ent.VNPC_PreyCampID == self.VNPC_PreyCampID then
+		if not (self.VNPC_AssassinAllowCampSwallow or (VNPC_IsAssassinNightHunting and VNPC_IsAssassinNightHunting(self))) then
+			return
+		end
+	end
 	if VNPC_CanSwallowOwnSpecies and not VNPC_CanSwallowOwnSpecies(self, ent) then return end
 	if not ent:GetModel() or ent:GetClass():find("func") then return end
 
 	local result = false
 
 	self.Swallowing = true
-	self:SetFacialExpression(1)
+	if self.SetFacialExpression then
+		pcall(self.SetFacialExpression, self, 1)
+	end
 
 	print(ent, ent:GetClass()) --get rid of this one day
 	
@@ -384,7 +396,7 @@ function ENT:EatEntity(ent)
 		timer.Simple(tSwallow, function()
 			if self and IsValid(self) then
 				if IsValid(self.Belly) and self.Belly.DigestionPhase == 1 then
-					self:SetFacialExpression(4)
+					if self.SetFacialExpression then pcall(self.SetFacialExpression, self, 4) end
 				end
 			end
 		end)
@@ -392,9 +404,9 @@ function ENT:EatEntity(ent)
 		timer.Simple(tFull, function()
 			if self and IsValid(self) then
 				if IsValid(self.Belly) and (self.Belly.DigestionPhase ~= 0 or (self.Belly.Prey and #self.Belly.Prey > 0)) then
-					self:SetFacialExpression(2)
+					if self.SetFacialExpression then pcall(self.SetFacialExpression, self, 2) end
 				else
-					self:SetFacialExpression(0)
+					if self.SetFacialExpression then pcall(self.SetFacialExpression, self, 0) end
 				end
 			end
 		end)
@@ -433,15 +445,15 @@ function ENT:Burp(big)
 		self:EmitSound(burp, 80, self.VoreSoundPitch * 100, 1.4)
 	end
 
-	self:SetFacialExpression(3) -- Burp face
+	if self.SetFacialExpression then pcall(self.SetFacialExpression, self, 3) end -- Burp face
 	self:PlayVoreGesture("burp")
 	local length = (big and 1.5 or 1.2)/self.VoreSoundPitch
     timer.Simple(length, function()
         if self and IsValid(self) then
 			if not IsValid(self.Belly) or self.Belly.DigestionPhase == 0 or (self.Belly.Prey and #self.Belly.Prey == 0) then
-				self:SetFacialExpression(0) -- Normal face
+				if self.SetFacialExpression then pcall(self.SetFacialExpression, self, 0) end -- Normal face
 			else
-				self:SetFacialExpression(2) -- Digestion face
+				if self.SetFacialExpression then pcall(self.SetFacialExpression, self, 2) end -- Digestion face
 			end
         end
     end)
@@ -506,7 +518,7 @@ if SERVER then --setup functions
 		end
 
 		self:AddAnimEvent(self.AttackAnimation, {15}, "_attack")
-		self:SetFacialExpression(0)
+		if self.SetFacialExpression then pcall(self.SetFacialExpression, self, 0) end
 		self:SetWeight(self.BoneScale)
 
 		self.BoneBlendState = self.BoneBlendState or {}

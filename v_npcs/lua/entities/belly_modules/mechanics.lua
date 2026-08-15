@@ -404,7 +404,13 @@ end
 function ENT:AddPrey(prey)
     if not IsValid(prey) then return false end
     if prey.VNPC_DigestedBone or prey.VNPC_BoneOwner or prey.VNPC_NoVore then return false end
+    if IsValid(self.NPC) and prey == self.NPC then return false end
     if IsValid(self.NPC) and VNPC_IsFamilyOrMate and VNPC_IsFamilyOrMate(self.NPC, prey) then return false end
+    -- Same predator camp (sisters / campmates) must never be swallowed.
+    if IsValid(self.NPC) and self.NPC.VNPC_CampID and prey.VNPC_CampID
+        and self.NPC.VNPC_CampID ~= "wild" and self.NPC.VNPC_CampID == prey.VNPC_CampID then
+        return false
+    end
     if not (IsValid(self.NPC) and self.NPC.VNPC_IsWildWanderer and self.NPC.VNPC_WildType == "predator") and VNPC_IsProtectedChildPrey and VNPC_IsProtectedChildPrey(prey) then return false end
     if VNPC_IsPreyEmissary and VNPC_IsPreyEmissary(prey) then return false end
     if VNPC_IsAssassinUndercover and IsValid(self.NPC) and VNPC_IsAssassinUndercover(self.NPC) then return false end

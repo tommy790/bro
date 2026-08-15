@@ -28,6 +28,8 @@ function VNPC_SelectSmartPreyTarget(pred, search_radius)
     for _, ent in ipairs(ents.FindInSphere(predPos, search_radius or 700)) do
         if not IsValid(ent) or ent == pred or ent.Vored or ent.VNPC_Vored or ent.VNPC_Surrendered then continue end
         if VNPC_IsFamilyOrMate and VNPC_IsFamilyOrMate(pred, ent) then continue end
+        -- Never target predator campmates / sisters.
+        if pred.VNPC_CampID and ent.VNPC_CampID and pred.VNPC_CampID ~= "wild" and pred.VNPC_CampID == ent.VNPC_CampID then continue end
         if not (pred.VNPC_IsWildWanderer and pred.VNPC_WildType == "predator") and VNPC_IsProtectedChildPrey and VNPC_IsProtectedChildPrey(ent) then continue end
         if VNPC_IsPreyEmissary and VNPC_IsPreyEmissary(ent) then continue end
         if ent.VNPC_DigestedBone or ent.VNPC_BoneOwner or ent.VNPC_NoVore then continue end

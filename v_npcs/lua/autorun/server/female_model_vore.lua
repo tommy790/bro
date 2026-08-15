@@ -145,11 +145,16 @@ function VNPC_GiveFemaleModelVore(ent)
     -- Add EatEntity method
     function ent:EatEntity(target)
         if not IsValid(target) or (self.Swallowing and not self._InClumpVore) or target.Vored or self.Vored then return false end
+        if target == self then return false end
         if target.VNPC_DigestedBone or target.VNPC_BoneOwner or target.VNPC_NoVore then return false end
         if target.VNPC_IsPreyCampWall or target.VNPC_IsPreyCampHutPiece or target.VNPC_IsCourtyardDefense then
             if self.VNPC_PreyCampID and target.VNPC_PreyCampID == self.VNPC_PreyCampID then return false end
         end
         if VNPC_IsFamilyOrMate and VNPC_IsFamilyOrMate(self, target) then return false end
+        -- Never swallow predator campmates / sisters.
+        if self.VNPC_CampID and target.VNPC_CampID and self.VNPC_CampID ~= "wild" and self.VNPC_CampID == target.VNPC_CampID then
+            return false
+        end
         if target.VNPC_IsSleeping and target.VNPC_CampID and VNPC_GetPredatorCamp then
             local c = VNPC_GetPredatorCamp(target)
             if c and #(c.barricades or {}) > 0 and self.VNPC_CampID ~= target.VNPC_CampID then return false end
@@ -167,7 +172,10 @@ function VNPC_GiveFemaleModelVore(ent)
         
         self.Swallowing = true
         local belly = self.VNPC_Belly or self.Belly
-        if not IsValid(belly) then return false end
+        if not IsValid(belly) then
+            self.Swallowing = false
+            return false
+        end
         
         if belly:AddPrey(target) then
             local snd_list = self.VoreSounds and self.VoreSounds["swallow"]
@@ -214,16 +222,16 @@ function VNPC_GiveFemaleModelVore(ent)
 
             timer.Simple(tSwallow, function()
                 if IsValid(self) and IsValid(belly) and belly.DigestionPhase == 1 then
-                    self:SetFacialExpression(4)
+                    if self.SetFacialExpression then pcall(self.SetFacialExpression, self, 4) end
                 end
             end)
 
             timer.Simple(tFull, function()
                 if IsValid(self) then
                     if IsValid(belly) and (belly.DigestionPhase ~= 0 or (belly.Prey and #belly.Prey > 0)) then
-                        self:SetFacialExpression(2)
+                        if self.SetFacialExpression then pcall(self.SetFacialExpression, self, 2) end
                     else
-                        self:SetFacialExpression(0)
+                        if self.SetFacialExpression then pcall(self.SetFacialExpression, self, 0) end
                     end
                 end
             end)
@@ -435,11 +443,11 @@ function VNPC_GiveFemaleModelVore(ent)
 
     function ent:OnDigestionPhaseChanged(new, old)
         if new == 0 then
-            self:SetFacialExpression(0)
+            if self.SetFacialExpression then pcall(self.SetFacialExpression, self, 0) end
         elseif new == 2 and old == 1 then
-            self:SetFacialExpression(2)
+            if self.SetFacialExpression then pcall(self.SetFacialExpression, self, 2) end
         elseif new == 1 and old == 0 then
-            self:SetFacialExpression(1)
+            if self.SetFacialExpression then pcall(self.SetFacialExpression, self, 1) end
         end
     end
 
@@ -592,7 +600,7 @@ hook.Add("Think", "VNPC_FemaleModelVore_Think", function()
             if (not hasSwallowed) and not npc.Swallowing then
                 local current_phase = npc:GetCurrentFacialPhase()
                 if current_phase == 1 or current_phase == 2 or current_phase == 4 then
-                    npc:SetFacialExpression(0)
+                    if npc.SetFacialExpression then pcall(npc.SetFacialExpression, npc, 0) end
                 end
             end
 
@@ -670,6 +678,14 @@ hook.Add("Think", "VNPC_FemaleModelVore_AI", function()
         local enemy = npc:GetEnemy()
         local prefer_swallow = GetConVar("vnpcs_ai_prefer_swallowing")
         if IsValid(enemy) and enemy ~= npc and not enemy.Vored then
+            if VNPC_IsFamilyOrMate and VNPC_IsFamilyOrMate(npc, enemy) then
+                if npc.SetEnemy then pcall(npc.SetEnemy, npc, nil) end
+                continue
+            end
+            if npc.VNPC_CampID and enemy.VNPC_CampID and npc.VNPC_CampID ~= "wild" and npc.VNPC_CampID == enemy.VNPC_CampID then
+                if npc.SetEnemy then pcall(npc.SetEnemy, npc, nil) end
+                continue
+            end
             if VNPC_CanSwallowOwnSpecies and not VNPC_CanSwallowOwnSpecies(npc, enemy) then
                 continue
             end
@@ -700,6 +716,7 @@ hook.Add("Think", "VNPC_FemaleModelVore_AI", function()
                 if IsValid(ent) and ent ~= npc and not ent.Vored and (ent:IsPlayer() or ent:IsNPC()) then
                     if ent.VNPC_DigestedBone or ent.VNPC_BoneOwner or ent.VNPC_NoVore then continue end
                     if VNPC_IsFamilyOrMate and VNPC_IsFamilyOrMate(npc, ent) then continue end
+                    if npc.VNPC_CampID and ent.VNPC_CampID and npc.VNPC_CampID ~= "wild" and npc.VNPC_CampID == ent.VNPC_CampID then continue end
                     if not (npc.VNPC_IsWildWanderer and npc.VNPC_WildType == "predator") and VNPC_IsProtectedChildPrey and VNPC_IsProtectedChildPrey(ent) then continue end
                     if VNPC_IsPreyEmissary and VNPC_IsPreyEmissary(ent) then continue end
                     if VNPC_CanSwallowOwnSpecies and not VNPC_CanSwallowOwnSpecies(npc, ent) then continue end

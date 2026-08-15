@@ -190,6 +190,12 @@ function ENT:SetCrouching(bool)
 end
 
 function ENT:ShouldIgnore(ent) 
+	if not IsValid(ent) then return true end
+	-- Never treat predator campmates / family as enemies.
+	if VNPC_IsFamilyOrMate and VNPC_IsFamilyOrMate(self, ent) then return true end
+	if self.VNPC_CampID and ent.VNPC_CampID and self.VNPC_CampID ~= "wild" and self.VNPC_CampID == ent.VNPC_CampID then
+		return true
+	end
 	if self:GetEnemy() ~= ent then
 		return ent.Predator --change this later? maybe?
 	end
@@ -197,9 +203,19 @@ function ENT:ShouldIgnore(ent)
 end
 
 function ENT:OnMeleeAttack(enemy) 
+	if IsValid(enemy) then
+		if VNPC_IsFamilyOrMate and VNPC_IsFamilyOrMate(self, enemy) then return end
+		if self.VNPC_CampID and enemy.VNPC_CampID and self.VNPC_CampID ~= "wild" and self.VNPC_CampID == enemy.VNPC_CampID then
+			return
+		end
+	end
 	if instaVore:GetBool() then
 		self:Attack({
 			damage = function(ent, orgin)
+				if IsValid(ent) then
+					if VNPC_IsFamilyOrMate and VNPC_IsFamilyOrMate(self, ent) then return -3 end
+					if self.VNPC_CampID and ent.VNPC_CampID and self.VNPC_CampID ~= "wild" and self.VNPC_CampID == ent.VNPC_CampID then return -3 end
+				end
 				self:EatEntity(ent)
 				return -3
 			end,
@@ -231,6 +247,10 @@ function ENT:OnAnimEvent()
 	if self:IsPlayingSequence(self.AttackAnimation) then
 		self:Attack({
 			damage = function(ent, orgin)
+				if IsValid(ent) then
+					if VNPC_IsFamilyOrMate and VNPC_IsFamilyOrMate(self, ent) then return -3 end
+					if self.VNPC_CampID and ent.VNPC_CampID and self.VNPC_CampID ~= "wild" and self.VNPC_CampID == ent.VNPC_CampID then return -3 end
+				end
 				self:EatEntity(ent)
 				return -3
 			end,
@@ -242,8 +262,15 @@ function ENT:OnAnimEvent()
 end
 
 function ENT:OnTakeDamage(dmg, hitgroup) --will eat anything that attacks them
-	self:AddEntityRelationship(dmg:GetAttacker(), D_HT, 15)
-	self:SpotEntity(dmg:GetAttacker())
+	local attacker = dmg:GetAttacker()
+	if IsValid(attacker) then
+		if VNPC_IsFamilyOrMate and VNPC_IsFamilyOrMate(self, attacker) then return end
+		if self.VNPC_CampID and attacker.VNPC_CampID and self.VNPC_CampID ~= "wild" and self.VNPC_CampID == attacker.VNPC_CampID then
+			return
+		end
+	end
+	self:AddEntityRelationship(attacker, D_HT, 15)
+	self:SpotEntity(attacker)
 end
 
 function ENT:OnReachedPatrol()

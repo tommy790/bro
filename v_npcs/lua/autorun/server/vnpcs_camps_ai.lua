@@ -72,6 +72,22 @@ function VNPC_CreatePredatorCamp(pos, founder)
     return camp
 end
 
+function VNPC_SetPredatorCampmateRelations(camp)
+    if not camp or not camp.members then return end
+    for i = 1, #camp.members do
+        local a = camp.members[i]
+        if not IsValid(a) then continue end
+        for j = i + 1, #camp.members do
+            local b = camp.members[j]
+            if not IsValid(b) then continue end
+            if a.AddEntityRelationship then pcall(a.AddEntityRelationship, a, b, D_LI, 99) end
+            if b.AddEntityRelationship then pcall(b.AddEntityRelationship, b, a, D_LI, 99) end
+            if a.GetEnemy and a:GetEnemy() == b and a.SetEnemy then pcall(a.SetEnemy, a, nil) end
+            if b.GetEnemy and b:GetEnemy() == a and b.SetEnemy then pcall(b.SetEnemy, b, nil) end
+        end
+    end
+end
+
 function VNPC_AssignPredatorToCamp(pred, force)
     if not camps_enabled:GetBool() then return nil end
     if not IsValid(pred) or pred:Health() <= 0 then return nil end
@@ -91,7 +107,10 @@ function VNPC_AssignPredatorToCamp(pred, force)
     end
 
     local currentCamp = VNPC_GetPredatorCamp(pred)
-    if currentCamp then return currentCamp end
+    if currentCamp then
+        VNPC_SetPredatorCampmateRelations(currentCamp)
+        return currentCamp
+    end
 
     local myFaction = (VNPC_GetPredatorFaction and VNPC_GetPredatorFaction(pred)) or "metrocop"
     local maxCap = camp_cap:GetInt() or 4
@@ -113,6 +132,7 @@ function VNPC_AssignPredatorToCamp(pred, force)
         table.insert(bestCamp.members, pred)
         pred.VNPC_CampID = bestCamp.id
         pred.VNPC_CampRole = "stayer"
+        VNPC_SetPredatorCampmateRelations(bestCamp)
         return bestCamp
     else
         return VNPC_CreatePredatorCamp(predPos, pred)
@@ -574,6 +594,11 @@ hook.Add("Think", "VNPC_PredatorCamps_AI_Loop", function()
             if not IsValid(mem) or mem:Health() <= 0 or mem.Vored or mem.VNPC_Vored then
                 table.remove(camp.members, m)
             end
+        end
+
+        -- Keep campmates friendly so they never fight / swallow each other.
+        if VNPC_SetPredatorCampmateRelations then
+            VNPC_SetPredatorCampmateRelations(camp)
         end
 
         if #camp.members == 0 then

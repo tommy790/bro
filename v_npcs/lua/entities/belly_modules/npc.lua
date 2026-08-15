@@ -38,10 +38,16 @@ function ENT:NPCThink() --this has to be called by an npc
         if self.DigestionPhase == 0 and (not self.Prey or #self.Prey == 0) then
             local current_phase = npc.CurrentFacialPhase
             if npc.GetCurrentFacialPhase then
-                current_phase = npc:GetCurrentFacialPhase()
+                local ok, phase = pcall(npc.GetCurrentFacialPhase, npc)
+                if ok then current_phase = phase end
             end
             if current_phase == 1 or current_phase == 2 or current_phase == 4 then
-                npc:SetFacialExpression(0)
+                if npc.SetFacialExpression then
+                    pcall(npc.SetFacialExpression, npc, 0)
+                else
+                    npc.CurrentFacialPhase = 0
+                    if npc.SetNWInt then npc:SetNWInt("FacialPhase", 0) end
+                end
             end
         end
     end
@@ -56,6 +62,18 @@ function ENT:OnPreyAbsorbing(power, old_value, new_value)
     self:GainBellyFat(power)
 end
 
+local function VNPC_SafeSetFacialExpression(npc, phase)
+    if not IsValid(npc) then return end
+    if npc.SetFacialExpression then
+        pcall(npc.SetFacialExpression, npc, phase)
+    else
+        npc.CurrentFacialPhase = phase
+        if npc.SetNWInt then
+            pcall(npc.SetNWInt, npc, "FacialPhase", phase)
+        end
+    end
+end
+
 function ENT:OnDigestionPhaseChanged(new, old)
     if new == 0 then --from absorbing to empty/hungry
         self:StopDigestionSound()
@@ -63,8 +81,8 @@ function ENT:OnDigestionPhaseChanged(new, old)
 
         self.NextSoundTime = nil 
 
-        if self.NPC then
-            self.NPC:SetFacialExpression(0)
+        if IsValid(self.NPC) then
+            VNPC_SafeSetFacialExpression(self.NPC, 0)
         end
         if VNPC_ScheduleDigestedBoneSpit and (old == 1 or old == 2) then
             VNPC_ScheduleDigestedBoneSpit(self.NPC or self:GetOwner() or self:GetParent(), self)
@@ -75,8 +93,8 @@ function ENT:OnDigestionPhaseChanged(new, old)
         self.NextSoundTime = CurTime() + math.Rand(5, 10)
         self:StartAbsorbSound()
 
-        if self.NPC then       
-            self.NPC:SetFacialExpression(2)
+        if IsValid(self.NPC) then
+            VNPC_SafeSetFacialExpression(self.NPC, 2)
         end
         if VNPC_ScheduleDigestedBoneSpit then
             VNPC_ScheduleDigestedBoneSpit(self.NPC or self:GetOwner() or self:GetParent(), self)
