@@ -69,7 +69,11 @@ hook.Add("Think", "VNPC_PackHunting_AI_Loop", function()
         if (pred.VNPC_NextPackThink or 0) > now then continue end
         pred.VNPC_NextPackThink = now + 1.25
 
-        local enemy = pred:GetEnemy()
+        local enemy = nil
+        if pred.GetEnemy then
+            local ok, en = pcall(pred.GetEnemy, pred)
+            if ok then enemy = en end
+        end
         if not IsValid(enemy) then continue end
 
         local maxHP = enemy:GetMaxHealth() or 100

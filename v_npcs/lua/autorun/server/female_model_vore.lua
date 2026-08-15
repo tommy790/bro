@@ -219,7 +219,12 @@ function VNPC_GiveFemaleModelVore(ent)
             local tSwallow = (animList and animList[1] and animList[1].length) or 1.0
             local tGulp = (animList and animList[4] and animList[4].length) or 1.0
             local calm_swallow_cv = GetConVar("vnpcs_calm_swallow_animation")
-            if calm_swallow_cv and calm_swallow_cv:GetBool() and not IsValid(self:GetEnemy()) then
+            local hasEnemy = false
+            if self.GetEnemy then
+                local ok, en = pcall(self.GetEnemy, self)
+                hasEnemy = ok and IsValid(en)
+            end
+            if calm_swallow_cv and calm_swallow_cv:GetBool() and not hasEnemy then
                 tSwallow = 5.0
                 tGulp = 1.0
             end
@@ -414,11 +419,14 @@ function VNPC_GiveFemaleModelVore(ent)
         if prey.SetTarget then pcall(prey.SetTarget, prey, nil) end
         for _, npc in ipairs(ents.FindByClass("npc_*")) do
             if IsValid(npc) and npc ~= self and npc ~= prey then
-                if npc:GetEnemy() == self or npc:GetEnemy() == prey then
-                    npc:SetEnemy(nil)
+                if npc.GetEnemy then
+                    local ok, en = pcall(npc.GetEnemy, npc)
+                    if ok and (en == self or en == prey) and npc.SetEnemy then
+                        pcall(npc.SetEnemy, npc, nil)
+                    end
                 end
                 if npc.SetEntityRelationship then
-                    npc:SetEntityRelationship(self, D_NU, 99)
+                    pcall(npc.SetEntityRelationship, npc, self, D_NU, 99)
                 end
             end
         end
@@ -666,7 +674,12 @@ hook.Add("Think", "VNPC_FemaleModelVore_Think", function()
             end
 
             if not GetConVar("vnpcs_patrol_full"):GetBool() and (VNPC_BellyHasSwallowedPrey and VNPC_BellyHasSwallowedPrey(belly) or ((not VNPC_BellyHasSwallowedPrey) and (belly.DigestionPhase ~= 0 or (belly.Prey and #belly.Prey > 0)))) then
-                if not IsValid(npc:GetEnemy()) then
+                local hasEnemy = false
+                if npc.GetEnemy then
+                    local ok, en = pcall(npc.GetEnemy, npc)
+                    hasEnemy = ok and IsValid(en)
+                end
+                if not hasEnemy then
                     local isMovingOrWandering = false
                     if npc.IsMoving and npc:IsMoving() then isMovingOrWandering = true end
                     if npc.GetVelocity and npc:GetVelocity():Length2DSqr() > 4 then isMovingOrWandering = true end
@@ -746,8 +759,12 @@ hook.Add("Think", "VNPC_FemaleModelVore_AI", function()
             continue
         end
 
-        -- Target enemy if present
-        local enemy = npc:GetEnemy()
+        -- Target enemy if present (many custom nextbots have no GetEnemy)
+        local enemy = nil
+        if npc.GetEnemy then
+            local ok, en = pcall(npc.GetEnemy, npc)
+            if ok then enemy = en end
+        end
         local prefer_swallow = GetConVar("vnpcs_ai_prefer_swallowing")
         if IsValid(enemy) and enemy ~= npc and not enemy.Vored then
             if VNPC_IsFamilyOrMate and VNPC_IsFamilyOrMate(npc, enemy) then

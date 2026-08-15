@@ -209,10 +209,33 @@ function VNPC_ShouldBePrey(ent)
     return false
 end
 
+local function coerceString(v)
+    if v == nil then return nil end
+    if isstring(v) then return v end
+    if istable(v) then
+        -- Spawn menu / SENT data sometimes stores Class/Model as a list.
+        for _, item in ipairs(v) do
+            if isstring(item) and item ~= "" then return item end
+        end
+        for _, item in pairs(v) do
+            if isstring(item) and item ~= "" then return item end
+        end
+        return nil
+    end
+    if isnumber(v) or isbool(v) then return tostring(v) end
+    local ok, s = pcall(tostring, v)
+    if ok and isstring(s) and s ~= "" and s ~= "nil" and s ~= "table" then
+        return s
+    end
+    return nil
+end
+
 local function catalogAdd(list, cls, mdl, seen)
+    cls = coerceString(cls)
+    mdl = coerceString(mdl)
     if not cls or cls == "" then return end
     cls = string.lower(cls)
-    mdl = mdl and string.lower(mdl) or nil
+    if mdl then mdl = string.lower(mdl) end
     local key = cls .. "|" .. (mdl or "")
     if seen[key] then return end
     seen[key] = true
@@ -220,6 +243,9 @@ local function catalogAdd(list, cls, mdl, seen)
 end
 
 local function classifySpawnEntry(cls, mdl, name)
+    cls = coerceString(cls)
+    mdl = coerceString(mdl)
+    name = coerceString(name)
     local g = VNPC_ClassifyGenderFromText(cls, mdl, name)
     if g ~= "unknown" then return g end
     -- If only a model path is known, try loading keywords from it alone.
@@ -244,10 +270,9 @@ function VNPC_RefreshGenderSpawnCatalog(force)
         if ok and istable(npcList) then
             for spawnName, data in pairs(npcList) do
                 if not istable(data) then continue end
-                local cls = data.Class or data.class or spawnName
-                local mdl = data.Model or data.model
-                local name = data.Name or data.PrintName or spawnName
-                if istable(mdl) then mdl = mdl[1] end
+                local cls = coerceString(data.Class or data.class) or coerceString(spawnName)
+                local mdl = coerceString(data.Model or data.model)
+                local name = coerceString(data.Name or data.PrintName or spawnName)
                 local g = classifySpawnEntry(cls, mdl, name)
                 if g == "female" then
                     catalogAdd(females, cls, mdl, seenF)
@@ -262,17 +287,20 @@ function VNPC_RefreshGenderSpawnCatalog(force)
     if scripted_ents and scripted_ents.GetList then
         local ok, sentList = pcall(scripted_ents.GetList)
         if ok and istable(sentList) then
-            for cls, data in pairs(sentList) do
+            for clsKey, data in pairs(sentList) do
                 local t = istable(data) and (data.t or data) or nil
                 if not istable(t) then continue end
+                local cls = coerceString(clsKey) or coerceString(t.Class or t.class)
+                if not cls then continue end
                 local base = string.lower(tostring(t.Base or t.base or ""))
                 local typ = string.lower(tostring(t.Type or t.type or ""))
+                local clsLower = string.lower(cls)
                 if not (base:find("npc") or base:find("nextbot") or base:find("drg")
-                    or typ == "ai" or typ == "nextbot" or cls:find("npc_")) then
+                    or typ == "ai" or typ == "nextbot" or clsLower:find("npc_")) then
                     continue
                 end
-                local mdl = t.Model or t.model
-                local name = t.PrintName or t.Name or cls
+                local mdl = coerceString(t.Model or t.model)
+                local name = coerceString(t.PrintName or t.Name) or cls
                 local g = classifySpawnEntry(cls, mdl, name)
                 if g == "female" then
                     catalogAdd(females, cls, mdl, seenF)

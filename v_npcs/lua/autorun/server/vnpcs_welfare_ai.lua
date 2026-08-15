@@ -304,7 +304,10 @@ function VNPC_WelfareTickEntity(ent, dt)
     if ent.VNPC_IsSleeping or ent.Swallowing or (VNPC_IsBusyMating and VNPC_IsBusyMating(ent)) then
         return
     end
-    if IsValid(ent:GetEnemy()) then return end
+    if ent.GetEnemy then
+        local ok, en = pcall(ent.GetEnemy, ent)
+        if ok and IsValid(en) then return end
+    end
 
     local cleanThresh = (GetConVar("vnpcs_welfare_clean_thresh") and GetConVar("vnpcs_welfare_clean_thresh"):GetFloat()) or 35
 
@@ -402,8 +405,9 @@ hook.Add("Think", "VNPC_Welfare_ApplyCombatMods", function()
         ent.VNPC_WelfareVisionMult = vMult
         ent.VNPC_WelfareSpeedMult = VNPC_GetWelfareSpeedMult(ent)
         -- Soft-clear enemy when fully dormant so they don't chase while sunken
-        if ent.VNPC_IsDormant and ent.SetEnemy and IsValid(ent:GetEnemy()) then
-            if math.random() < 0.4 then
+        if ent.VNPC_IsDormant and ent.SetEnemy and ent.GetEnemy then
+            local ok, en = pcall(ent.GetEnemy, ent)
+            if ok and IsValid(en) and math.random() < 0.4 then
                 pcall(ent.SetEnemy, ent, nil)
             end
         end

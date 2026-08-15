@@ -82,8 +82,14 @@ function VNPC_SetPredatorCampmateRelations(camp)
             if not IsValid(b) then continue end
             if a.AddEntityRelationship then pcall(a.AddEntityRelationship, a, b, D_LI, 99) end
             if b.AddEntityRelationship then pcall(b.AddEntityRelationship, b, a, D_LI, 99) end
-            if a.GetEnemy and a:GetEnemy() == b and a.SetEnemy then pcall(a.SetEnemy, a, nil) end
-            if b.GetEnemy and b:GetEnemy() == a and b.SetEnemy then pcall(b.SetEnemy, b, nil) end
+            if a.GetEnemy and a.SetEnemy then
+                local ok, en = pcall(a.GetEnemy, a)
+                if ok and en == b then pcall(a.SetEnemy, a, nil) end
+            end
+            if b.GetEnemy and b.SetEnemy then
+                local ok, en = pcall(b.GetEnemy, b)
+                if ok and en == a then pcall(b.SetEnemy, b, nil) end
+            end
         end
     end
 end
@@ -460,7 +466,12 @@ function VNPC_PredatorCampLeaderDecision_AI(camp, now)
     camp.leaderDecision = decision
 
     -- Direct Leader to visit her Leader Hut & Table
-    if IsValid(camp.leaderTable) and not IsValid(leader:GetEnemy()) and not leader.VNPC_IsDrinkingWater then
+    local leaderEnemy = nil
+    if leader.GetEnemy then
+        local ok, en = pcall(leader.GetEnemy, leader)
+        if ok then leaderEnemy = en end
+    end
+    if IsValid(camp.leaderTable) and not IsValid(leaderEnemy) and not leader.VNPC_IsDrinkingWater then
         local tblPos = camp.leaderTable:GetPos()
         local dSqr = leader:GetPos():DistToSqr(tblPos)
         if dSqr > (120 * 120) then
@@ -741,7 +752,12 @@ hook.Add("Think", "VNPC_PredatorCamps_AI_Loop", function()
                 end
             else
                 -- Stayer: keep within camp perimeter (StormFox 2: gather by warm campfire at night or in freezing weather)
-                if not IsValid(member:GetEnemy()) and not member.VNPC_IsSleeping then
+                local memEnemy = nil
+                if member.GetEnemy then
+                    local ok, en = pcall(member.GetEnemy, member)
+                    if ok then memEnemy = en end
+                end
+                if not IsValid(memEnemy) and not member.VNPC_IsSleeping then
                     local coldOrNight = (VNPC_IsStormFox2Night and VNPC_IsStormFox2Night()) or (VNPC_GetStormFox2Temperature and VNPC_GetStormFox2Temperature() < 8.0)
                     local targetPos = (coldOrNight and IsValid(camp.campfire)) and camp.campfire:GetPos() or camp.pos
                     local maxD = coldOrNight and (140 * 140) or (450 * 450)
