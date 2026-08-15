@@ -40,22 +40,6 @@ local function getModelBounds(ent, scale)
     return max_bounds:Length() * (scale or ent:GetModelScale() or 1)
 end
 
-local function getModelHalfExtents(ent) --used for shape-aware belly deformation
-    if not IsValid(ent) then return Vector(8, 8, 8) end
-    local mins, maxs = nil, nil
-    if ent.GetModelBounds then
-        local ok, a, b = pcall(ent.GetModelBounds, ent)
-        if ok then mins, maxs = a, b end
-    end
-    if not mins or not maxs then return Vector(8, 8, 8) end
-    local scale = 1
-    if ent.GetModelScale then
-        local ok, s = pcall(ent.GetModelScale, ent)
-        if ok and isnumber(s) and s > 0 then scale = s end
-    end
-    return (maxs - mins) * 0.5 * scale
-end
-
 local function GetFlags(ent)
     local solid, move, flags = SOLID_BBOX, MOVETYPE_STEP, 0
     if ent.GetSolid then
@@ -536,7 +520,6 @@ function ENT:AddPrey(prey)
         Entity = prey;
         Absorbing = false;
         OldFlags = old_flags;
-        HalfExtents = getModelHalfExtents(prey); -- bounding-box belly shape packing
     }
 
     local prey_index = table.insert(self.Prey, prey_table)

@@ -370,32 +370,10 @@ function ENT:Think() --this code is realllyyyyy stupid
     do
         local modelSize = math.Clamp(newSize, 0, 1)
 
-        -- Bounding-box belly shape (enhanced packer from basic_visual.GetBellyShapeVector).
-        local wantedShape = self:GetNWVector("BellyShape", vector_one)
-        local sideBias = self:GetNWFloat("BellyShapeBias", 0)
-        local occupants = self:GetNWInt("BellyOccupants", 0)
-        self.ShapeBlend = self.ShapeBlend or vector_one
-        local shapeSpeed = 3.2
-        if (wantedShape - self.ShapeBlend):Length() > 0.35 then shapeSpeed = 5.5 end
-        local lerpT = 1 - math.exp(-shapeSpeed * FrameTime())
-        self.ShapeBlend = LerpVector(lerpT, self.ShapeBlend, wantedShape)
-        self.ShapeBiasBlend = Lerp(1 - math.exp(-2.8 * FrameTime()), self.ShapeBiasBlend or 0, sideBias)
-
-        local sx = math.max(newSize * self.ShapeBlend.x, newSize * 0.45)
-        local sy = math.max(newSize * self.ShapeBlend.y, newSize * 0.45)
-        local sz = math.max(newSize * self.ShapeBlend.z, newSize * 0.40)
-        self:ManipulateBoneScale(main_bone, Vector(sx, sy, sz))
-
+        self:ManipulateBoneScale(main_bone, vector_one * newSize)
         local test = (newSize - 1) * 9
-        local multiPush = math.Clamp((occupants - 1) * 0.55, 0, 1.6)
-        local sidePush = self.ShapeBiasBlend * newSize * 4.5
-        self:ManipulateBonePosition(main_bone, Vector(
-            test * 0.6 + sidePush,
-            -multiPush * 1.2,
-            math.max(-test * 1 - multiPush * 0.5, -clipMax)
-        ))
-        local foldBoost = 1.0 + math.Clamp((occupants - 1) * 0.12, 0, 0.4)
-        self:ManipulateBoneScale(0, vector_one * math.min(modelSize * foldBoost, 1.15)) --fatrolls bone
+        self:ManipulateBonePosition(main_bone, Vector(test * 0.6, 0, math.max(-test * 1, -clipMax)))
+        self:ManipulateBoneScale(0, vector_one * modelSize) --fatrolls bone
     end
     --[[animations]]
     if currentPhase == 1 then
