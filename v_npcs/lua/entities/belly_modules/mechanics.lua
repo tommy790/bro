@@ -536,6 +536,7 @@ function ENT:AddPrey(prey)
         Entity = prey;
         Absorbing = false;
         OldFlags = old_flags;
+        HalfExtents = getModelHalfExtents(prey); -- bounding-box belly shape packing
     }
 
     local prey_index = table.insert(self.Prey, prey_table)
