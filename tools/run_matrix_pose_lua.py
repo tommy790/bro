@@ -82,11 +82,9 @@ VECTOR_MT = {
             return self
         end,
         Distance = function(self, o) return (o - self):Length() end,
-        -- GMod Vector:Rotate(Angle); uses the stub's quaternion Angle
-        Rotate = function(self, ang)
-            if ang and ang.q then return qRotate(ang.q, self) end
-            return self
-        end,
+        -- NOTE: deliberately NO Rotate - GMod's Vector:Rotate returned nil in
+        -- the field (crashed the pose path), so the module must not use it and
+        -- the harness must fail loudly if it ever does.
     },
 }
 
@@ -149,8 +147,8 @@ local ANGLE_MT = {
         Right = function(self) return qRotate(self.q, Vector(1, 0, 0)) end,
         Up = function(self) return qRotate(self.q, Vector(0, 0, 1)) end,
         Inverse = function(self) return AngleFromQ(qConj(self.q)) end,
-        WorldToLocal = function(self, v) return qRotate(qConj(self.q), v) end,
-        LocalToWorld = function(self, v) return qRotate(self.q, v) end,
+        -- NOTE: deliberately NO WorldToLocal/LocalToWorld - GMod Angle does
+        -- not have them (crashed the pose path previously).
         __tostring = function(self)
             local p, y, r = qToEuler(self.q)
             return string.format("(%.1f, %.1f, %.1f)", p, y, r)

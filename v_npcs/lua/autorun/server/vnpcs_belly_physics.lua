@@ -344,6 +344,24 @@ if SERVER then
         return Angle(math.deg(pitch), math.deg(yaw), math.deg(roll))
     end
 
+    local function matrixQuatConj(q)
+        return { x = -q.x, y = -q.y, z = -q.z, w = q.w }
+    end
+
+    -- Rotate a vector by a unit quaternion (pure math, no engine methods).
+    -- t = 2 * cross(q.xyz, v); v' = v + w*t + cross(q.xyz, t)
+    local function matrixQuatRotateVec(q, v)
+        local ux, uy, uz = q.x, q.y, q.z
+        local tx = 2 * (uy * v.z - uz * v.y)
+        local ty = 2 * (uz * v.x - ux * v.z)
+        local tz = 2 * (ux * v.y - uy * v.x)
+        return Vector(
+            v.x + q.w * tx + (uy * tz - uz * ty),
+            v.y + q.w * ty + (uz * tx - ux * tz),
+            v.z + q.w * tz + (ux * ty - uy * tx)
+        )
+    end
+
     -- world = local * offset  (offset applied in the local frame)
     local function matrixAngleCompose(a, b)
         return matrixQuatToEuler(matrixQuatMul(matrixEulerToQuat(a), matrixEulerToQuat(b)))
@@ -354,15 +372,16 @@ if SERVER then
         return matrixQuatToEuler({ x = -q.x, y = -q.y, z = -q.z, w = q.w })
     end
 
-    -- GMod Angle has no WorldToLocal / LocalToWorld. World->local is
-    -- Vector:Rotate(ang:Inverse()); local->world is the frame-axis expansion
-    -- (Right = x axis, Forward = y axis, Up = z axis of the rotated frame).
+    -- GMod Angle has no WorldToLocal / LocalToWorld, and Vector:Rotate is not
+    -- reliable for this either - so both conversions are done with pure
+    -- quaternion math (world->local = conjugate rotation, local->world = the
+    -- forward rotation). No engine rotation methods involved.
     local function matrixWorldToLocal(ang, v)
-        return v:Rotate(matrixAngleInverse(ang))
+        return matrixQuatRotateVec(matrixQuatConj(matrixEulerToQuat(ang)), v)
     end
 
     local function matrixLocalToWorld(ang, v)
-        return ang:Right() * v.x + ang:Forward() * v.y + ang:Up() * v.z
+        return matrixQuatRotateVec(matrixEulerToQuat(ang), v)
     end
 
     -- Pose the ragdoll into a curled swallowed ball and store per-bone local
