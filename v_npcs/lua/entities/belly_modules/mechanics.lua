@@ -41,51 +41,19 @@ local function getModelBounds(ent, scale)
 end
 
 local function getModelHalfExtents(ent) --used for shape-aware belly deformation
-    if not IsValid(ent) then return Vector(8, 8, 8), 0 end
-    local scale = 1
-    if ent.GetModelScale then
-        local ok, s = pcall(ent.GetModelScale, ent)
-        if ok and isnumber(s) and s > 0 then scale = s end
-    end
-
-    -- Prefer measured body parts when available (shoulder width / torso bulk).
-    if VNPC_MeasureBodyParts then
-        local ok, parts = pcall(VNPC_MeasureBodyParts, ent)
-        if ok and istable(parts) and parts.torso then
-            local tw = tonumber(parts.torso.width) or 14
-            local th = tonumber(parts.torso.height) or 16
-            local tl = tonumber(parts.torso.length) or 20
-            local pw = (parts.pelvis and tonumber(parts.pelvis.width)) or tw * 0.9
-            local hw = (parts.head and tonumber(parts.head.width)) or 7.5
-            -- Model-space half-extents: X=depth, Y=width, Z=height
-            local hy = math.max(tw, pw, hw) * 0.52 * scale
-            local hx = math.max(tl * 0.28, tw * 0.30) * scale
-            local hz = math.max(th * 0.42, hw * 0.55) * scale
-            hy = math.Clamp(hy, 3.5, 55)
-            hx = math.Clamp(hx, 3.0, 50)
-            hz = math.Clamp(hz, 3.0, 50)
-            return Vector(hx, hy, hz), 1.0 -- curl profile: full biped
-        end
-    end
-
+    if not IsValid(ent) then return Vector(8, 8, 8) end
     local mins, maxs = nil, nil
     if ent.GetModelBounds then
         local ok, a, b = pcall(ent.GetModelBounds, ent)
         if ok then mins, maxs = a, b end
     end
-    if not mins or not maxs then return Vector(8, 8, 8), 0 end
-    local ext = (maxs - mins) * 0.5 * scale
-
-    -- Heuristic curl: humanoid-ish tall boxes get partial curl; flat props don't.
-    local curl = 0
-    local cls = string.lower(ent:GetClass() or "")
-    local mdl = string.lower(ent:GetModel() or "")
-    if ent:IsPlayer() or ent:IsNPC() or ent:IsNextBot() or cls:find("citizen") or mdl:find("human") or mdl:find("player") then
-        curl = 0.85
-    elseif ext.z > ext.y * 1.15 and ext.z > ext.x * 1.15 then
-        curl = 0.55
+    if not mins or not maxs then return Vector(8, 8, 8) end
+    local scale = 1
+    if ent.GetModelScale then
+        local ok, s = pcall(ent.GetModelScale, ent)
+        if ok and isnumber(s) and s > 0 then scale = s end
     end
-    return ext, curl
+    return (maxs - mins) * 0.5 * scale
 end
 
 local function GetFlags(ent)
@@ -561,7 +529,6 @@ function ENT:AddPrey(prey)
         prey:SetHealth(preyValue * 3.5)
     end
 
-    local halfExt, curlProfile = getModelHalfExtents(prey)
     local prey_table = {
         Value = preyValue;
         TrueValue = preyValue;
@@ -569,8 +536,7 @@ function ENT:AddPrey(prey)
         Entity = prey;
         Absorbing = false;
         OldFlags = old_flags;
-        HalfExtents = halfExt; -- bounding-box belly shape packing
-        CurlProfile = curlProfile or 0; -- 1 = biped fetal curl, 0 = rigid prop
+        HalfExtents = getModelHalfExtents(prey); -- bounding-box belly shape packing
     }
 
     local prey_index = table.insert(self.Prey, prey_table)
