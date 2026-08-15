@@ -82,6 +82,11 @@ VECTOR_MT = {
             return self
         end,
         Distance = function(self, o) return (o - self):Length() end,
+        -- GMod Vector:Rotate(Angle); uses the stub's quaternion Angle
+        Rotate = function(self, ang)
+            if ang and ang.q then return qRotate(ang.q, self) end
+            return self
+        end,
     },
 }
 
@@ -90,7 +95,7 @@ VECTOR_MT = {
 -- GMod order: yaw around Z, then pitch around X, then roll around Z? We use
 -- ZYX (yaw, pitch, roll) which is the common Source Euler interpretation.
 -- ------------------------------------------------------------------
-local function qmul(a, b)
+function qmul(a, b)
     -- quaternions stored as { x, y, z, w } = q[1..4]
     return {
         a[4] * b[1] + a[1] * b[4] + a[2] * b[3] - a[3] * b[2],
@@ -100,7 +105,7 @@ local function qmul(a, b)
     }
 end
 
-local function qFromEuler(p, y, r)
+function qFromEuler(p, y, r)
     local cp, sp = math.cos(p / 2), math.sin(p / 2)
     local cy, sy = math.cos(y / 2), math.sin(y / 2)
     local cr, sr = math.cos(r / 2), math.sin(r / 2)
@@ -112,7 +117,7 @@ local function qFromEuler(p, y, r)
     }
 end
 
-local function qRotate(q, v)
+function qRotate(q, v)
     local u = { q[1], q[2], q[3] }
     local s = q[4]
     -- t = 2 * cross(u, v); v' = v + s*t + cross(u, t)
@@ -126,9 +131,9 @@ local function qRotate(q, v)
     )
 end
 
-local function qConj(q) return { -q[1], -q[2], -q[3], q[4] } end
+function qConj(q) return { -q[1], -q[2], -q[3], q[4] } end
 
-local function qToEuler(q)
+function qToEuler(q)
     -- approximate extraction (only used for asserts/debug, not logic)
     local w, x, y, z = q[4], q[1], q[2], q[3]
     local sinp = 2 * (w * y - z * x)

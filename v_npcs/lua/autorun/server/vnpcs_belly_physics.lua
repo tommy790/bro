@@ -354,6 +354,17 @@ if SERVER then
         return matrixQuatToEuler({ x = -q.x, y = -q.y, z = -q.z, w = q.w })
     end
 
+    -- GMod Angle has no WorldToLocal / LocalToWorld. World->local is
+    -- Vector:Rotate(ang:Inverse()); local->world is the frame-axis expansion
+    -- (Right = x axis, Forward = y axis, Up = z axis of the rotated frame).
+    local function matrixWorldToLocal(ang, v)
+        return v:Rotate(matrixAngleInverse(ang))
+    end
+
+    local function matrixLocalToWorld(ang, v)
+        return ang:Right() * v.x + ang:Forward() * v.y + ang:Up() * v.z
+    end
+
     -- Pose the ragdoll into a curled swallowed ball and store per-bone local
     -- offsets/angles relative to the pelvis so the update loop can drive it.
     --
@@ -403,14 +414,14 @@ if SERVER then
                 local parentRest = rest[link.parent]
                 local newAng = matrixAngleCompose(child.ang, poseAng(link.name, Angle(0, 0, 0)))
                 -- rest offset of the child from its parent, in the child's rest frame
-                local restOffset = child.ang:WorldToLocal(child.pos - (parentRest and parentRest.pos or parent.pos))
-                local newPos = parent.pos + newAng:LocalToWorld(restOffset)
+                local restOffset = matrixWorldToLocal(child.ang, child.pos - (parentRest and parentRest.pos or parent.pos))
+                local newPos = parent.pos + matrixLocalToWorld(newAng, restOffset)
                 child.po:SetPos(newPos)
                 child.po:SetAngles(newAng)
                 posed[link.name] = { pos = newPos, ang = newAng }
-                -- Angle:WorldToLocal rotates around the origin, so pass the
-                -- position relative to the pelvis root
-                local lp = pelvisAng:WorldToLocal(newPos - pelvis.pos)
+                -- store the offset in the pelvis-local frame (rotates around the
+                -- origin, so pass the position relative to the pelvis root)
+                local lp = matrixWorldToLocal(pelvisAng, newPos - pelvis.pos)
                 table.insert(bones, {
                     phys = child.po,
                     lx = lp.x,
