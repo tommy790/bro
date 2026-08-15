@@ -16,6 +16,10 @@ lua = LuaRuntime(unpack_returned_tuples=True)
 
 PRELUDE = r"""
 math.Clamp = function(v, lo, hi) return math.max(lo, math.min(hi, v)) end
+-- Lua 5.3+ removed math.atan2; GMod's LuaJIT has it. Polyfill for the harness.
+if not math.atan2 then
+    math.atan2 = function(y, x) return math.atan(y, x) end
+end
 CVARS = {}
 function GetConVar(name)
     local cv = CVARS[name]
@@ -69,6 +73,10 @@ function isbool(v) return type(v) == "boolean" end
 function IsValid(v) return type(v) == "table" and v.__valid ~= false end
 function CurTime() return 1000 end
 function FrameTime() return 0.016 end
+-- NOTE: the client test below bumps the frame via a global so both chunks share it
+FRAME = 1
+function FrameNumber() return FRAME end
+function LerpVector(t, a, b) return a + (b - a) * t end
 CLIENT, SERVER = false, true
 ents = {
     GetAll = function() return {} end,
@@ -185,11 +193,33 @@ pred2.VNPC_Belly = belly
 pred2.Belly = belly
 
 local blobs = VNPC_ComputeBellyBlobs(pred2)
-assert(#blobs == 2, "expected 2 blobs, got " .. #blobs)
+-- fetal-curl: 2 prey x 3 sub-blobs (torso/head/limb)
+assert(#blobs == 6, "expected 6 sub-blobs, got " .. #blobs)
+local kinds = {}
+for _, b in ipairs(blobs) do
+    kinds[b.kind] = (kinds[b.kind] or 0) + 1
+end
+assert(kinds.torso == 2 and kinds.head == 2 and kinds.limb == 2, "sub-blob kinds wrong")
+
 local metrics = VNPC_GetBellyDeformMetrics(pred2)
 assert(metrics, "metrics missing")
 assert(metrics.rx >= 4 and metrics.ry >= 4.5 and metrics.rz >= 3.5)
 assert(math.abs(metrics.totalMass - (blobA.mass + blobB.mass)) < 0.01, "total mass mismatch")
+assert(metrics.Rv and metrics.Rv > 1, "volume radius missing")
+assert(metrics.fieldRef and metrics.fieldRef > 0, "field reference missing")
+assert(metrics.lumpMax and metrics.lumpMax > 0, "lump max missing")
+
+-- metaball field math: single blob mass m=60, r=8 -> iso at d=0.894*r has F=2.4
+local wb = { { pos = Vector(0, 0, 0), rx = 8, ry = 8, rz = 8, mass = 60 } }
+local F0 = VNPC_MetaballFieldAt(Vector(0, 0, 0), wb)
+assert(math.abs(F0 - 60) < 0.01, "field at center should be the mass")
+local Fiso = VNPC_MetaballFieldAt(Vector(0.894 * 8, 0, 0), wb)
+assert(math.abs(Fiso - 0.04 * 60) < 0.3, "field at iso radius should be ~0.04*mass: " .. Fiso)
+local Ffar = VNPC_MetaballFieldAt(Vector(20, 0, 0), wb)
+assert(Ffar == 0, "field outside support should be 0")
+-- gradient points inward (toward the mass)
+local g = VNPC_MetaballGradAt(Vector(4, 0, 0), wb)
+assert(g.x < 0, "gradient should point inward (toward density)")
 
 -- sync writes NW (no error)
 VNPC_SyncPaintBlobNW(pred2)
@@ -201,25 +231,35 @@ local chain = {
     rightDir = Vector(1, 0, 0),
     forward = Vector(0, 1, 0),
     up = Vector(0, 0, 1),
+    width = 24,
+    depth = 20,
+    height = 18,
     radius = 12,
 }
-pred2.VNPC_BellyBlobMetrics = metrics
+pred2.VNPC_BellyBlobMetrics = nil
 local world = Vector(0, 10, 0)
 local lp = Vector(0, 0.6, 0)
-local off = VNPC_ApplyWeightPaintDeform(world, lp, pred2, chain)
+local off, nrm2 = VNPC_ApplyWeightPaintDeform(world, lp, pred2, chain)
 if off then
-    assert(off:Length() < 30, "deform too large: " .. off:Length())
+    assert(off:Length() < 40, "deform too large: " .. off:Length())
+end
+if nrm2 then
+    assert(math.abs(nrm2:Length() - 1) < 0.01, "normal should be unit length")
 end
 -- far-away vertex gets (near) nothing
-local offFar = VNPC_ApplyWeightPaintDeform(Vector(0, 10, 0), Vector(0.9, -0.9, 0.9), pred2, chain)
+local offFar = VNPC_ApplyWeightPaintDeform(Vector(0, 30, 30), Vector(0.9, 0.9, 0.9), pred2, chain)
 assert(offFar == nil or offFar:Length() < 1.5, "far vertex should barely deform")
 
--- COM shift + bone scales
+-- COM shift: heavy belly sags downward (z < 0)
 local shift = VNPC_GetBellyComShift(pred2)
 assert(shift.x >= -4.5 and shift.x <= 4.5)
+assert(shift.z < 0, "heavy belly should sag downward, got z=" .. shift.z)
+
+-- bone scales + spine arch
 local boneScale = VNPC_GetWeightPaintBoneScale(pred2, chain)
 assert(boneScale and boneScale.extra > 0.01, "bone scale extra missing")
 assert(boneScale.spine.x > 1 and boneScale.pelvis.y > 1)
+assert(boneScale.spineBend and boneScale.spineBend < 0, "heavy belly should arch the spine back")
 
 -- empty belly -> nil metrics
 local pred3 = MakeEnt(6)
@@ -227,6 +267,38 @@ pred3.Predator = true
 pred3.VNPC_Belly = { Prey = {} }
 pred3.Belly = pred3.VNPC_Belly
 assert(VNPC_GetBellyDeformMetrics(pred3) == nil, "empty belly should have no metrics")
+
+-- ================== CLIENT SMOOTHING ==================
+CLIENT, SERVER = true, false
+local cpred = MakeEnt(50)
+cpred.Predator = true
+local nwVals = { ["VNPC_PaintBlobN"] = 2 }
+local nwPos = {
+    ["VNPC_PaintBlobPos1"] = Vector(1, 1, 1),
+    ["VNPC_PaintBlobPos2"] = Vector(-1, 2, 0),
+}
+function cpred:GetNWInt(key, def) return nwVals[key] or def or 0 end
+function cpred:GetNWFloat(key, def) return def or 45 end
+function cpred:GetNWVector(key, def) return nwPos[key] or def or Vector(0, 0, 0) end
+function cpred:GetNWString(key, def) return def or "" end
+
+local b1 = VNPC_ComputeBellyBlobs(cpred)
+assert(#b1 == 2, "client blobs count")
+assert(b1[1].pos.x == 1, "first client read should snap to target")
+-- move the target; the smoothed position must move only partway (rate ~0.112)
+nwPos["VNPC_PaintBlobPos1"] = Vector(9, 9, 9)
+FRAME = FRAME + 1
+local b2 = VNPC_ComputeBellyBlobs(cpred)
+local px = b2[1].pos.x
+assert(px > 1.001 and px < 9, "client position should be smoothed between syncs, got " .. px)
+-- metrics on the client must be per-frame cached, not stale forever
+local m1 = VNPC_GetBellyDeformMetrics(cpred)
+assert(m1 and m1.blobs and #m1.blobs == 2, "client metrics")
+nwPos["VNPC_PaintBlobPos1"] = Vector(5, 5, 5)
+FRAME = FRAME + 1
+local m2 = VNPC_GetBellyDeformMetrics(cpred)
+assert(m2.blobs[1].pos.x < 9, "client metrics should refresh with the new frame")
+CLIENT, SERVER = false, true
 
 print("TRAITS + WEIGHT PAINT LUA EXECUTION OK")
 """

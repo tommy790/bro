@@ -13,6 +13,65 @@ float4 g_VoreGulp[4]       : register(c197);
 float4 g_VoreGulpAmp       : register(c201);
 float4 g_VoreJiggle        : register(c202);
 
+// Metaball field (weight-painted belly blobs) - same math as the Lua path in
+// sh_vnpc_weight_paint.lua. 12 blobs = 24 registers + 1 params register.
+float4 g_VoreBlob[12]      : register(c203); // xyz = world pos, w = mass weight
+float4 g_VoreBlobRadii[12] : register(c215); // xyz = rx, ry, rz, w = unused
+float4 g_VoreMetaParams    : register(c227); // x = fieldRef, y = lumpMax, z = unused, w = unused
+
+float VoreMetaField(float3 p)
+{
+    float f = 0;
+    [unroll] for (int i = 0; i < 12; i++)
+    {
+        float4 b = g_VoreBlob[i];
+        float w = b.w;
+        if (w <= 0.001) continue;
+        float4 r = g_VoreBlobRadii[i];
+        float3 d = p - b.xyz;
+        float nd2 = d.x * d.x / (r.x * r.x) + d.y * d.y / (r.y * r.y) + d.z * d.z / (r.z * r.z);
+        if (nd2 < 1.0)
+        {
+            float k = 1.0 - nd2;
+            f += w * k * k;
+        }
+    }
+    return f;
+}
+
+float3 VoreMetaGrad(float3 p)
+{
+    float3 g = 0;
+    [unroll] for (int i = 0; i < 12; i++)
+    {
+        float4 b = g_VoreBlob[i];
+        float w = b.w;
+        if (w <= 0.001) continue;
+        float4 r = g_VoreBlobRadii[i];
+        float3 d = p - b.xyz;
+        float nd2 = d.x * d.x / (r.x * r.x) + d.y * d.y / (r.y * r.y) + d.z * d.z / (r.z * r.z);
+        if (nd2 < 1.0)
+        {
+            float k = 1.0 - nd2;
+            g -= 4.0 * w * k * float3(d.x / (r.x * r.x), d.y / (r.y * r.y), d.z / (r.z * r.z));
+        }
+    }
+    return g;
+}
+
+// Merged blobby displacement: normalized field ratio times the volume-aware
+// lumpMax, pushed along the vertex normal. Call this after the gaussian spots.
+float3 ApplyMetaBallField(float3 worldPos, float3 worldNormal)
+{
+    float F = VoreMetaField(worldPos);
+    if (F <= 0.001) return worldPos;
+    float n = min(F / max(g_VoreMetaParams.x, 0.01), 1.4);
+    if (n <= 0.03) return worldPos;
+    float push = pow(n, 0.75) * g_VoreMetaParams.y;
+    float3 outDir = normalize(worldPos - g_VoreStomachCenter.xyz + worldNormal * 0.25);
+    return worldPos + outDir * push;
+}
+
 float3 ApplyVoreVertexDeformation(float3 worldPos, float3 worldNormal, float3 center, float radius, float intensity)
 {
     float dist = length(worldPos - center);

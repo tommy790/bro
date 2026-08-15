@@ -6,26 +6,41 @@ Four system remakes added on top of the existing V-NPCs architecture.
 
 ## 1. Dynamic Weight Painting & Mesh Deform
 **Files:** `lua/autorun/sh_vnpc_weight_paint.lua` (new), edits in
-`lua/autorun/sh_vnpc_gpu_belly.lua`
+`lua/autorun/sh_vnpc_gpu_belly.lua` and `shaders/gpu_belly_deform.fxc`
 
-Every swallowed entity becomes a **volumetric shape blob** built from its
+Every swallowed entity becomes **volumetric mass blobs** built from its
 *measured* body parts (`VNPC_MeasureBodyParts`: torso/head/pelvis width,
-limb length, model scale) and physics mass. The old "one rigid teardrop belly"
-is replaced by a procedurally deformed mesh:
+limb length, model scale) and physics mass. The belly is shaped by an
+**implicit metaball field** instead of a bounding box:
 
-- **Blob bounding box drives the belly ellipsoid** — a long prey makes a long
-  belly, a wide prey makes a wide belly, multiple prey stack into a bigger one.
-- **Per-vertex gaussian weight painting** adds a lump for every prey that
-  tracks its live simulated position inside the belly (see system 2), so the
-  belly visibly bulges where the prey actually is.
-- **Asymmetric skeleton stretching** — the generated belly bones shift toward
-  the center of mass, and the character's own spine/pelvis/thigh bones are
-  scaled per-axis and per-side, so even stock models without belly bones grow a
-  lopsided, prey-shaped belly instead of a fixed shape.
+- **Fetal-curl sub-blobs** — each prey contributes torso + head + limb blobs
+  arranged in a hash-varied C-shape, so a curled person reads as curled, not
+  as a sphere (physics still simulates one mass point per prey).
+- **Merged blobby displacement** — the field `F(p) = sum(mass * (1-d^2)^2)`
+  over all blobs drives per-vertex displacement: adjacent prey fuse into one
+  continuous bulge (no more separate bumps with a valley), with **analytic
+  field-gradient normals** for correct shading.
+- **Per-axis ellipsoid** — the belly stretches along the blob bounding box
+  per-axis (long prey = long belly, wide prey = wide belly; no max-axis
+  ballooning), clamped against the volume-equivalent sphere so spread-out
+  clusters don't over-inflate.
+- **Volume-aware amplitude** — lump strength and the field reference scale
+  with total prey mass; more prey = fuller, bumpier belly.
+- **Gravity sag + heavy lean** — the belly center drops and pulls forward with
+  mass, and the character's spine arches backward under heavy loads (gated to
+  not fight bone-pose animations).
+- **Client interpolation** — blob positions replicate at 5 Hz and are
+  exponentially smoothed per frame (no jitter).
+- **Shader parity** — the same field math ships as reference HLSL
+  (`g_VoreBlob[12]` / `g_VoreBlobRadii[12]` / `g_VoreMetaParams`,
+  `ApplyMetaBallField`) for custom VCS builds; the Lua mesh path remains the
+  working renderer.
 
 ConVars: `vnpcs_weight_paint_enabled`, `vnpcs_weight_paint_lumps`,
-`vnpcs_weight_paint_amp`, `vnpcs_weight_paint_asymmetry`.
+`vnpcs_weight_paint_metaballs`, `vnpcs_weight_paint_amp`,
+`vnpcs_weight_paint_asymmetry`.
 Status: `vnpcs_weight_paint_status`; test: `vnpcs_test_paint_blob [w] [h] [d]`.
+Debug: `vnpcs_gpu_belly_debug 1` draws the blob cluster + center of mass.
 
 ## 2. Full Physics-Driven Digestion (Ragdoll Matrix)
 **Files:** `lua/autorun/server/vnpcs_belly_physics.lua` (new)

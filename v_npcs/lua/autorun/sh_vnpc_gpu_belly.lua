@@ -157,13 +157,19 @@ function VNPC_UpdateVirtualBellyBones(ent)
 
     -- Dynamic weight painting: stretch the belly ellipsoid to the actual bounding
     -- box of every consumed entity's shape blob (procedural, no fixed belly shapes).
+    -- Per-axis: long prey make a long belly, wide prey a wide one (no max-axis
+    -- ballooning).
     local blobMetrics = nil
     if VNPC_GetBellyDeformMetrics then
         blobMetrics = VNPC_GetBellyDeformMetrics(ent)
     end
     local comShift = Vector(0, 0, 0)
+    local baseWidth, baseDepth, baseHeight = radius * 2.05, radius * 1.55, radius * 1.75
     if blobMetrics then
-        radius = math.max(radius, math.max(blobMetrics.rx, blobMetrics.ry, blobMetrics.rz) * 1.02)
+        baseWidth = math.max(baseWidth, blobMetrics.width * 1.02)
+        baseDepth = math.max(baseDepth, blobMetrics.depth * 1.02)
+        baseHeight = math.max(baseHeight, blobMetrics.height * 1.02)
+        radius = math.max(radius, baseWidth * 0.5, baseDepth * 0.5, baseHeight * 0.5)
         if VNPC_GetBellyComShift then
             comShift = VNPC_GetBellyComShift(ent)
         end
@@ -198,9 +204,9 @@ function VNPC_UpdateVirtualBellyBones(ent)
         hasModelBellyBones = VNPC_ModelHasBellyBones(ent),
         size = size,
         radius = radius,
-        width = radius * 2.05,
-        height = radius * 1.75,
-        depth = radius * 1.55,
+        width = baseWidth,
+        height = baseHeight,
+        depth = baseDepth,
         forward = fwd,
         up = up,
         rightDir = right,
@@ -658,6 +664,25 @@ function VNPC_ApplyGeneratedBellyBoneScale(ent, chain)
             extra = painted.extra
         end
     end
+
+    -- Heavy-belly spine arch (skip while a bone-pose animation owns the spine)
+    if not (ent.VNPC_UseFixedBonePose or ent.VNPC_AssignedMoveset) then
+        local bend = painted and painted.spineBend or (-math.Clamp(extra * 6, 0, 12))
+        local archBones = {
+            { "ValveBiped.Bip01_Spine", 0.6 },
+            { "ValveBiped.Bip01_Spine1", 0.8 },
+            { "ValveBiped.Bip01_Spine2", 0.5 },
+            { "ValveBiped.Bip01_Pelvis", 0.3 }
+        }
+        for _, spec in ipairs(archBones) do
+            local id = lookup(ent, { spec[1] })
+            if id then
+                local b = (extra > 0.03) and (bend * spec[2]) or 0
+                ent:ManipulateBoneAngles(id, Angle(b, 0, 0))
+            end
+        end
+    end
+
     if extra < 0.03 then
         if ent.VNPC_GPUBellyScaled then
             for _, spec in ipairs(SCALE_TARGETS) do
@@ -689,7 +714,8 @@ function VNPC_ApplyGeneratedBellyBoneScale(ent, chain)
 end
 
 if CLIENT then
-    local LAT, LON = 11, 16
+    -- 13x18 = 252 verts (up from 192): denser mesh so metaball lumps stay round
+    local LAT, LON = 13, 18
     local UNIT_VERTS, UNIT_TRIS
 
     local function buildUnitSphere()
@@ -794,11 +820,13 @@ if CLIENT then
                 if push > 0 then
                     world = world + nrm * (push * (chain.radius or 8))
                 end
-                -- Dynamic weight painting: per-prey volumetric lumps (procedural mesh deform)
+                -- Dynamic weight painting: per-prey volumetric lumps (procedural mesh deform).
+                -- The metaball path also returns the analytic field-gradient normal.
                 if VNPC_ApplyWeightPaintDeform then
-                    local wd = VNPC_ApplyWeightPaintDeform(world, lp, ent, chain)
+                    local wd, wn = VNPC_ApplyWeightPaintDeform(world, lp, ent, chain, nrm)
                     if wd and wd:LengthSqr() > 0.01 then
                         world = world + wd
+                        if wn then nrm = wn end
                     end
                 end
                 local gpush = VNPC_ApplyGPUBellyGulpDeform(world, gulps)
@@ -929,6 +957,23 @@ if CLIENT then
                     local r = math.max(2.2, (spot.radius or 0.28) * (chain.radius or 8) * (0.45 + (spot.amp or 0)))
                     render.DrawWireframeSphere(spot.world, r, 8, 8, Color(255, 80, 140, 200), true)
                     render.DrawSphere(spot.world, 1.4 + (spot.amp or 0) * 3, 7, 7, Color(255, 60, 120, 220))
+                end
+            end
+            -- weight-paint blob cluster (fetal-curl sub-blobs + womb blob)
+            if VNPC_GetBellyDeformMetrics then
+                local metrics = VNPC_GetBellyDeformMetrics(ent)
+                if metrics and metrics.blobs then
+                    for _, b in ipairs(metrics.blobs) do
+                        local bp = b.pos or Vector(0, 0, 0)
+                        local world = chain.mid.pos + chain.right * bp.x + chain.forward * bp.y + chain.up * bp.z
+                        local br = math.max(b.rx, b.ry, b.rz) * 0.9
+                        local col = b.womb and Color(255, 180, 220, 170) or (b.alive == false and Color(140, 140, 150, 160) or Color(110, 255, 180, 170))
+                        render.DrawWireframeSphere(world, br, 9, 9, col, true)
+                    end
+                    if metrics.com then
+                        local cw = chain.mid.pos + chain.right * metrics.com.x + chain.forward * metrics.com.y + chain.up * metrics.com.z
+                        render.DrawSphere(cw, 2.2, 8, 8, Color(255, 255, 90, 230))
+                    end
                 end
             end
             if chain.gulpNeck and chain.gulpChest then

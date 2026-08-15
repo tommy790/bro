@@ -207,6 +207,18 @@ local function populate()
         panel:CheckBox("Struggle Kicks & Slosh", "vnpcs_belly_struggle_kick")
         panel:NumSlider("Weight Slowdown Master", "vnpcs_belly_weight_slow", 0, 3, 2)
         panel:ControlHelp("Prey now simulate as live masses inside the belly: they bounce, struggle, slosh and slow the predator down. Ragdoll copies of swallowed NPCs ride inside for the inside-camera.")
+        panel:Help("\\nDynamic Weight Painting & Mesh Deform\\n")
+        panel:CheckBox("Metaball Field (Merged Blobby Lumps)", "vnpcs_weight_paint_metaballs")
+        panel:CheckBox("Per-Prey Lumps", "vnpcs_weight_paint_lumps")
+        panel:NumSlider("Lump Amplitude", "vnpcs_weight_paint_amp", 0, 3, 2)
+        panel:CheckBox("Asymmetric Bones (Com Shift + Sag)", "vnpcs_weight_paint_asymmetry")
+        panel:ControlHelp("The belly is shaped by an implicit metaball field over fetal-curl prey blobs: adjacent prey merge into one bulge, long prey stretch the belly per-axis, heavy loads sag and arch the spine. Enable vnpcs_gpu_belly_debug 1 to see the blob cluster.")
+        do
+            local btn = panel:Button("Weight Paint Status")
+            btn.DoClick = function()
+                RunConsoleCommand("vnpcs_weight_paint_status")
+            end
+        end
         panel:Help("\\nMax Capacity (Modular Traits)\\n")
         panel:CheckBox("Enforce Belly Capacity", "vnpcs_capacity_enabled")
         panel:NumSlider("Base Capacity (value units)", "vnpcs_capacity_base", 200, 5000, 0)
