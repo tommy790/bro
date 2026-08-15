@@ -255,8 +255,25 @@ function ENT:Think() --this code is realllyyyyy stupid
         local modelSize = math.Clamp(newSize * (self.FoldMulti or 1), 0, self.MaxFolds)
         self:ManipulateBoneAngles(main_bone, Angle(0, 0, self.RotationSpring.pos))
 
-        self:ManipulateBoneScale(main_bone, vector_one * newSize)
+        --[[ DYNAMIC WEIGHT PAINTING & MESH DEFORM ]]
+        --blends towards the actual shape of whatever's inside (wide vs tall
+        --vs long) instead of always inflating uniformly, so the belly reads
+        --like it's actually holding that specific prey - and, when there's
+        --more than one body in there, like it's actually holding more than
+        --one body. Purely geometric (bounding-box packing in
+        --basic_visual.lua's GetBellyShapeVector), no physics simulation.
+        local wantedShape = self:GetNWVector("BellyShape", vector_one)
+        self.ShapeBlend = self.ShapeBlend or vector_one
+        self.ShapeBlend = LerpVector(getLerpTime(FrameTime(), 3), self.ShapeBlend, wantedShape)
 
+        local scaleVec = Vector(
+            newSize * self.ShapeBlend.x,
+            newSize * self.ShapeBlend.y,
+            newSize * self.ShapeBlend.z
+        )
+
+        self:ManipulateBoneScale(main_bone, scaleVec)
+        
         local ughhhhhh = math.min(-(1 - newSize) * 3.5, 0)
         self:ManipulateBonePosition(main_bone, Vector(0, ughhhhhh * 1.2, ughhhhhh * 0.9))
         self:ManipulateBoneScale(0, vector_one * modelSize) --fatrolls bone

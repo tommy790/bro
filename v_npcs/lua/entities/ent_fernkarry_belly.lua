@@ -370,9 +370,20 @@ function ENT:Think() --this code is realllyyyyy stupid
     do
         local modelSize = math.Clamp(newSize, 0, 1)
 
-        self:ManipulateBoneScale(main_bone, vector_one * newSize)
+        -- Bounding-box belly shape (same packer as basic_visual.GetBellyShapeVector).
+        local wantedShape = self:GetNWVector("BellyShape", vector_one)
+        self.ShapeBlend = self.ShapeBlend or vector_one
+        local lerpT = 1 - math.exp(-3 * FrameTime())
+        self.ShapeBlend = LerpVector(lerpT, self.ShapeBlend, wantedShape)
+
+        local scaleVec = Vector(
+            newSize * self.ShapeBlend.x,
+            newSize * self.ShapeBlend.y,
+            newSize * self.ShapeBlend.z
+        )
+        self:ManipulateBoneScale(main_bone, scaleVec)
         local test = (newSize - 1) * 9
-        self:ManipulateBonePosition(main_bone, Vector(test * 0.6, 0, math.max(-test * 1, -clipMax)))
+        self:ManipulateBonePosition(main_bone, Vector(test * 0.6    , 0, math.max(-test * 1, -clipMax)))
         self:ManipulateBoneScale(0, vector_one * modelSize) --fatrolls bone
     end
     --[[animations]]
