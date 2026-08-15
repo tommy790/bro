@@ -9,6 +9,16 @@ function VNPC_CallSisterPredators(caller, enemy)
     if not pack_enabled:GetBool() then return 0 end
     if not IsValid(caller) or not IsValid(enemy) then return 0 end
 
+    -- Solitary predators refuse pack calls.
+    if VNPC_GetPackLimit and VNPC_GetPackLimit(caller) <= 1 then
+        return 0
+    end
+    if caller.VNPC_IsDormant then return 0 end
+    if VNPC_IsInActivePeriod and not VNPC_IsInActivePeriod(caller) then
+        -- Off-peak: rarely bother calling a pack
+        if math.random() > 0.25 then return 0 end
+    end
+
     local now = CurTime()
     if (caller.VNPC_NextPackCall or 0) > now then return 0 end
     caller.VNPC_NextPackCall = now + 8.0
@@ -16,10 +26,16 @@ function VNPC_CallSisterPredators(caller, enemy)
     local origin = caller:GetPos()
     local radiusSqr = pack_radius:GetFloat() ^ 2
     local count = 0
+    local maxPack = (VNPC_GetPackLimit and VNPC_GetPackLimit(caller)) or 6
+    -- already "has" self
+    local room = math.max(0, maxPack - 1)
 
     for _, sister in ipairs(ents.GetAll()) do
+        if count >= room then break end
         if not IsValid(sister) or sister == caller then continue end
         if not (sister.IsDrGNextbot or sister.VNPC_FemaleModelVore or sister.Predator) then continue end
+        if sister.VNPC_IsDormant then continue end
+        if VNPC_GetPackLimit and VNPC_GetPackLimit(sister) <= 1 then continue end -- solitary won't join
 
         -- Check distance
         if sister:GetPos():DistToSqr(origin) > radiusSqr then continue end

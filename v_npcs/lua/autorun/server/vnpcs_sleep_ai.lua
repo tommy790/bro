@@ -48,6 +48,22 @@ hook.Add("Think", "VNPCS_SleepSystem_Loop", function()
         else
             -- Increase sleepiness bar over time when awake (2x faster during StormFox 2 nighttime!)
             local sleepRate = (VNPC_IsStormFox2Night and VNPC_IsStormFox2Night()) and 0.70 or 0.35
+            -- Activity span bias: diurnal sleeps more at night, nocturnal more by day, etc.
+            if VNPC_GetActivitySpanData and VNPC_EnsureWelfare then
+                VNPC_EnsureWelfare(ent)
+                local act = VNPC_GetActivitySpanData(ent)
+                local night = VNPC_IsStormFox2Night and VNPC_IsStormFox2Night()
+                local bias = night and (act.sleepBiasNight or 0) or (act.sleepBiasDay or 0)
+                sleepRate = math.max(0.05, sleepRate * (1.0 + bias))
+                -- Off-peak also accelerates sleepiness slightly
+                if VNPC_IsInActivePeriod and not VNPC_IsInActivePeriod(ent) then
+                    sleepRate = sleepRate * 1.25
+                end
+            end
+            -- Dormant sun baskers get very sleepy / sluggish
+            if ent.VNPC_IsDormant then
+                sleepRate = sleepRate * 1.5
+            end
             ent.VNPC_Sleepiness = math.Clamp((ent.VNPC_Sleepiness or 0.0) + sleepRate, 0, 100)
 
             if ent.VNPC_Sleepiness >= 75.0 and (ent.VNPC_NextSleepYawnTime or 0) <= now then
@@ -58,6 +74,9 @@ hook.Add("Think", "VNPCS_SleepSystem_Loop", function()
             end
 
             local effectiveThresh = (VNPC_IsStormFox2Night and VNPC_IsStormFox2Night()) and math.min(60.0, thresh) or thresh
+            if ent.VNPC_IsDormant then
+                effectiveThresh = math.min(effectiveThresh, 50.0)
+            end
             if ent.VNPC_Sleepiness >= effectiveThresh and not inCombat then
                 -- Seek safe shelter at camp before falling asleep
                 local campPos = nil

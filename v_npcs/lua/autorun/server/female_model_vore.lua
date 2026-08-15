@@ -534,7 +534,16 @@ function VNPC_GiveFemaleModelVore(ent)
 
     -- Speed & AI methods matching VNPCs
     function ent:GetAdjustedSpeeds()
-        return 200, 300
+        local walk, run = 200, 300
+        if VNPC_GetWelfareSpeedMult then
+            local m = VNPC_GetWelfareSpeedMult(self) or 1.0
+            walk, run = walk * m, run * m
+        end
+        if VNPC_GetBellyWeightSlow then
+            local m = VNPC_GetBellyWeightSlow(self) or 1.0
+            walk, run = walk * m, run * m
+        end
+        return walk, run
     end
 
     function ent:UpdateRelations() end
@@ -725,6 +734,17 @@ hook.Add("Think", "VNPC_FemaleModelVore_AI", function()
         end
         local eff_grab = grab_dist * (pers_data and pers_data.grab_multiplier or 1.0)
         local eff_detect = detect_dist * (pers_data and pers_data.range_multiplier or 1.0)
+        -- Welfare: activity span + dormancy shrink hunt range off-peak / when sun-starved
+        if VNPC_GetWelfareVisionMult then
+            local vMult = VNPC_GetWelfareVisionMult(npc)
+            eff_grab = eff_grab * math.max(0.55, vMult)
+            eff_detect = eff_detect * vMult
+        end
+        if npc.VNPC_IsDormant then
+            -- Dormant preds barely hunt
+            if npc.SetEnemy then pcall(npc.SetEnemy, npc, nil) end
+            continue
+        end
 
         -- Target enemy if present
         local enemy = npc:GetEnemy()

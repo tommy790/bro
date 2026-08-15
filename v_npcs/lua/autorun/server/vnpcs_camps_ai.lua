@@ -3,7 +3,7 @@
 
 local camps_enabled = CreateConVar("vnpcs_camps_enabled", "1", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Enable predator camps and foraging squads")
 local camp_min_dist = CreateConVar("vnpcs_camp_min_distance", "1400.0", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Minimum distance required between distinct predator camps")
-local camp_cap = CreateConVar("vnpcs_camp_member_cap", "4", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Maximum number of sister predators belonging to a single camp")
+local camp_cap = CreateConVar("vnpcs_camp_member_cap", "4", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Maximum number of sister predators belonging to a single camp (overridden per-member by social preference pack limits)")
 local camp_hunger_thresh = CreateConVar("vnpcs_camp_hunger_thresh", "45.0", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Hunger percentage required for a camp to dispatch foragers to capture prey")
 local camp_max_tents = CreateConVar("vnpcs_pred_camp_max_tents", "2", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Maximum number of tents built at a predator camp")
 
@@ -106,20 +106,30 @@ function VNPC_AssignPredatorToCamp(pred, force)
         end
     end
 
+    if VNPC_EnsureWelfare then VNPC_EnsureWelfare(pred) end
+
     local currentCamp = VNPC_GetPredatorCamp(pred)
     if currentCamp then
         VNPC_SetPredatorCampmateRelations(currentCamp)
         return currentCamp
     end
 
+    -- Solitary social preference: found their own tiny camp / stay alone.
+    local myPackLimit = (VNPC_GetPackLimit and VNPC_GetPackLimit(pred)) or (camp_cap:GetInt() or 4)
+    if myPackLimit <= 1 and not force then
+        return VNPC_CreatePredatorCamp(pred:GetPos(), pred)
+    end
+
     local myFaction = (VNPC_GetPredatorFaction and VNPC_GetPredatorFaction(pred)) or "metrocop"
-    local maxCap = camp_cap:GetInt() or 4
+    local maxCap = math.min(camp_cap:GetInt() or 4, myPackLimit)
     local predPos = pred:GetPos()
     local bestCamp = nil
     local bestDistSqr = 3000 * 3000
 
     for _, camp in ipairs(VNPC_ActivePredatorCamps) do
         if #camp.members < maxCap and camp.faction == myFaction then
+            -- Don't join a camp that already exceeds this predator's comfort pack size
+            if #camp.members >= myPackLimit then continue end
             local dSqr = camp.pos:DistToSqr(predPos)
             if dSqr <= bestDistSqr then
                 bestCamp = camp

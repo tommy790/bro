@@ -262,6 +262,49 @@ local function populate()
         end
     end)
 
+    spawnmenu.AddToolMenuOption("V-NPCs", "Status & Traits", "vnpcs_welfare", "Welfare Preferences", "", "", function(panel)
+        panel:ClearControls()
+        panel:Help("Social / Activity / Cleaning / Sun Welfare")
+        panel:CheckBox("Enable Welfare System", "vnpcs_welfare_enabled")
+        panel:NumSlider("Dirt Rate", "vnpcs_welfare_dirt_rate", 0, 2, 2)
+        panel:NumSlider("Social Rate", "vnpcs_welfare_social_rate", 0, 2, 2)
+        panel:NumSlider("Sun Drain Rate", "vnpcs_welfare_sun_rate", 0, 2, 2)
+        panel:NumSlider("Dormant Threshold", "vnpcs_welfare_dormant_thresh", 5, 50, 0)
+        panel:NumSlider("Clean Seek Threshold", "vnpcs_welfare_clean_thresh", 5, 80, 0)
+        panel:CheckBox("Welfare Debug Logs", "vnpcs_welfare_debug")
+        panel:ControlHelp("Social Preference: Solitary (alone) vs Sociable/Herd (needs company, larger packs). Activity Span: Diurnal / Nocturnal / Crepuscular peak hours. Cleaning: Water, Dust, or Mud. Sun Wellbeing replaces Social for some NPCs — they bask or go dormant.")
+        do
+            local btn = panel:Button("Welfare Status")
+            btn.DoClick = function()
+                RunConsoleCommand("vnpcs_welfare_status")
+            end
+            local btn2 = panel:Button("Test: Aim Target Status")
+            btn2.DoClick = function()
+                RunConsoleCommand("vnpcs_test_welfare")
+            end
+            local btn3 = panel:Button("Force Dirty (aimed)")
+            btn3.DoClick = function()
+                RunConsoleCommand("vnpcs_test_welfare", "dirty")
+            end
+            local btn4 = panel:Button("Sim Time: Day")
+            btn4.DoClick = function()
+                RunConsoleCommand("vnpcs_test_time_period", "day")
+            end
+            local btn5 = panel:Button("Sim Time: Night")
+            btn5.DoClick = function()
+                RunConsoleCommand("vnpcs_test_time_period", "night")
+            end
+            local btn6 = panel:Button("Sim Time: Dawn")
+            btn6.DoClick = function()
+                RunConsoleCommand("vnpcs_test_time_period", "dawn")
+            end
+            local btn7 = panel:Button("Sim Time: Dusk")
+            btn7.DoClick = function()
+                RunConsoleCommand("vnpcs_test_time_period", "dusk")
+            end
+        end
+    end)
+
     spawnmenu.AddToolMenuOption("V-NPCs", "Status & Traits", "vnpcs_secret_assassins", "Secret Assassins", "", "", function(panel)
         panel:ClearControls()
         panel:Help("Secret Assassin Predators")

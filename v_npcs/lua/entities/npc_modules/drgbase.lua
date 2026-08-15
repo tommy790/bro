@@ -93,6 +93,13 @@ function ENT:GetAdjustedSpeeds() --weight speed mechanics are here
 	
 	newRun = math.min(newRun, ogRun * physSlow)
 	newWalk = math.min(newWalk, ogWalk * physSlow)
+
+	-- Welfare activity span / dormancy / dirt slowdown
+	if VNPC_GetWelfareSpeedMult then
+		local wSlow = VNPC_GetWelfareSpeedMult(self) or 1.0
+		newRun = newRun * wSlow
+		newWalk = newWalk * wSlow
+	end
 	
 	return newWalk, newRun
 end
