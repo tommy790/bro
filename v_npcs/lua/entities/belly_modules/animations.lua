@@ -255,11 +255,34 @@ function ENT:Think() --this code is realllyyyyy stupid
         local modelSize = math.Clamp(newSize * (self.FoldMulti or 1), 0, self.MaxFolds)
         self:ManipulateBoneAngles(main_bone, Angle(0, 0, self.RotationSpring.pos))
 
-        self:ManipulateBoneScale(main_bone, vector_one * newSize)
+        -- Prey-driven belly shape: non-uniform scale from packed prey footprint
+        local wantedShape = self:GetNWVector("BellyShape", vector_one)
+        local sideBias = self:GetNWFloat("BellyShapeBias", 0)
+        local occupants = self:GetNWInt("BellyOccupants", 0)
+        self.ShapeBlend = self.ShapeBlend or Vector(1, 1, 1)
+        local shapeSpeed = 3.4
+        if (wantedShape - self.ShapeBlend):Length() > 0.3 then
+            shapeSpeed = 6.0 -- snap faster when a new prey lands
+        end
+        self.ShapeBlend = LerpVector(getLerpTime(FrameTime(), shapeSpeed), self.ShapeBlend, wantedShape)
+        self.ShapeBiasBlend = Lerp(getLerpTime(FrameTime(), 2.6), self.ShapeBiasBlend or 0, sideBias)
+
+        local sx = math.max(newSize * self.ShapeBlend.x, newSize * 0.48)
+        local sy = math.max(newSize * self.ShapeBlend.y, newSize * 0.48)
+        local sz = math.max(newSize * self.ShapeBlend.z, newSize * 0.42)
+        self:ManipulateBoneScale(main_bone, Vector(sx, sy, sz))
 
         local ughhhhhh = math.min(-(1 - newSize) * 3.5, 0)
-        self:ManipulateBonePosition(main_bone, Vector(0, ughhhhhh * 1.2, ughhhhhh * 0.9))
-        self:ManipulateBoneScale(0, vector_one * modelSize) --fatrolls bone
+        local multiPush = math.Clamp((occupants - 1) * 0.6, 0, 1.8)
+        local sidePush = (self.ShapeBiasBlend or 0) * newSize * 5.0
+        -- Slight forward/down droop + off-center for multi-body silhouette
+        self:ManipulateBonePosition(main_bone, Vector(
+            sidePush,
+            ughhhhhh * 1.2 - multiPush * 2.0,
+            ughhhhhh * 0.9 - multiPush * 0.7
+        ))
+        local foldBoost = 1.0 + math.Clamp((occupants - 1) * 0.14, 0, 0.45)
+        self:ManipulateBoneScale(0, vector_one * math.min(modelSize * foldBoost, (self.MaxFolds or 1) * 1.2)) --fatrolls bone
     end
     --[[animations]]
     if currentPhase == 1 then
