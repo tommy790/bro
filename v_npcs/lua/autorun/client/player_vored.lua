@@ -41,6 +41,59 @@ local function displayText(text, x, y, font, color)
     surface.DrawText(text, false) -- Draw the text
 end
 
+--[[
+    Struggle meter.
+
+    The value is entirely server-authored (SetNW2Float from belly_modules/
+    struggle.lua); this only renders whatever the server says it is.
+]]
+-- resolved lazily: the convar is created by belly_modules/struggle.lua, which
+-- may not have been loaded yet when this autorun file runs
+local escape_enabled
+local function escapeEnabled()
+    if not escape_enabled then
+        escape_enabled = GetConVar("vnpcs_prey_escape")
+    end
+
+    if not escape_enabled then return true end
+    return escape_enabled:GetBool()
+end
+
+local smoothedEscape = 0
+
+local function drawStruggleMeter(ply)
+    if not escapeEnabled() then return end
+
+    local progress = math.Clamp(ply:GetNW2Float("VoreEscapeProgress", 0), 0, 1)
+
+    -- ease towards the networked value so the bar does not step at the
+    -- server's update rate
+    smoothedEscape = Lerp(1 - math.exp(-12 * FrameTime()), smoothedEscape, progress)
+    if smoothedEscape < 0.005 and progress <= 0 then smoothedEscape = 0 end
+
+    local w, h = 260, 14
+    local x, y = (ScrW() - w) / 2, ScrH() * 0.8
+
+    surface.SetDrawColor(0, 0, 0, 160)
+    surface.DrawRect(x - 2, y - 2, w + 4, h + 4)
+
+    surface.SetDrawColor(28, 20, 24, 220)
+    surface.DrawRect(x, y, w, h)
+
+    -- red while hopeless, green as you approach freedom
+    local fill = math.Round(w * smoothedEscape)
+    surface.SetDrawColor(
+        math.Round(Lerp(smoothedEscape, 206, 120)),
+        math.Round(Lerp(smoothedEscape, 74, 214)),
+        math.Round(Lerp(smoothedEscape, 88, 120)),
+        235)
+    surface.DrawRect(x, y, fill, h)
+
+    local label = smoothedEscape > 0.02 and "Struggle!" or "Struggle to break free"
+    displayText(label, ScrW() / 2, y - 14, "Trebuchet24", Color(0, 0, 0))
+    displayText(label, ScrW() / 2, y - 15, "Trebuchet24", Color(235, 225, 225))
+end
+
 local function noMoreVore()
     local ply = LocalPlayer()
 
@@ -53,6 +106,7 @@ local function noMoreVore()
         ply:DrawViewModel(true)
         ply.VoreCameraPos = nil
     end
+    smoothedEscape = 0
     setInternalView(false)
 end
 
@@ -132,6 +186,8 @@ local function OnVored()
         if is_internal_view then
             displayText("this is the temporary internal view, i might finish it", ScrW()/2, ScrH()/2, "BudgetLabel", Color(255,255,255))
         end
+
+        drawStruggleMeter(ply)
 	end)
 
     hook.Add("CreateMove", scrollHook, function(cmd)
@@ -149,3 +205,7 @@ end
 
 net.Receive("UGotVored", OnVored)
 net.Receive("StopVoreClient", noMoreVore)
+
+net.Receive("VoreEscaped", function()
+    gui.AddCaption("*You struggle free!*", 4)
+end)

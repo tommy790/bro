@@ -3,9 +3,9 @@
 A prioritized review of the addon as of `1a66f74`. Tiers are ordered by
 "how much pain does this cause a player right now".
 
-**Status: Tier 0 is implemented, plus the render-target leak (0.7).** Everything
-marked ✅ below has been fixed on this branch; Tier 1 and most of Tier 2-3 are
-still open. See the commits for the diffs.
+**Status: Tier 0, the render-target leak (0.7) and struggle-to-escape (1.1) are
+implemented.** Everything marked ✅ below has been fixed on this branch; the rest
+of Tier 1-3 is still open. See the commits for the diffs.
 
 ---
 
@@ -100,6 +100,17 @@ preyEnt:Remove()          -- preyEnt may be a Player
 `Entity:Remove()` on a `Player` is explicitly unsupported and causes anything
 from a broken player slot to a server crash. Branch on `IsPlayer()` and use
 `:Kill()` (or better: release them, see 1.1).
+
+**There was a second instance**, found later while building 1.1, on a much
+hotter path: `AbsorbSpecificPrey` (`mechanics.lua`) does the same
+`prey:Remove()` when a prey's health reaches zero. That is the *ordinary*
+"finished digesting" path, so it is the one players actually hit — every player
+digested by any NPC was being `Remove()`d. Both sites are now guarded.
+
+A digested player is deliberately still not *released*: they stay nodraw'd
+inside with the belly camera and the "You have been digested..." HUD until they
+respawn, which is what `PlayerSpawn` in `autorun/server/convars.lua` already
+cleans up.
 
 ### 0.5 ✅ Regurgitated NPCs stay frozen forever; regurgitated players keep the belly cam
 `v_npcs/lua/entities/belly_modules/mechanics.lua:296`
@@ -241,7 +252,7 @@ per-instance table.
 
 ## Tier 1 — Missing gameplay that people will actually ask for
 
-### 1.1 Prey has **zero agency** — `Regurgitate` is dead code
+### 1.1 ✅ Prey has **zero agency** — `Regurgitate` is dead code
 `grep -rn Regurgitate` returns only its own definition. Nothing in the addon ever
 calls it. Once swallowed, a player watches a camera until they die. This is the
 single biggest feature gap.
@@ -257,6 +268,52 @@ Proposed struggle loop:
   present `Sounds.Struggle` set — the visuals are already built, they're just
   driven by an RNG timer today (`belly_modules/animations.lua:StruggleAnimation`).
 - Convars: `vnpcs_prey_escape 1`, `vnpcs_prey_escape_multi 1`.
+
+**Implemented** in `belly_modules/struggle.lua`, plus a server input hook
+(`autorun/server/vore_struggle.lua`) and a HUD meter in `player_vored.lua`.
+
+Input is read server-side from `GM:KeyPress`, which fires once per press rather
+than continuously while held — so it rewards mashing, cannot be cheesed by
+taping a key down, and there is no net message for a client to forge. A 0.06s
+floor between counted presses keeps bind-spam from outrunning an honest player.
+
+Escape is resisted by the predator's `DigestionStrength`, by how many other
+things are in the belly, and by how digested the prey already is. Struggling
+feeds `StruggleIntensity` to the belly, which drives the existing flex springs
+harder and more often, so a fighting player visibly thrashes the belly instead
+of the animation running purely off a random timer.
+
+The constants were picked by simulating the escape curve against the digestion
+window rather than by feel, specifically to avoid a pass/fail cliff. Against a
+default predator (`DigestionStrength` 2, which digests a 100 hp player in 25s):
+
+| mash rate | outcome |
+|---|---|
+| 3/sec | digested, never escapes |
+| 4/sec | escapes at 23s — right on the buzzer |
+| 6/sec | escapes at 6.6s |
+| 12/sec | escapes at 2.6s |
+
+An earlier tuning had a hard cliff at ~5/sec where the meter simply never left
+zero, which gave the player no feedback at all; the health-falloff floor
+(`StruggleMinHealthFactor`) is what turns that into a gradient.
+
+Predators with `DigestionStrength` 3+ are effectively inescapable at a human
+mash rate, which is intentional — their digest window is shorter too. Server
+owners can open that up with `vnpcs_prey_escape_multi`.
+
+On escape the prey is placed clear of the predator with a hull trace, shoved,
+and given a `vnpcs_prey_escape_cooldown` grace period during which that predator
+both refuses to re-swallow it and drops it as an enemy.
+
+Convars: `vnpcs_prey_escape`, `vnpcs_prey_escape_multi`,
+`vnpcs_prey_escape_npcs` (default off — lets swallowed NPCs thrash free too),
+`vnpcs_prey_escape_cooldown`. New entity hooks: `OnPreyStruggled(ent, progress)`
+and `OnPreyEscaped(ent)`.
+
+Note the alternate `ent_fernkarry_belly` has its own inline copy of the struggle
+animation code, so it gets the mechanic but not the intensity-driven visuals —
+another argument for 3.4.
 
 ### 1.2 Digestion abuses `Entity:Health()`
 `mechanics.lua:135`
@@ -425,8 +482,9 @@ gurgle playing until map change. Stop patches explicitly in `OnRemove`.
 1. ~~Per-instance tables, NULL-entity hook, player `:Remove()`, property
    validation, unified release path~~ — **done** (Tier 0).
 2. ~~RT pooling/sharing and the per-frame `forceTPose`~~ — **done** (0.7).
-3. **Struggle-to-escape (1.1)** — the release plumbing from 0.5 is now in place,
-   so this is the natural next step and the biggest felt improvement.
-4. Digestion decoupled from `Entity:Health()` (1.2) and prey caps (1.3).
+3. ~~Struggle-to-escape (1.1)~~ — **done**.
+4. Digestion decoupled from `Entity:Health()` (1.2) and prey caps (1.3). 1.2 is
+   now the most valuable remaining item: struggle strength keys off prey health,
+   so the health hack distorts the escape curve too.
 5. `SetupDataTables` + centralized config + generated tool menu (3.1, 3.2).
 6. Presets/registration refactor for the NPC files (3.4), README (3.6).

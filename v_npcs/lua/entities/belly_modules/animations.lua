@@ -94,7 +94,16 @@ function ENT:StruggleAnimation(aliveFactor)
     ]]
 
     local alive_struggle_speed = math.pow(aliveFactor,0.4)
-    local spring_speed = alive_struggle_speed
+
+    --[[
+        Real struggling from prey (belly_modules/struggle.lua) drives the springs
+        harder and more often, so a player fighting to get out visibly thrashes
+        the belly rather than the animation being purely on a random timer.
+    ]]
+    local intensity = math.Clamp(self:GetNWFloat("StruggleIntensity", 0), 0, 1)
+    self.StruggleIntensity = intensity
+
+    local spring_speed = alive_struggle_speed * (1 + intensity * 1.6)
     
     if not self.RandomFlexes or table.IsEmpty(self.RandomFlexes) then
         local struggleMulti = self.PreyStruggleMultiplier
@@ -103,6 +112,8 @@ function ENT:StruggleAnimation(aliveFactor)
         else
             struggleMulti = struggleMulti * global_struggle_multi:GetFloat()
         end
+
+        struggleMulti = struggleMulti * (1 + intensity * 0.85)
 
         self.RandomFlexes = {}
         for _, flex in ipairs(self.FlexNames) do
@@ -137,7 +148,11 @@ function ENT:StruggleAnimation(aliveFactor)
         struggleMulti = struggleMulti * global_struggle_multi:GetFloat()
     end
 
+    struggleMulti = struggleMulti * (1 + (self.StruggleIntensity or 0) * 0.85)
+
     local freq = alive_struggle_speed == 0 and 10 or 0.3/alive_struggle_speed
+    freq = freq / (1 + (self.StruggleIntensity or 0) * 2) --thrash faster when fought
+
     if self.PreyStruggleTimer > freq then 
         local target_changed = false 
         for flex, _ in pairs(self.RandomFlexes) do

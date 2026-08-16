@@ -119,6 +119,10 @@ function ENT:AddPrey(prey)
 
     if table.HasValue(self.Prey, prey) then return false end
     if prey.Vored then return false end
+
+    -- something that just struggled free gets a grace period
+    if prey.VoreEscapeCooldown and CurTime() < prey.VoreEscapeCooldown then return false end
+
     if self.EatCondition then
         if not self:EatCondition(prey) then
             return false
@@ -186,7 +190,15 @@ function ENT:AddPrey(prey)
         Entity = prey;
         Absorbing = false;
         OldFlags = old_flags;
+        Escape = 0;                        --struggle progress, 0..1
+        MaxHealth = math.max(prey:Health(), 1); --health on the way in, for struggle falloff
     }
+
+    --[[
+        Back reference so an input hook can find the belly holding this entity
+        without searching every belly in the map.
+    ]]
+    prey.VorePredatorBelly = self
 
     local prey_index = table.insert(self.Prey, prey_table)
 
@@ -243,15 +255,35 @@ function ENT:AbsorbPrey(dt)
 end
 
 function ENT:AbsorbSpecificPrey(index)
-    self.Prey[index].Absorbing = true 
-    local prey = self.Prey[index].Entity
+    local entry = self.Prey[index]
+    if not entry then return end
+
+    entry.Absorbing = true
+    local prey = entry.Entity
 
     if IsValid(prey) then
-        --prey:SetParent(nil)
         prey.Vored = false
-        prey:Remove()
+        prey.VorePredatorBelly = nil
+
+        --[[
+            Same rule as WipeAllPrey: never Remove() a Player -- it is
+            unsupported and can break the player slot. This is the ordinary
+            "prey finished digesting" path, so it is the one players actually
+            hit.
+
+            They are deliberately NOT released here. A digested player stays
+            nodraw'd inside with the belly camera and the "You have been
+            digested..." HUD until they respawn, and PlayerSpawn in
+            autorun/server/convars.lua does the real cleanup.
+        ]]
+        if prey:IsPlayer() then
+            if prey:Alive() then prey:Kill() end
+        else
+            prey:Remove()
+        end
     end
-    self.Prey[index].Entity = nil
+
+    entry.Entity = nil
     self:OnPreyKilled()
     self:SetNWInt("AliveFactor", self:GetAliveFactor()) --uhhh probably shouldnt be in mechanics but idc, this number is used for animations
 
@@ -339,6 +371,12 @@ function ENT:ReleasePreyEntity(prey, oldFlags)
     if not IsValid(prey) then return end
 
     prey.Vored = false
+    prey.VorePredatorBelly = nil
+
+    if prey:IsPlayer() then
+        prey:SetNW2Float("VoreEscapeProgress", 0)
+    end
+
     prey:SetParent(nil)
     prey:SetNoDraw(false)
     prey:SetVelocity(Vector(0, 0, 0))

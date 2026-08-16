@@ -18,6 +18,7 @@ function ENT:NPCThink() --this has to be called by an npc
 
     local living_prey, prey_in_total, total_heal = self:DigestPrey(dt)
     local is_absorbing = self:AbsorbPrey(dt)
+    self:UpdateStruggle(dt)
     if npc then --burpin' while absorbin'
         if total_heal and total_heal > 0 then
             total_heal = total_heal * global_heal_multi:GetFloat() * 0.1
