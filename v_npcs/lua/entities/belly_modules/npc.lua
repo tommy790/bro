@@ -3,6 +3,18 @@ local weight_loss = CreateConVar("vnpcs_weight_loss", "0", {FCVAR_ARCHIVE, FCVAR
 
 local global_heal_multi = CreateConVar("vnpcs_absorptionheal_multi", "1", {FCVAR_ARCHIVE, FCVAR_REPLICATED})
 
+-- Guarded facial-phase setter: SetFacialExpression only exists on some NPC
+-- types (DrGBase nextbots), so never call it on stock NPCs or invalid ents.
+function VNPC_SetFacialPhase(npc, phase)
+    if not IsValid(npc) then return end
+    if npc.SetFacialExpression then
+        local ok, err = pcall(npc.SetFacialExpression, npc, phase)
+        if not ok then return end
+    elseif npc.SetNWInt then
+        npc:SetNWInt("FacialPhase", phase)
+    end
+end
+
 ENT.WeightGainAmount = 0.5 --for each absorbption
 ENT.NextVoreThink = 0
 
@@ -41,7 +53,7 @@ function ENT:NPCThink() --this has to be called by an npc
                 current_phase = npc:GetCurrentFacialPhase()
             end
             if current_phase == 1 or current_phase == 2 or current_phase == 4 then
-                npc:SetFacialExpression(0)
+                VNPC_SetFacialPhase(npc, 0)
             end
         end
     end
@@ -64,7 +76,7 @@ function ENT:OnDigestionPhaseChanged(new, old)
         self.NextSoundTime = nil 
 
         if self.NPC then
-            self.NPC:SetFacialExpression(0)
+            VNPC_SetFacialPhase(self.NPC, 0)
         end
         if VNPC_ScheduleDigestedBoneSpit and (old == 1 or old == 2) then
             VNPC_ScheduleDigestedBoneSpit(self.NPC or self:GetOwner() or self:GetParent(), self)
@@ -76,7 +88,7 @@ function ENT:OnDigestionPhaseChanged(new, old)
         self:StartAbsorbSound()
 
         if self.NPC then       
-            self.NPC:SetFacialExpression(2)
+            VNPC_SetFacialPhase(self.NPC, 2)
         end
         if VNPC_ScheduleDigestedBoneSpit then
             VNPC_ScheduleDigestedBoneSpit(self.NPC or self:GetOwner() or self:GetParent(), self)
