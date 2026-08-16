@@ -21,6 +21,124 @@ ENT.FlexNames = ENT.FlexNames or { --this is hardcoded rn
     "PreyOutline",
 }
 
+--[[
+    Belly deformation driven by the prey's actual body.
+
+    The belly model ships a directional grid of push-out flexes (MiddleTop,
+    TopLeft, BottomRight, ...) plus a PreyOutline. When active ragdolls are on we
+    read the prey ragdoll's limb bones -- it is a networked entity, so this needs
+    no extra networking at all -- work out which direction each limb is pressing
+    against the stomach wall, and drive the matching flex. A hand shoving at the
+    upper left genuinely reads as a hand shoving at the upper left.
+
+    Falls back to the original random-target struggle when no ragdoll is present.
+
+    NOTE: these direction vectors are in belly-bone local space. Belly_Angles is
+    Angle(0, 90, 90), so the model's local axes are rotated relative to world and
+    this table is the one thing here that may need correcting against the actual
+    model. It is deliberately a plain table so that is a ten second edit.
+]]
+local FLEX_DIRECTIONS = {
+    MiddleTop      = Vector( 0,  0,  1),
+    MiddleBottom   = Vector( 0,  0, -1),
+    MiddleLeft     = Vector( 0,  1,  0),
+    MiddleRight    = Vector( 0, -1,  0),
+    MiddleLeftTop  = Vector( 0,  0.7,  0.7),
+    MiddleRightTop = Vector( 0, -0.7,  0.7),
+    TopLeft        = Vector( 0.7,  0.7,  0.4),
+    TopRight       = Vector( 0.7, -0.7,  0.4),
+    BottomLeft     = Vector(-0.7,  0.7, -0.4),
+    BottomRight    = Vector(-0.7, -0.7, -0.4)
+}
+
+for _, dir in pairs(FLEX_DIRECTIONS) do dir:Normalize() end
+
+-- the parts of a body that actually press outwards
+local LIMB_BONES = {
+    "ValveBiped.Bip01_L_Hand", "ValveBiped.Bip01_R_Hand",
+    "ValveBiped.Bip01_L_Foot", "ValveBiped.Bip01_R_Foot",
+    "ValveBiped.Bip01_L_Forearm", "ValveBiped.Bip01_R_Forearm",
+    "ValveBiped.Bip01_Head1",
+    "Hand_L", "Hand_R", "Foot_L", "Foot_R", "Head",
+    "hand_l", "hand_r", "foot_l", "foot_r"
+}
+
+local function cacheLimbBones(ragdoll)
+    local cached = ragdoll.VNPCS_LimbBones
+    if cached then return cached end
+
+    cached = {}
+    for _, name in ipairs(LIMB_BONES) do
+        local bone = ragdoll:LookupBone(name)
+        if bone then cached[#cached + 1] = bone end
+    end
+
+    -- unknown skeleton: fall back to a sparse sample of whatever it does have
+    if #cached == 0 then
+        local count = ragdoll:GetBoneCount() or 0
+        for bone = 0, count - 1, math.max(math.floor(count / 8), 1) do
+            cached[#cached + 1] = bone
+        end
+    end
+
+    ragdoll.VNPCS_LimbBones = cached
+    return cached
+end
+
+--[[
+    Returns a flexName -> 0..1 pressure table, or nil when there is no ragdoll
+    to read (in which case the caller uses the random struggle instead).
+]]
+function ENT:GatherRagdollPressure()
+    local slots = VNPCS_RAGDOLL_SLOTS or 4
+    if self:GetNWInt("PreyRagdollCount", 0) <= 0 then return nil end
+
+    local matrix = self:GetBoneMatrix(1)
+    if not matrix then return nil end
+
+    local center = matrix:GetTranslation()
+    local angles = matrix:GetAngles()
+    local radius = math.max(self:GetNWFloat("BellySize", 0), 0.2) * 22 + 14
+
+    local pressure, found = {}, false
+
+    for slot = 1, slots do
+        local ragdoll = self:GetNWEntity("PreyRagdoll" .. slot)
+        if IsValid(ragdoll) then
+            for _, bone in ipairs(cacheLimbBones(ragdoll)) do
+                local worldPos = ragdoll:GetBonePosition(bone)
+                if worldPos then
+                    local localPos = WorldToLocal(worldPos, angle_zero, center, angles)
+                    local reach = localPos:Length() / radius
+
+                    -- only limbs actually near the wall deform it
+                    if reach > 0.45 then
+                        found = true
+
+                        local dir = localPos:GetNormalized()
+                        local push = math.Clamp((reach - 0.45) / 0.55, 0, 1)
+
+                        for name, flexDir in pairs(FLEX_DIRECTIONS) do
+                            local alignment = dir:Dot(flexDir)
+                            if alignment > 0 then
+                                -- ^3 keeps a limb from smearing across every flex
+                                local amount = alignment * alignment * alignment * push
+                                if amount > (pressure[name] or 0) then
+                                    pressure[name] = amount
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    if not found then return nil end
+
+    return pressure
+end
+
 local function getLerpTime(dt, sped)
     return 1 - math.exp(-sped * dt) --i love this formula
 end
@@ -104,17 +222,16 @@ function ENT:StruggleAnimation(aliveFactor)
     self.StruggleIntensity = intensity
 
     local spring_speed = alive_struggle_speed * (1 + intensity * 1.6)
+
+    local struggleMulti = self.PreyStruggleMultiplier
+    if force_struggle:GetBool() then
+        struggleMulti = global_struggle_multi:GetFloat()
+    else
+        struggleMulti = struggleMulti * global_struggle_multi:GetFloat()
+    end
+    struggleMulti = struggleMulti * (1 + intensity * 0.85)
     
     if not self.RandomFlexes or table.IsEmpty(self.RandomFlexes) then
-        local struggleMulti = self.PreyStruggleMultiplier
-        if force_struggle:GetBool() then
-            struggleMulti = global_struggle_multi:GetFloat()
-        else
-            struggleMulti = struggleMulti * global_struggle_multi:GetFloat()
-        end
-
-        struggleMulti = struggleMulti * (1 + intensity * 0.85)
-
         self.RandomFlexes = {}
         for _, flex in ipairs(self.FlexNames) do
             local flexId = self:GetFlexIDByName(flex)
@@ -124,6 +241,32 @@ function ENT:StruggleAnimation(aliveFactor)
                     spring = {pos = 0, velocity = 0, damping = 0.7, speed = spring_speed, time = CurTime()}
                 }
             end
+        end
+    end
+
+    --[[
+        Real body pressure overrides the random targets when a prey ragdoll is
+        present. The springs still smooth the result, so the wall gives and
+        recovers rather than snapping to the limb position.
+    ]]
+    local pressure = self:GatherRagdollPressure()
+    self.HasRagdollPressure = pressure ~= nil
+
+    if pressure then
+        for name, amount in pairs(pressure) do
+            local flexId = self:GetFlexIDByName(name)
+            if flexId and flexId >= 0 and self.RandomFlexes[flexId] then
+                self.RandomFlexes[flexId].target = amount * struggleMulti
+            end
+        end
+
+        local outline = self:GetFlexIDByName("PreyOutline")
+        if outline and outline >= 0 then
+            local peak = 0
+            for _, amount in pairs(pressure) do
+                if amount > peak then peak = amount end
+            end
+            self:SetFlexWeight(outline, Lerp(getLerpTime(FrameTime(), 6), self:GetFlexWeight(outline) or 0, peak))
         end
     end
 
@@ -141,25 +284,26 @@ function ENT:StruggleAnimation(aliveFactor)
     end
     self.PreyStruggleTimer = self.PreyStruggleTimer + FrameTime()
 
-    local struggleMulti = self.PreyStruggleMultiplier
-    if force_struggle:GetBool() then
-        struggleMulti = global_struggle_multi:GetFloat()
-    else
-        struggleMulti = struggleMulti * global_struggle_multi:GetFloat()
-    end
-
-    struggleMulti = struggleMulti * (1 + (self.StruggleIntensity or 0) * 0.85)
-
     local freq = alive_struggle_speed == 0 and 10 or 0.3/alive_struggle_speed
     freq = freq / (1 + (self.StruggleIntensity or 0) * 2) --thrash faster when fought
 
     if self.PreyStruggleTimer > freq then 
         local target_changed = false 
-        for flex, _ in pairs(self.RandomFlexes) do
-            if math.random() < 0.3 then
-                target_changed = true 
-                self.RandomFlexes[flex].target = math.Rand(-0.5 * struggleMulti, 1 * struggleMulti) * 0.8
+
+        --[[
+            When a real body is driving the flexes the random targets would just
+            fight it for one frame each cycle. Keep the sound cue, drop the
+            randomisation.
+        ]]
+        if not self.HasRagdollPressure then
+            for flex, _ in pairs(self.RandomFlexes) do
+                if math.random() < 0.3 then
+                    target_changed = true 
+                    self.RandomFlexes[flex].target = math.Rand(-0.5 * struggleMulti, 1 * struggleMulti) * 0.8
+                end
             end
+        else
+            target_changed = true
         end
         self.PreyStruggleTimer = 0
         if target_changed then

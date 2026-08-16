@@ -223,6 +223,11 @@ function ENT:AddPrey(prey)
 
     local prey_index = table.insert(self.Prey, prey_table)
 
+    -- give it a real physics body if active ragdolls are on (no-op otherwise)
+    if self.CreatePreyRagdoll then
+        self:CreatePreyRagdoll(prey_table)
+    end
+
     self:ChangeDigestionPhase(1)
     self:OnPreyAdded(prey_index, preyValue, prey)
     self:SetNWInt("AliveFactor", self:GetAliveFactor()) --uhhh probably shouldnt be in mechanics but idc, this number is used for animations
@@ -280,6 +285,11 @@ function ENT:AbsorbSpecificPrey(index)
     if not entry then return end
 
     entry.Absorbing = true
+
+    if self.RemovePreyRagdoll then
+        self:RemovePreyRagdoll(entry)
+    end
+
     local prey = entry.Entity
 
     if IsValid(prey) then
@@ -442,6 +452,12 @@ end
 function ENT:ReleasePreyEntity(prey, oldFlags)
     if not IsValid(prey) then return end
 
+    -- the physics body only exists while swallowed
+    if self.GetPreyIndex and self.RemovePreyRagdoll then
+        local _, entry = self:GetPreyIndex(prey)
+        if entry then self:RemovePreyRagdoll(entry) end
+    end
+
     prey.Vored = false
     prey.VorePredatorBelly = nil
 
@@ -551,6 +567,10 @@ end
 
 function ENT:WipeAllPrey()
     self:InitBellyState()
+
+    if self.RemoveAllPreyRagdolls then
+        self:RemoveAllPreyRagdolls()
+    end
 
     for i, prey in ipairs(self.Prey) do
         local preyEnt = prey.Entity

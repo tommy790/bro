@@ -250,6 +250,71 @@ per-instance table.
 
 ---
 
+## Active ragdoll prey (experimental, default off)
+
+Swallowed prey can be given a real active-ragdoll body instead of simply being
+hidden. This follows the same architecture Euphoria-class systems use — and that
+Artagdoll uses in GMod — rather than keyframed animation: a hidden puppet entity
+plays a struggle sequence, and every physics object on the prey ragdoll is driven
+toward its corresponding puppet bone by a **torque motor**, via
+`PhysObj:ComputeShadowControl` run from a motion controller. Nothing is keyframed
+onto the ragdoll itself, so it collides, braces and gets shoved like a body.
+
+**Files:** `entities/vnpcs_ragdoll_motor.lua` (the motor),
+`belly_modules/activeragdoll.lua` (lifecycle), plus flex feedback in
+`belly_modules/animations.lua`.
+
+**What drives it** — both values already existed:
+
+| input | effect |
+|---|---|
+| `Integrity` | sets the motor's strength *ceiling*, squared. A digesting prey physically cannot brace any more, so it slackens on its own. The "life draining out" arc is emergent, not animated. |
+| `StruggleIntensity` | mashing spikes motor strength and speeds up the struggle animation playback. |
+
+**Deformation costs no networking.** The ragdoll is a networked entity, so clients
+read its limb bones directly, work out which direction each limb presses against
+the wall, and drive the belly's existing directional flex grid (`TopLeft`,
+`MiddleRight`, …) plus `PreyOutline`. That grid was already authored into the
+model and was previously fed nothing but `math.Rand`.
+
+**Design decisions worth knowing:**
+
+- *"Replace" is partial by necessity.* A `Player` cannot be removed and
+  re-created — it owns the client connection and the belly camera — so the
+  original entity is always retained as a hidden shell and the ragdoll is the
+  authoritative *physical* body. NPCs use the same path so regurgitation hands
+  back the original AI rather than a fresh copy.
+- *Containment is analytic, not collision.* The belly model has no interior hull,
+  so physics objects are clamped inside an ellipsoid. Cheaper and far more stable
+  than real collision, and the penetration depth falls straight out as the flex
+  value.
+- *We do not depend on Artagdoll.* Its behaviour modules are stumbling, falling
+  and dying in the open world, which are meaningless inside a stomach; and it
+  explicitly conflicts with other active-ragdoll addons because they fight over
+  the same physobjs. The belly-relevant modules (brace, reach, curl, shove) are
+  ours to write.
+
+**Not yet done / known risks:**
+
+- Source's constraint solver is prone to jitter under motor forces. The
+  strength/damping constants are a first pass and **need in-game iteration** —
+  they are convars for that reason (`vnpcs_activeragdoll_strength`,
+  `vnpcs_activeragdoll_damping`).
+- `FLEX_DIRECTIONS` in `animations.lua` is in belly-bone local space, and
+  `Belly_Angles` is `Angle(0, 90, 90)`, so the axis mapping may need correcting
+  against the real model. Deliberately a plain table so that is a quick edit.
+- Behaviour modules are not implemented yet; there is one struggle animation and
+  a strength curve, not a state machine.
+- `ent_fernkarry_belly` has its own inline copy of the struggle animation code
+  and so gets the bodies but not the pressure-driven flexes — see 3.4.
+- Needs the prey cap (1.3) properly; currently bounded by
+  `vnpcs_activeragdoll_budget` (default 4 bodies per belly).
+
+Convars: `vnpcs_activeragdoll` (default **0**), `_strength`, `_damping`,
+`_budget`.
+
+---
+
 ## Tier 1 — Missing gameplay that people will actually ask for
 
 ### 1.1 ✅ Prey has **zero agency** — `Regurgitate` is dead code
