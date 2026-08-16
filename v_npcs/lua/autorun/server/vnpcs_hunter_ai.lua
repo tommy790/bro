@@ -592,6 +592,11 @@ hook.Add("Think", "VNPC_HunterAI_TacticalLoop", function()
 
         -- 4. HAZARDS
         if IsValid(enemy) then
+            -- reset one-shot pin state when the target changes
+            if pred.VNPC_PinTarget ~= enemy then
+                pred.VNPC_PinTarget = enemy
+                pred.VNPC_PinDone = nil
+            end
             if state == "barrel" then
                 runBarrelTactic(pred, now)
                 continue
@@ -609,7 +614,7 @@ hook.Add("Think", "VNPC_HunterAI_TacticalLoop", function()
                 continue
             end
 
-            -- 5. AMBUSH / STALK
+            -- 5. AMBUSH / STALK (personality-matrix aware + environment props)
             if GetConVar("vnpcs_ambush_ai"):GetBool() then
                 local dist = pred:GetPos():Distance(enemy:GetPos())
                 local backTurned = false
@@ -618,18 +623,31 @@ hook.Add("Think", "VNPC_HunterAI_TacticalLoop", function()
                     local toPred = (pred:GetPos() - enemy:GetPos()):GetNormalized()
                     backTurned = aim:Dot(toPred) < -0.35
                 end
+                -- v0.7: the personality matrix decides how much the predator
+                -- stalks vs rushes (stealthy/shy mix = heavy stalking)
+                local ambush = 1.0
+                if VNPC_GetBehaviorParam then
+                    ambush = VNPC_GetBehaviorParam(pred, "ambush")
+                end
 
                 if dist > 900 then
                     -- far: normal approach, but walk a curved line when unseen
                     if (pred.VNPC_HuntState or "idle") ~= "rush" then
                         setHuntState(pred, "engage", 2)
                     end
-                elseif dist > 380 and backTurned then
-                    -- mid range with back turned: stalk to a flanking ambush point
+                elseif dist > 380 and backTurned and ambush > 0.35 then
+                    -- mid range with back turned: stalk to a flanking ambush point.
+                    -- v0.7: prefer analyzed map props (tables as cover, vents as perches)
                     if (pred.VNPC_HuntState or "idle") ~= "stalk" or (pred.VNPC_StalkPointExpired or 0) < now then
-                        local ambush = VNPC_FindAmbushPoint(pred, enemy, 300, 620)
-                        if ambush then
-                            pred.VNPC_StalkPoint = ambush
+                        local ambushPoint = nil
+                        if VNPC_TryEnvStalkPoint then
+                            ambushPoint = VNPC_TryEnvStalkPoint(pred, enemy)
+                        end
+                        if not ambushPoint then
+                            ambushPoint = VNPC_FindAmbushPoint(pred, enemy, 300, 620)
+                        end
+                        if ambushPoint then
+                            pred.VNPC_StalkPoint = ambushPoint
                             pred.VNPC_StalkPointExpired = now + 5
                             setHuntState(pred, "stalk", 5)
                         end
@@ -638,12 +656,23 @@ hook.Add("Think", "VNPC_HunterAI_TacticalLoop", function()
                         VNPC_MoveEntTo(pred, pred.VNPC_StalkPoint, true, 0.95)
                     end
                 elseif dist <= 380 and backTurned then
-                    -- close + unaware: burst out of the ambush
-                    if (pred.VNPC_HuntState or "idle") ~= "rush" then
-                        setHuntState(pred, "rush", 3)
-                        if pred.SetEnemy then pcall(pred.SetEnemy, pred, enemy) end
+                    -- close + unaware: burst out of the ambush.
+                    -- v0.7: aggressive predators pin targets against tables first
+                    local pinPoint = nil
+                    if VNPC_TryPinPoint and dist < 260 then
+                        pinPoint = VNPC_TryPinPoint(pred, enemy)
                     end
-                    VNPC_MoveEntTo(pred, enemy:GetPos(), true, 1.35)
+                    if pinPoint and not pred.VNPC_PinDone then
+                        pred.VNPC_PinDone = true
+                        setHuntState(pred, "stalk", 2)
+                        VNPC_MoveEntTo(pred, pinPoint, true, 1.15)
+                    else
+                        if (pred.VNPC_HuntState or "idle") ~= "rush" then
+                            setHuntState(pred, "rush", 3)
+                            if pred.SetEnemy then pcall(pred.SetEnemy, pred, enemy) end
+                        end
+                        VNPC_MoveEntTo(pred, enemy:GetPos(), true, 1.35)
+                    end
                 else
                     -- spotted: drop the stealth act and commit
                     setHuntState(pred, "rush", 2)
@@ -651,7 +680,26 @@ hook.Add("Think", "VNPC_HunterAI_TacticalLoop", function()
                 end
             end
         else
-            -- no enemy: settle back to idle after the state expires
+            -- no enemy: v0.7 shy/stealthy predators use beds to camouflage
+            -- while prey sleep nearby
+            if VNPC_UpdateEnvStates then
+                VNPC_UpdateEnvStates(pred, now)
+            end
+            if GetConVar("vnpcs_env_ai_enabled"):GetBool() and (pred.VNPC_NextCamoTry or 0) < now then
+                pred.VNPC_NextCamoTry = now + 2.5
+                local camo = VNPC_GetBehaviorParam and VNPC_GetBehaviorParam(pred, "camouflage") or 0
+                if camo > 0.4 then
+                    for _, ent in ipairs(ents.FindInSphere(pred:GetPos(), 600)) do
+                        if IsValid(ent) and ent.VNPC_IsSleeping and not ent.Vored and not ent.VNPC_Vored then
+                            if VNPC_TryCamouflage then
+                                VNPC_TryCamouflage(pred, ent)
+                            end
+                            break
+                        end
+                    end
+                end
+            end
+            -- settle back to idle after the state expires
             if (pred.VNPC_HuntStateUntil or 0) < now then
                 setHuntState(pred, "idle", 2)
             end

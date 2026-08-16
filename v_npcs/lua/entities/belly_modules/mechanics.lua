@@ -770,6 +770,10 @@ function ENT:DigestPrey(dt)
     if VNPC_GetTraitStat and IsValid(self.NPC) then
         digestionPower = digestionPower * VNPC_GetTraitStat(self.NPC, "metabolism")
     end
+    -- v0.7 personality matrix: greed accelerates, gentleness slows digestion
+    if VNPC_GetBehaviorParam and IsValid(self.NPC) then
+        digestionPower = digestionPower * VNPC_GetBehaviorParam(self.NPC, "digestion_multiplier")
+    end
 
     digestionPower = digestionPower * dt * 2 --its x2 for legacy value support, dumb but..uhhhhh
 

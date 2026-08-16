@@ -295,10 +295,89 @@ function VNPC_BuildTraitEditor(container, ent)
     local sep = makeLabel("Assign traits (conflicts resolve automatically):", Color(255, 200, 120), 20)
     addItem(container, sep)
 
+    -- v0.7 personality matrix sliders
+    local matrixSep = makeLabel("Personality Matrix (mix behavioral profiles):", Color(120, 220, 255), 24)
+    addItem(container, matrixSep)
+
+    local axisLabels = {
+        stealth = "Stealth (stalking, hiding, quiet)",
+        greed = "Greed (digestion speed, appetite)",
+        shy = "Shy (hunts unseen, camouflages)",
+        aggression = "Aggression (rushing, pinning, chasing)",
+        gentle = "Gentle (slow digestion, calm)",
+        playful = "Playful (misc. behaviors)"
+    }
+    local function refreshMatrix(container, ent)
+        if not IsValid(container) or not IsValid(ent) then return end
+        local mix = VNPC_GetMatrixFromNW and VNPC_GetMatrixFromNW(ent) or {}
+        for _, slider in ipairs(container.VNPC_MatrixSliders or {}) do
+            if IsValid(slider) then
+                slider:SetValue(mix[slider.VNPC_Axis] or 0)
+            end
+        end
+    end
+    container.VNPC_MatrixSliders = {}
+    for _, axis in ipairs(VNPC_MATRIX_AXES or {}) do
+        local row = vgui.Create("DPanel")
+        row:SetTall(46)
+        row:DockMargin(0, 2, 0, 2)
+        row.Paint = function(self, w, h)
+            draw.RoundedBox(4, 0, 0, w, h, Color(28, 38, 48, 220))
+        end
+
+        local label = vgui.Create("DLabel", row)
+        label:SetPos(8, 2)
+        label:SetSize(220, 14)
+        label:SetText(axisLabels[axis] or axis)
+        label:SetTextColor(Color(150, 200, 230))
+
+        local slider = vgui.Create("DNumSlider", row)
+        slider:SetPos(8, 16)
+        slider:SetSize(380, 26)
+        slider:SetMin(0)
+        slider:SetMax(1)
+        slider:SetDecimals(2)
+        slider:SetValue(0)
+        slider.VNPC_Axis = axis
+        slider.Label:SetText("")
+        slider.OnValueChanged = function(self, val)
+            local sel = container.VNPC_SelectedEnt
+            if IsValid(sel) then
+                -- debounce: fire 0.4s after the last change
+                if sel.VNPC_MatrixDebounce then
+                    timer.Remove(sel.VNPC_MatrixDebounce)
+                end
+                sel.VNPC_MatrixDebounce = "vnpcs_matrix_" .. sel:EntIndex()
+                timer.Create(sel.VNPC_MatrixDebounce, 0.4, 1, function()
+                    if IsValid(sel) then
+                        RunConsoleCommand("vnpcs_matrix_set", tostring(sel:EntIndex()), axis, string.format("%.2f", val))
+                    end
+                end)
+            end
+        end
+
+        table.insert(container.VNPC_MatrixSliders, slider)
+        addItem(container, row)
+    end
+
+    local matrixReset = makeButton("Reset Matrix to Personality", function()
+        local sel = container.VNPC_SelectedEnt
+        if IsValid(sel) then
+            RunConsoleCommand("vnpcs_matrix_clear", tostring(sel:EntIndex()))
+            timer.Simple(0.4, function()
+                if IsValid(container) and IsValid(sel) then
+                    refreshMatrix(container, sel)
+                end
+            end)
+        end
+    end)
+    addItem(container, matrixReset)
+
     if IsValid(ent) then
         container.VNPC_SelectedEnt = ent
         updateInfoLabels(container, ent)
         buildTraitRows(container, ent)
+        refreshMatrix(container, ent)
     else
         updateInfoLabels(container, nil)
     end

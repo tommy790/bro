@@ -145,3 +145,64 @@ ConVars: `vnpcs_traits_enabled`, `vnpcs_traits_random_chance`,
 - Headless Lua execution of the physics module: `python3 tools/run_belly_physics_lua.py`
 - Headless Lua execution of traits + weight paint: `python3 tools/run_modules_lua.py`
 - Python mirror test of the integrator math: `python3 v_npcs/test_belly_physics_sim.py`
+
+---
+
+## v0.7 Systems
+
+### Real-Time Dynamic Body Matrix (No More Rigging)
+**Files:** `lua/autorun/sh_vnpc_body_expansion.lua`
+
+Any standard model is analyzed on spawn (bones + measured body parts) and
+expanded on-the-fly through per-region bone-scale envelopes — chest, hips,
+thighs, calves, arms — driven by a single **bloat** value (swallowed prey +
+drunk water + eaten food + monster growth). GMod cannot rewrite vertex weights
+at runtime, so this approximates vertex morphing with the engine's actual
+tools: virtual belly bones + `ManipulateBoneScale` on whatever bones exist.
+Also exports the **layered stress map** (`VNPC_GetClothStress`) used by the
+cloth tear system. ConVars: `vnpcs_body_expansion_enabled/_amp/_prey`.
+Status: `vnpcs_body_matrix_status`.
+
+### Layered Cloth Tear
+**Files:** `lua/autorun/client/cl_vnpc_cloth_tear.lua`
+
+A fabric shell built from the NPC's own textures hugs the belly as stress
+rises; at `vnpcs_cloth_tear_rip` the panelized shell separates along seam
+lines (jagged torn edges, darkening) and peels down, revealing the skin belly.
+No runtime cloth sim exists in GMod — this is the procedural panel-split
+approximation. ConVars: `vnpcs_cloth_tear_enabled/_stress/_rip`.
+
+### Adaptive Personality Matrix
+**Files:** `lua/autorun/sh_vnpc_personality_matrix.lua`
+
+Every NPC carries six behavioral axes (stealth/greed/shy/aggression/gentle/
+playful) seeded from the legacy personality. All systems read effective params
+through `VNPC_GetBehaviorParam()` (digestion speed, sight range, hunt-unseen
+requirement, ambush/pin/camouflage willingness, struggle energy). Sliders in
+the Status & Traits editor (or `vnpcs_matrix_set <ent> <axis> <0..1>`) mix
+profiles on a single NPC — e.g. 90% stealth / 40% greed / 80% shy.
+
+### Adaptive Environment AI
+**Files:** `lua/autorun/server/vnpcs_env_ai.lua` + edits in `vnpcs_hunter_ai.lua`
+
+Predators analyze map props at runtime (no pre-baked nodes): tables/desks →
+cover + pinning surfaces, beds → prone camouflage while prey sleep, vents →
+ambush perches, cabinets/crates → hiding. Stealthy/shy predators stalk to
+cover points and crouch-camouflage on beds; aggressive ones pin targets
+against tables before rushing. Debug: `vnpcs_env_debug 1`. ConVars:
+`vnpcs_env_ai_enabled/_scan_radius/_debug`.
+
+### Acoustical Sound Porting
+**Files:** `lua/autorun/server/vnpcs_acoustics.lua`
+
+Internal prey screams/struggle thumps are ported through the belly medium:
+volume/pitch attenuation by fluid fill, delayed sub-bass echo, armored-model
+absorption, and low-frequency footstep thumps that deepen while crawling.
+GMod has no per-sound DSP, so this is pitch/volume/echo emulation. ConVars:
+`vnpcs_acoustics_enabled/_muffle/_echo/_thump`. Status: `vnpcs_acoustics_status`.
+
+### Tests
+`python3 tools/run_v07_lua.py` — headless assertions for the body matrix
+(bloat, region weights, stress thresholds, bone-scale apply/reset, axial
+bias) and the personality matrix (defaults, clamping, serialization, behavior
+params).

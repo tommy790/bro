@@ -23,6 +23,32 @@ function VNPC_SelectSmartPreyTarget(pred, search_radius)
     local predPos = pred:GetPos()
     local hunger = VNPC_GetHunger and VNPC_GetHunger(pred) or 50
 
+    -- v0.7 personality matrix: shy predators refuse to hunt while observed
+    local requireUnseen = false
+    local unseenUntil = pred.VNPC_MatrixUnseenUntil or 0
+    if VNPC_GetBehaviorParam then
+        requireUnseen = VNPC_GetBehaviorParam(pred, "require_unseen") == true
+    end
+    if requireUnseen then
+        -- any living, un-vored witness within 550 units cancels the hunt
+        local witnessed = false
+        for _, witness in ipairs(ents.FindInSphere(predPos, 550)) do
+            if not IsValid(witness) or witness == pred then continue end
+            if not (witness:IsPlayer() or witness:IsNPC() or witness.IsDrGNextbot) then continue end
+            if witness.Vored or witness.VNPC_Vored or witness.VNPC_Surrendered then continue end
+            if witness:Health() <= 0 then continue end
+            local family = false
+            if VNPC_IsFamilyOrMate then
+                family = VNPC_IsFamilyOrMate(pred, witness)
+            end
+            if not family then
+                witnessed = true
+                break
+            end
+        end
+        if witnessed then return nil end
+    end
+
     for _, ent in ipairs(ents.FindInSphere(predPos, search_radius or 700)) do
         if not IsValid(ent) or ent == pred or ent.Vored or ent.VNPC_Vored or ent.VNPC_Surrendered then continue end
         if VNPC_IsFamilyOrMate and VNPC_IsFamilyOrMate(pred, ent) then continue end
