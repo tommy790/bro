@@ -3,8 +3,8 @@
 A prioritized review of the addon as of `1a66f74`. Tiers are ordered by
 "how much pain does this cause a player right now".
 
-**Status: Tier 0, the render-target leak (0.7) and struggle-to-escape (1.1) are
-implemented.** Everything marked ✅ below has been fixed on this branch; the rest
+**Status: Tier 0, the render-target leak (0.7), struggle-to-escape (1.1) and the
+digestion/measurement rework (1.2, 1.4) are implemented.** Everything marked ✅ below has been fixed on this branch; the rest
 of Tier 1-3 is still open. See the commits for the diffs.
 
 ---
@@ -315,7 +315,7 @@ Note the alternate `ent_fernkarry_belly` has its own inline copy of the struggle
 animation code, so it gets the mechanic but not the intensity-driven visuals —
 another argument for 3.4.
 
-### 1.2 Digestion abuses `Entity:Health()`
+### 1.2 ✅ Digestion abuses `Entity:Health()`
 `mechanics.lua:135`
 
 ```lua
@@ -328,6 +328,31 @@ other addon writing health desyncs the belly. Track digestion in the prey entry
 (`entry.Integrity` 0..1, driven by `DigestionStrength` and prey mass) and only
 apply damage to the entity as a *presentation* of that value.
 
+**Implemented.** `ENT:GetDigestionTime(entry)` derives a duration from prey mass
+and `DigestionStrength`; `ENT:ApplyDigestionDamage` mirrors `Integrity` onto a
+living prey's health each tick. Because the health target is *recomputed* from
+`Integrity` rather than subtracted, another addon healing the prey mid-digestion
+is simply re-applied next tick instead of stalling the belly forever. Both
+health hacks in `AddPrey` are gone, and `mechanics.lua` no longer calls
+`SetHealth` anywhere.
+
+Living prey is still only finished once actually dead, so genuinely invulnerable
+prey (godmode/buddha) stays in the belly rather than being deleted out from
+under its protection — matching how the health-driven version behaved.
+
+Calibrated so nothing that was already correct moves:
+
+| prey | old digest | new digest | |
+|---|---|---|---|
+| player / HL2 human | 25.0s | **25.2s** | unchanged, as intended |
+| 1000 hp boss NPC | 250.0s | **30.7s** | fixed |
+| 5 hp headcrab | 1.2s (hacked to 6.2s) | **13.1s** | fixed, hack no longer needed |
+| 200-unit plank | 87.6s | **9.5s** | fixed |
+
+Struggle (1.1) now reads `Integrity` instead of health, so the escape curve is
+unaffected by the health hack it used to inherit. The measured escape table in
+1.1 is unchanged by this rework.
+
 ### 1.3 No prey cap / no size sanity
 Nothing limits how many entities fit or how big they can be. A player can feed an
 NPC 50 barrels; `GetCollectivePreyValue()` explodes, `GetBellySize()` goes to
@@ -335,7 +360,7 @@ NPC 50 barrels; `GetCollectivePreyValue()` explodes, `GetBellySize()` goes to
 trace hull becomes map-sized. Add `MaxPrey`, `MaxPreyValue`, and reject
 (or "too big to swallow") beyond it.
 
-### 1.4 Prey measurement is wrong for long thin objects
+### 1.4 ✅ Prey measurement is wrong for long thin objects
 `mechanics.lua:36`
 
 ```lua
@@ -351,6 +376,18 @@ local size = maxs - mins
 local volume = math.abs(size.x * size.y * size.z) * scale^3
 return volume ^ (1/3)
 ```
+
+**Implemented**, with a `PREY_VALUE_CALIBRATION` factor of 1.8 so a human-sized
+prey produces the same number as the old measurement (75.5 before, 75.5 after) —
+belly sizes and every constant derived from them stay exactly where they were,
+while the shape bug is fixed:
+
+| | old (corner distance) | new (volume) |
+|---|---|---|
+| 200-unit plank | 100 | 29 |
+| 50³ crate | 61 | 90 |
+
+The plank used to read as *bigger than a crate with 4x its volume*.
 
 ### 1.5 Predator death does nothing interesting
 Killing a predator removes the belly → `OnRemove` → `WipeAllPrey` → everything
@@ -483,8 +520,8 @@ gurgle playing until map change. Stop patches explicitly in `OnRemove`.
    validation, unified release path~~ — **done** (Tier 0).
 2. ~~RT pooling/sharing and the per-frame `forceTPose`~~ — **done** (0.7).
 3. ~~Struggle-to-escape (1.1)~~ — **done**.
-4. Digestion decoupled from `Entity:Health()` (1.2) and prey caps (1.3). 1.2 is
-   now the most valuable remaining item: struggle strength keys off prey health,
-   so the health hack distorts the escape curve too.
+4. ~~Digestion decoupled from `Entity:Health()` (1.2) and prey measurement
+   (1.4)~~ — **done**. Prey caps (1.3) remain and are now a small change, since
+   `GetDigestionTime` already gives a mass number to cap against.
 5. `SetupDataTables` + centralized config + generated tool menu (3.1, 3.2).
 6. Presets/registration refactor for the NPC files (3.4), README (3.6).

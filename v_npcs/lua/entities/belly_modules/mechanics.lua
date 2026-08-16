@@ -38,9 +38,29 @@ local global_absorption_multi = CreateConVar("vnpcs_absorption_multi", "1", {FCV
 local force_digestion = CreateConVar("vnpcs_global_digestion", "0", {FCVAR_ARCHIVE, FCVAR_REPLICATED})
 local force_absorption = CreateConVar("vnpcs_global_absorption", "0", {FCVAR_ARCHIVE, FCVAR_REPLICATED})
 
+--[[
+    How "much" a prey is, for belly size and digestion time.
+
+    This used to be `maxs:Length()`, which measures the distance to a corner of
+    the bounding box: a 200-unit plank read as bigger than a player while a fat
+    crate read as tiny. A cube root of the box volume is a fair stand-in for
+    mass regardless of shape.
+
+    PREY_VALUE_CALIBRATION keeps the resulting numbers on the same scale as the
+    old measurement for a human-sized prey, so belly sizes and every tuning
+    constant derived from them stay where they were.
+]]
+local PREY_VALUE_CALIBRATION = 1.8
+
 local function getModelBounds(ent)
-    local _, max_bounds = ent:GetModelBounds()
-    return max_bounds:Length() * ent:GetModelScale()
+    local mins, maxs = ent:GetModelBounds()
+    local size = maxs - mins
+    local scale = ent:GetModelScale() or 1
+
+    local volume = math.abs(size.x * size.y * size.z) * (scale * scale * scale)
+    if volume <= 0 then return 1 end
+
+    return math.pow(volume, 1/3) * PREY_VALUE_CALIBRATION
 end
 
 local function GetFlags(ent)
@@ -173,15 +193,15 @@ function ENT:AddPrey(prey)
         ]]
     end
 
-    if prey:Health() < 25 then --fix for objects/npcs getting instantly digested, uhhhh super binary and hardcoded
-        prey:SetHealth(25)
-    end
     local preyValue = getModelBounds(prey)
-
     local isAlive = is_npc or is_player or is_nextbot or false
-    if not isAlive then
-        prey:SetHealth(preyValue * 3.5)
-    end
+
+    --[[
+        Digestion no longer runs on the entity's health, so the two hacks that
+        used to live here are gone: bumping every prey to at least 25 hp (which
+        *healed* wounded NPCs on the way in) and giving props a fake health pool.
+        See GetDigestionTime.
+    ]]
 
     local prey_table = {
         Value = preyValue;
@@ -191,7 +211,8 @@ function ENT:AddPrey(prey)
         Absorbing = false;
         OldFlags = old_flags;
         Escape = 0;                        --struggle progress, 0..1
-        MaxHealth = math.max(prey:Health(), 1); --health on the way in, for struggle falloff
+        Integrity = 1;                     --1 = whole, 0 = fully broken down
+        MaxHealth = math.max(prey:Health(), 1); --health on the way in, mirrored from Integrity
     }
 
     --[[
@@ -302,71 +323,122 @@ function ENT:AbsorbSpecificPrey(index)
     end
 end
 
+--[[
+    Seconds to fully digest `entry`, at the current settings.
+
+    Digestion is a clock driven by how big the prey is, not by how much health
+    it happens to have. That fixes three things at once: a 1000 hp boss no
+    longer takes eight minutes while a 5 hp headcrab vanishes instantly, props
+    no longer need a fake health pool, and another addon healing the prey can no
+    longer stall or desync the belly.
+
+    Calibrated against the old behaviour: a human-sized prey (value ~75) in a
+    DigestionStrength 1 belly took 100hp / 2dps = 50 seconds, and still does.
+]]
+local REFERENCE_DIGEST_TIME = 50
+local REFERENCE_PREY_VALUE = 75
+
+function ENT:GetDigestionTime(entry)
+    local strength = self.DigestionStrength or 1
+    if force_digestion:GetBool() then
+        strength = global_digestion_multi:GetFloat()
+    else
+        strength = strength * global_digestion_multi:GetFloat()
+    end
+
+    strength = math.max(strength, 0.01)
+
+    local mass = math.max(entry.TrueValue or REFERENCE_PREY_VALUE, 1)
+
+    return (REFERENCE_DIGEST_TIME / strength) * (mass / REFERENCE_PREY_VALUE)
+end
+
+--[[
+    Mirrors Integrity onto a living prey's health, so death, damage hooks and
+    anything else watching health still behave normally -- health is now a
+    *presentation* of digestion rather than its source of truth.
+
+    Because the target is recomputed from Integrity every tick rather than
+    subtracted, healing the prey mid-digestion just gets re-applied next tick
+    instead of permanently extending the timer.
+]]
+function ENT:ApplyDigestionDamage(entry, prey)
+    local maxHealth = math.max(entry.MaxHealth or 1, 1)
+    local target = maxHealth * math.max(entry.Integrity, 0)
+    local current = prey:Health()
+    local damage = current - target
+
+    if damage <= 0 then return end
+
+    local dmg_i = DamageInfo()
+    local npc = self.NPC
+    if IsValid(npc) then
+        dmg_i:SetAttacker(npc)
+        dmg_i:SetInflictor(npc)
+    end
+    dmg_i:SetDamageType(DMG_REMOVENORAGDOLL)
+    dmg_i:SetDamage(damage)
+
+    prey:TakeDamageInfo(dmg_i)
+end
+
 function ENT:DigestPrey(dt)
     self:InitBellyState()
 
     if #self.Prey == 0 then return 0, 0, 0 end
-    local npc = self.NPC
+
     local livingPrey = 0
     local preyInTotal = 0
-    local totalHeal = 0
-
-    local digestionPower = self.DigestionStrength
-    if force_digestion:GetBool() then
-        digestionPower = global_digestion_multi:GetFloat()
-    else
-        digestionPower = digestionPower * global_digestion_multi:GetFloat()
-    end
-
-    digestionPower = digestionPower * dt * 2 --its x2 for legacy value support, dumb but..uhhhhh
+    local totalDigested = 0
 
     for i = #self.Prey, 1, -1 do
-        local prey_table = self.Prey[i]
-        if prey_table.Absorbing then continue end
+        local entry = self.Prey[i]
+        if entry.Absorbing then continue end
 
         preyInTotal = preyInTotal + 1
 
-        local prey = prey_table.Entity
+        local prey = entry.Entity
         if not IsValid(prey) then
             self:AbsorbSpecificPrey(i)
             continue
         end
-            
-        local oldHealth = prey:Health()
-        if oldHealth > 0 then
-            livingPrey = livingPrey + 1
-                    
-            local dmg_i = DamageInfo()
-            if npc then
-                dmg_i:SetAttacker(npc)
-			    dmg_i:SetInflictor(npc)
-            end
-			dmg_i:SetDamageType(DMG_REMOVENORAGDOLL)
-            dmg_i:SetDamage(digestionPower)
-            prey:TakeDamageInfo(dmg_i)
 
-            totalHeal = totalHeal + digestionPower
-            if oldHealth == prey:Health() and not prey_table.Alive then
-                prey:SetHealth(oldHealth - digestionPower)
-            end
+        local before = entry.Integrity or 1
+        local after = math.max(before - dt / self:GetDigestionTime(entry), 0)
+        entry.Integrity = after
 
-            self:OnPreyDigesting(i, digestionPower)
-        else
+        local consumed = before - after
+        -- "how much matter was broken down", which is what feeds the predator
+        totalDigested = totalDigested + consumed * (entry.TrueValue or 0)
+
+        if entry.Alive then
+            self:ApplyDigestionDamage(entry, prey)
+
+            if prey:Health() > 0 then
+                livingPrey = livingPrey + 1
+            end
+        end
+
+        self:OnPreyDigesting(i, consumed)
+
+        --[[
+            Living prey is only finished once it is actually dead, so anything
+            genuinely invulnerable (godmode, buddha) stays in the belly rather
+            than being deleted out from under its own protection -- which is how
+            the health-driven version behaved too.
+        ]]
+        if entry.Alive then
+            if prey:Health() <= 0 then
+                self:AbsorbSpecificPrey(i)
+            end
+        elseif after <= 0 then
             self:AbsorbSpecificPrey(i)
         end
     end
 
-    return livingPrey, preyInTotal, totalHeal
+    return livingPrey, preyInTotal, totalDigested
 end
 
---[[
-    Single place that hands an entity back to the world.
-
-    Every exit path (regurgitate, wipe, predator death) must go through this so
-    that state restored on the way in is always restored on the way out --
-    previously `Regurgitate` forgot NextThink (leaving NPCs frozen forever) and
-    forgot to tell a player's client to drop the belly camera.
-]]
 function ENT:ReleasePreyEntity(prey, oldFlags)
     if not IsValid(prey) then return end
 

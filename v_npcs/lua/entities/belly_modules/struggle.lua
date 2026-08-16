@@ -111,9 +111,13 @@ function ENT:AddStruggle(ent, amount)
     if entry.Absorbing then return 0, false end
     if not entry.Alive then return 0, false end
 
-    -- a nearly digested prey has very little fight left
-    local maxHealth = math.max(entry.MaxHealth or ent:GetMaxHealth() or 1, 1)
-    local healthFactor = math.Clamp(ent:Health() / maxHealth, self.StruggleMinHealthFactor, 1)
+    --[[
+        A nearly digested prey has very little fight left. This reads Integrity
+        rather than health so it works for any prey and is unaffected by other
+        addons writing health -- see ENT:GetDigestionTime.
+    ]]
+    local integrity = entry.Integrity or 1
+    local healthFactor = math.Clamp(integrity, self.StruggleMinHealthFactor, 1)
 
     local gain = (amount or self.StruggleGain)
         * escape_multi:GetFloat()
