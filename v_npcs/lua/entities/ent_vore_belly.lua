@@ -33,6 +33,8 @@ function ENT:Initialize()
         self:SetModelScale(1)
         self.NextVoreThink = CurTime()
     end
+
+    self:InitBellyState()
     self:CreateSounds()
 end
 

@@ -114,6 +114,8 @@ function ENT:VNPCLook(_dt)
 end
 
 function ENT:CustomThink()
+	self:ResolveVoreSettings()
+
 	local _dt = FrameTime()
 	self.Belly = self:GetNWEntity("Belly")
 

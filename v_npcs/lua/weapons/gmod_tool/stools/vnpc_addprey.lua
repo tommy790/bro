@@ -49,8 +49,8 @@ function TOOL:RightClick( tr )
 	local owner = self:GetOwner()
 
 	if IsValid(ent) and SERVER and ent.Predator then
-		if ent.Belly then
-			local preyTable = ent.Belly.Prey
+		if IsValid(ent.Belly) then
+			local preyTable = ent.Belly:InitBellyState()
 			for i = 1, #preyTable do
 
 				local preyInfo = preyTable[i]

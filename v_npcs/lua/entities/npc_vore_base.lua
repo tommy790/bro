@@ -170,7 +170,6 @@ ENT.VoreSettings.FlexFaces = { --default, based on hl2 flexes
 ENT.BoneScale = 1 --this is for weight gain
 ENT.LookDistMulti = 1
 ENT.VoreFlexLerpDuration = 1
-ENT.CurrentFlexes = {}
 ENT.CurrentFacialPhase = -1
 
 ENT.PrintAnimations = false
@@ -282,6 +281,44 @@ local function GetRandomFromTable(tbl) --:string?
 	return tbl[math.random(1, #tbl)]
 end
 
+--[[
+	Merges VoreSettings down the class chain.
+
+	table.Inherit is shallow, so an NPC that writes `ENT.VoreSettings = {}` (which
+	almost all of them do) shadows the base table completely and loses every
+	default in it -- most importantly FlexFaces, which made SetFacialExpression
+	index a nil value and error on spawn.
+
+	This walks the registered class chain and fills in whatever the derived NPC
+	did not define. Cached on the instance table so it only runs once.
+]]
+function ENT:ResolveVoreSettings()
+	local tbl = self:GetTable()
+	if rawget(tbl, "_VoreSettingsResolved") then return tbl.VoreSettings end
+
+	local chain = {}
+	local stored = scripted_ents.GetStored(self:GetClass())
+	local class = stored and stored.t
+
+	while istable(class) do
+		local settings = rawget(class, "VoreSettings")
+		if istable(settings) then chain[#chain + 1] = settings end
+		class = rawget(class, "BaseClass")
+	end
+
+	local merged = {}
+	for i = #chain, 1, -1 do -- base first, so the derived NPC's values win
+		for key, value in pairs(chain[i]) do
+			merged[key] = value
+		end
+	end
+
+	tbl.VoreSettings = merged
+	tbl._VoreSettingsResolved = true
+
+	return merged
+end
+
 --[[FUNCTIONS]]
 
 function ENT:EatEntity(ent)
@@ -366,6 +403,8 @@ function ENT:OnBellyCreated(belly) end
 
 if SERVER then --setup functions
 	function ENT:CustomInitialize()
+		self:ResolveVoreSettings()
+
 		local anchor = self:GetBellyAnchor()
 		if not anchor then return end
 

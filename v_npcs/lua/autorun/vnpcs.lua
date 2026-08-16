@@ -6,8 +6,11 @@ properties.Add("vnpcs_eatme", {
 	Order = 999,
 	MenuIcon = VNPCs.Icon,
 	Filter = function(self, ent, ply)
+		if not IsValid(ent) then return false end
+		if not IsValid(ply) then return false end
 		if not ent.IsDrGNextbot then return false end
 		if not ent.Predator then return false end
+		if not gamemode.Call("CanProperty", ply, "vnpcs_eatme", ent) then return false end
 		return true
 	end,
 	Action = function(self, ent)
@@ -17,7 +20,17 @@ properties.Add("vnpcs_eatme", {
 	end,
 	Receive = function(self, len, ply)
 		local ent = net.ReadEntity()
-        --print(ent, SERVER) blehhhh
+
+		--[[
+			Filter only runs clientside when the menu is built, so the message
+			has to be re-validated here. Without this a crafted net message
+			could aggro -- or error on -- any entity index a client felt like
+			sending. Order matches the stock Facepunch property implementations.
+		]]
+		if not IsValid(ent) then return end
+		if not properties.CanBeTargeted(ent, ply) then return end
+		if not self:Filter(ent, ply) then return end
+
         ent:ClearPatrols()
         ent:SetEntityRelationship(ply, D_HT, 99999)
         ent:SetEnemy(ply)
@@ -26,20 +39,22 @@ properties.Add("vnpcs_eatme", {
 })
 
 hook.Add("EntityEmitSound", "MuffleVoredSounds", function( sound_info )
-    --local server_or_client = SERVER and "SERVER" or "CLIENT"
 	local ent = sound_info.Entity
-    if not ent or not IsValid(ent) then return end
-    
+    if not IsValid(ent) then return end
+
+    --[[
+        GetParent() returns a NULL entity when unparented, and reading a field
+        off NULL raises "Tried to use a NULL entity!". This hook runs for every
+        sound emitted by anything in the game, so that had to be guarded.
+    ]]
     local parent = ent:GetParent()
-    --print(server_or_client, ent, parent)
-    if ent.Vored or parent.Vored then
-        --print(server_or_client, ent, parent)
-        --sound_info.Volume = sound_info.Volume * 2 --lowers volume
-        sound_info.SoundLevel = 60 --distance falloff
-        sound_info.DSP = 15 --muffle, uses underwater dsp
-        
-        return true
-    end
+    local vored = ent.Vored or (IsValid(parent) and parent.Vored)
+    if not vored then return end
+
+    sound_info.SoundLevel = 60 --distance falloff
+    sound_info.DSP = 15 --muffle, uses underwater dsp
+
+    return true
 end )
 
 --[[

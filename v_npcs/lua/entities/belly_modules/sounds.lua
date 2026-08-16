@@ -40,9 +40,12 @@ ENT.Sounds = ENT.Sounds or {
     }
 }
 
-ENT.LoadedSounds = {}
-ENT.DigestSounds = {}
-ENT.AbsorbSounds = {}
+--[[
+    Sound patch lists are created per instance by CreateSounds(). They are
+    deliberately NOT declared on the ENT class table -- a class-level table is
+    shared by every belly in the map, which previously made the second belly
+    spawned load zero patches.
+]]
 
 ENT.CurrentDigestSound = nil --index?
 ENT.CurrentAbsorbSound = nil --index?
@@ -56,40 +59,52 @@ end
 
 function ENT:StartDigestionSound()
     if self.CurrentDigestSound then return end
-    
-    local index = math.random(1, #self.DigestSounds)
-    local patch = self.DigestSounds[index]
+
+    local patches = self.DigestSounds
+    if not patches or #patches == 0 then return end
+
+    local index = math.random(1, #patches)
+    local patch = patches[index]
+    if not patch then return end
+
     self.CurrentDigestSound = index
 
     patch:Play()
-    patch:ChangePitch(math.random(90,110))
+    patch:ChangePitch(math.random(90, 110))
 end
 
 function ENT:StopDigestionSound()
     if not self.CurrentDigestSound then return end
-    local patch = self.DigestSounds[self.CurrentDigestSound]
+
+    local patch = self.DigestSounds and self.DigestSounds[self.CurrentDigestSound]
     self.CurrentDigestSound = nil
 
-    patch:FadeOut(1.5) --last incase it doesnt exist or some shit
+    if patch then patch:FadeOut(1.5) end
 end
 
 function ENT:StartAbsorbSound()
     if self.CurrentAbsorbSound then return end
-    
-    local index = math.random(1, #self.AbsorbSounds)
-    local patch = self.AbsorbSounds[index]
+
+    local patches = self.AbsorbSounds
+    if not patches or #patches == 0 then return end
+
+    local index = math.random(1, #patches)
+    local patch = patches[index]
+    if not patch then return end
+
     self.CurrentAbsorbSound = index
 
     patch:Play()
-    patch:ChangePitch(math.random(90,110))
+    patch:ChangePitch(math.random(90, 110))
 end
 
 function ENT:StopAbsorbSound()
     if not self.CurrentAbsorbSound then return end
-    local patch = self.AbsorbSounds[self.CurrentAbsorbSound]
+
+    local patch = self.AbsorbSounds and self.AbsorbSounds[self.CurrentAbsorbSound]
     self.CurrentAbsorbSound = nil
 
-    patch:FadeOut(1.5) --last incase it doesnt exist or some shit
+    if patch then patch:FadeOut(1.5) end
 end
 
 function ENT:PlayRandomGurgle()
@@ -145,23 +160,17 @@ function ENT:PlaySwallowedSound()
 end
 
 function ENT:CreateSounds()
+    self:StopSoundPatches()
+
     self.DigestSounds = {}
     self.AbsorbSounds = {}
 
-    for _,v in ipairs(self.Sounds.Digestion) do
-        if self.LoadedSounds[v] then continue end
-        self.LoadedSounds[v] = true
-
-        local newPatch = CreateSound(self, v)
-        table.insert(self.DigestSounds, newPatch)
+    for _, path in ipairs(self.Sounds.Digestion or {}) do
+        table.insert(self.DigestSounds, CreateSound(self, path))
     end
 
-    for _,v in ipairs(self.Sounds.Absorb) do
-        if self.LoadedSounds[v] then continue end
-        self.LoadedSounds[v] = true 
-
-        local newPatch = CreateSound(self, v)
-        table.insert(self.AbsorbSounds, newPatch)
+    for _, path in ipairs(self.Sounds.Absorb or {}) do
+        table.insert(self.AbsorbSounds, CreateSound(self, path))
     end
 end
 
@@ -170,10 +179,33 @@ function ENT:UpdateSounds(new_sounds)
     self:CreateSounds()
 end
 
+--[[
+    CSoundPatch objects have to be stopped explicitly -- StopSound(path) does not
+    stop a looping patch, so removing a belly mid-digestion used to leave the
+    gurgle loop playing until map change.
+]]
+function ENT:StopSoundPatches()
+    -- iterate the two lists explicitly: {a, b} with a nil would truncate ipairs
+    for _, patch in ipairs(self.DigestSounds or {}) do
+        if patch then patch:Stop() end
+    end
+
+    for _, patch in ipairs(self.AbsorbSounds or {}) do
+        if patch then patch:Stop() end
+    end
+
+    self.CurrentDigestSound = nil
+    self.CurrentAbsorbSound = nil
+end
+
 function ENT:StopAllSounds()
-    for _,v in pairs(self.Sounds) do
-        for _,j in ipairs(v) do
-            self:StopSound(j)
+    self:StopSoundPatches()
+
+    for _, list in pairs(self.Sounds or {}) do
+        if istable(list) then
+            for _, path in ipairs(list) do
+                self:StopSound(path)
+            end
         end
     end
 end

@@ -21,8 +21,8 @@ function TOOL:LeftClick( tr )
 	local owner = self:GetOwner()
 
 	if IsValid(ent) and SERVER and ent.Predator then
-		if not ent.Belly then return end
-		for i,v in ipairs(ent.Belly.Prey) do
+		if not IsValid(ent.Belly) then return end
+		for i,v in ipairs(ent.Belly:InitBellyState()) do
 			PrintTable(v)
 			if v.Entity then
 				print(v.Entity:Health())

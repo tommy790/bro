@@ -3,11 +3,28 @@ function ENT:SetFacialExpression(phase)
 	if phase == self.CurrentFacialPhase then return end
 	self.CurrentFacialPhase = phase
 
-    local flexTargets = self.VoreSettings.FlexFaces
-    self.VoreFlexLerpStart = CurTime()
-    self.VoreFlexTargets = flexTargets[phase] or flexTargets[0]
+	local settings = self.VoreSettings
+	local flexFaces = settings and settings.FlexFaces
+	if not flexFaces then return end
 
+	local source = flexFaces[phase] or flexFaces[0]
+	if not source then return end
+
+	--[[
+		Resolved flex IDs are written into a fresh per-instance table.
+
+		This used to assign `self.VoreFlexTargets = flexFaces[phase]` and then
+		write flex IDs straight back into it. That table lives on the class, so
+		every NPC sharing it (all of them, for the base defaults) accumulated
+		another model's flex IDs -- and adding keys to a table mid-`pairs()` is
+		undefined behaviour on top of that.
+	]]
+	local targets = {}
+
+	self.VoreFlexLerpStart = CurTime()
+	self.VoreFlexTargets = targets
 	self.CurrentFlexes = self.CurrentFlexes or {}
+
 	if self.FaceWipers then --very assuming
 		for _,term in ipairs(self.FaceWipers) do
 			term()
@@ -15,7 +32,7 @@ function ENT:SetFacialExpression(phase)
 		self.FaceWipers = nil
 	end
 
-	for flexName, targetWeight in pairs(self.VoreFlexTargets) do
+	for flexName, targetWeight in pairs(source) do
 		if type(targetWeight) == "function" then --CUSTOM CODE FOR FACIAL PHASE
 			local return_function = targetWeight()
 			if return_function and type(return_function) == "function" then
@@ -26,14 +43,14 @@ function ENT:SetFacialExpression(phase)
 			continue 
 		elseif type(flexName) == "number" then --if you actually just inserted the real thing
 			self.CurrentFlexes[flexName] = true 
-			self.VoreFlexTargets[flexName] = targetWeight
+			targets[flexName] = targetWeight
 			continue 
 		end
 
 		local flexId = self:GetFlexIDByName(flexName) --FLEX, AKA THE ACTUAL FACE
         if flexId and flexId >= 0 then
 			self.CurrentFlexes[flexId] = true
-			self.VoreFlexTargets[flexId] = targetWeight
+			targets[flexId] = targetWeight
 			continue
         end
 		 

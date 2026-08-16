@@ -11,7 +11,13 @@ ENT.DigestionPhase = 0
 ENT.DigestionStrength = 2
 ENT.AbsorptionPower = 2
 
-ENT.Prey = {}
+--[[
+    NOTE: do NOT declare `ENT.Prey = {}` here.
+
+    A table declared on the ENT class table is shared by every instance of that
+    class, so every belly in the map would insert into the same prey list.
+    `InitBellyState` below creates the list on the entity's own table instead.
+]]
 ENT.VoreBelly = true
 --[[ 
     {
@@ -52,6 +58,28 @@ local function SetFlags(ent, flags)
     ent:SetFlags(flags.Flags)
 end
 
+--[[     STATE      ]]
+
+--[[
+    Creates the per-instance prey list on the entity's own table.
+
+    `rawget` deliberately bypasses the class metatable so an inherited (shared)
+    table is never mistaken for an instance one. Idempotent and cheap, so it is
+    safe to call from every entry point rather than relying on subclasses
+    remembering to call it from Initialize.
+]]
+function ENT:InitBellyState()
+    local tbl = self:GetTable()
+    local prey = rawget(tbl, "Prey")
+
+    if not prey then
+        prey = {}
+        tbl.Prey = prey
+    end
+
+    return prey
+end
+
 --[[     HOOKS      ]]
 
 --when a prey gets eaten
@@ -87,6 +115,8 @@ function ENT:ChangeDigestionPhase(new) --this is here just for the hook
 end
 
 function ENT:AddPrey(prey)
+    self:InitBellyState()
+
     if table.HasValue(self.Prey, prey) then return false end
     if prey.Vored then return false end
     if self.EatCondition then
@@ -168,6 +198,8 @@ function ENT:AddPrey(prey)
 end
 
 function ENT:AbsorbPrey(dt)
+    self:InitBellyState()
+
     if #self.Prey == 0 then
         return false
     end
@@ -239,6 +271,8 @@ function ENT:AbsorbSpecificPrey(index)
 end
 
 function ENT:DigestPrey(dt)
+    self:InitBellyState()
+
     if #self.Prey == 0 then return 0, 0, 0 end
     local npc = self.NPC
     local livingPrey = 0
@@ -293,7 +327,44 @@ function ENT:DigestPrey(dt)
     return livingPrey, preyInTotal, totalHeal
 end
 
+--[[
+    Single place that hands an entity back to the world.
+
+    Every exit path (regurgitate, wipe, predator death) must go through this so
+    that state restored on the way in is always restored on the way out --
+    previously `Regurgitate` forgot NextThink (leaving NPCs frozen forever) and
+    forgot to tell a player's client to drop the belly camera.
+]]
+function ENT:ReleasePreyEntity(prey, oldFlags)
+    if not IsValid(prey) then return end
+
+    prey.Vored = false
+    prey:SetParent(nil)
+    prey:SetNoDraw(false)
+    prey:SetVelocity(Vector(0, 0, 0))
+
+    if oldFlags then
+        SetFlags(prey, oldFlags)
+    else
+        prey:RemoveEFlags(EFL_NOCLIP_ACTIVE)
+        prey:RemoveFlags(FL_NOTARGET)
+    end
+
+    if prey:IsPlayer() then
+        -- release the CalcView / HUD / weapon lock installed by AddPrey
+        net.Start("StopVoreClient")
+        net.Send(prey)
+    elseif prey:IsNPC() then
+        prey:NextThink(CurTime())
+        prey:SetSchedule(SCHED_IDLE_STAND)
+    elseif prey:IsNextBot() then
+        prey:NextThink(CurTime())
+    end
+end
+
 function ENT:Regurgitate(index)
+    self:InitBellyState()
+
     local info = self.Prey[index]
     if not info then return false end
     if info.Absorbing then return false end
@@ -303,23 +374,23 @@ function ENT:Regurgitate(index)
     if not prey then return false end
     if not IsValid(prey) then return false end
 
-    prey:SetVelocity(Vector(0,0,0))
-    prey:SetParent(nil)
-    prey:SetNoDraw(false)
-
-    SetFlags(prey, info.OldFlags)
-
     table.remove(self.Prey, index)
 
-    prey.Vored = false
+    self:ReleasePreyEntity(prey, info.OldFlags)
 
-    
+    if #self.Prey == 0 then
+        self:ChangeDigestionPhase(0)
+    end
+
+    self:SetNWInt("AliveFactor", self:GetAliveFactor())
 
     self:OnRegurgitate(prey)
     return true
 end
 
 function ENT:RegurgitateENT(ent)
+    self:InitBellyState()
+
     for index, info in ipairs(self.Prey) do
         if not info.Entity then continue end
         if info.Absorbing then continue end
@@ -333,6 +404,8 @@ function ENT:RegurgitateENT(ent)
 end
 
 function ENT:GetCollectivePreyValue() --: number
+    self:InitBellyState()
+
     local total = 0
 
     for _, prey in ipairs(self.Prey) do
@@ -344,6 +417,8 @@ function ENT:GetCollectivePreyValue() --: number
 end
 
 function ENT:GetAliveFactor() --: number
+    self:InitBellyState()
+
     local total = 0
 
     for _, prey in ipairs(self.Prey) do
@@ -365,22 +440,37 @@ function ENT:SetAbsorbPower(num)
 end
 
 function ENT:WipeAllPrey()
-    for i,prey in ipairs(self.Prey) do
+    self:InitBellyState()
+
+    for i, prey in ipairs(self.Prey) do
         local preyEnt = prey.Entity
-        if preyEnt then
-            if IsValid(preyEnt) then
-                preyEnt:SetParent(nil)
-                preyEnt.Vored = false 
+        if preyEnt and IsValid(preyEnt) then
+            preyEnt:SetParent(nil)
+            preyEnt.Vored = false
 
-                local dmg_i = DamageInfo()
-                dmg_i:SetDamageType(DMG_REMOVENORAGDOLL)
-                dmg_i:SetDamage(9999999)
+            local dmg_i = DamageInfo()
+            dmg_i:SetDamageType(DMG_REMOVENORAGDOLL)
+            dmg_i:SetDamage(9999999)
+            preyEnt:TakeDamageInfo(dmg_i)
 
-                preyEnt:TakeDamageInfo(dmg_i)
+            --[[
+                Entity:Remove() on a Player is unsupported and can break the
+                player slot or crash the server. Kill them and hand control
+                back instead; the damage above has already finished them off in
+                practice, Kill() is the belt-and-braces path.
+            ]]
+            if preyEnt:IsPlayer() then
+                if preyEnt:Alive() then
+                    preyEnt:Kill()
+                end
+
+                self:ReleasePreyEntity(preyEnt, prey.OldFlags)
+            else
                 preyEnt:Remove()
             end
         end
     end
+
     table.Empty(self.Prey)
 end
 

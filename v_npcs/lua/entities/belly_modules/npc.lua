@@ -45,14 +45,14 @@ function ENT:OnPreyAbsorbing(power, old_value, new_value)
 end
 
 function ENT:OnDigestionPhaseChanged(new, old)
-    if new == 0 and old == 2 then --from absorbing to empty/hungry
+    if new == 0 then --belly emptied, by absorption or by regurgitation
         self:StopDigestionSound()
         self:StopAbsorbSound()
 
-        self.NextSoundTime = nil 
+        self.NextSoundTime = nil
 
-        if self.NPC then
-            self.NPC:Burp(true) --no checks, just rawdogging this
+        if old == 2 and self.NPC then
+            self.NPC:Burp(true) --only the "finished a meal" burp, not a spit-out
         end
     end
 
