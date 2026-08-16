@@ -139,6 +139,15 @@ load("v_npcs/lua/autorun/sh_vnpc_personality_matrix.lua")
 load("v_npcs/lua/autorun/sh_vnpc_body_expansion.lua")
 
 TEST = r"""
+-- body expansion is OFF by default now (GPU mesh is the belly); force it on
+-- for these tests so the math is exercised
+CVARS["vnpcs_body_expansion_enabled"] = {
+    GetBool = function() return true end,
+    GetFloat = function() return 1 end,
+    GetInt = function() return 1 end,
+    GetString = function() return "" end,
+}
+
 -- ================= PERSONALITY MATRIX =================
 local pred = MakeEnt(1, true)
 -- legacy personality seeds the defaults

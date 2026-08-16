@@ -4,17 +4,17 @@
 
 CreateConVar("vnpcs_gpu_belly_enabled", "1", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Auto-generate belly bones and a GPU belly mesh on models that have no belly bones")
 CreateConVar("vnpcs_gpu_belly_mesh", "1", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Draw the GPU-skinned belly mesh generated from virtual bones")
-CreateConVar("vnpcs_gpu_belly_bonescale", "1", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Scale existing spine/pelvis/thigh bones so the character mesh itself grows a belly")
+CreateConVar("vnpcs_gpu_belly_bonescale", "0", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Scale existing spine/pelvis/thigh bones so the character mesh itself grows a belly. OFF by default: the GPU belly mesh creates the belly; bone inflation is opt-in")
 CreateConVar("vnpcs_gpu_belly_debug", "0", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Draw generated belly bones and the GPU mesh wireframe")
 CreateConVar("vnpcs_gpu_belly_struggle", "1", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Procedural 4-spot mesh deformations on the GPU belly per struggling prey")
 CreateConVar("vnpcs_gpu_belly_struggle_amp", "1.0", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Amplitude multiplier for GPU belly struggle lumps")
 CreateConVar("vnpcs_gpu_belly_gulp", "1", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "GPU mesh gulp bulge on the upper torso near the neck, sized by the swallowed prey scale")
 CreateConVar("vnpcs_gpu_belly_gulp_amp", "1.0", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Amplitude multiplier for GPU neck/upper-torso gulp bulges")
-CreateConVar("vnpcs_gpu_belly_torso_hull", "0", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Optional collar-to-chest GPU sleeve. Off by default so it does not cover the real belly")
+CreateConVar("vnpcs_gpu_belly_torso_hull", "1", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "GPU torso/belly sleeve that replaces the static belly model. ON by default: the procedural GPU mesh creates the belly (no bone inflation)")
 CreateConVar("vnpcs_gpu_belly_jiggle", "1", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Spring-damper jiggle on the GPU belly after kicks and movement")
 CreateConVar("vnpcs_gpu_belly_jiggle_amp", "1.0", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Amplitude multiplier for GPU belly jiggle")
 CreateConVar("vnpcs_gpu_belly_preg_shape", "1", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "High/round pregnancy belly vs low/heavy swallowed-prey belly")
-CreateConVar("vnpcs_gpu_belly_hide_entity", "0", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Hide the ent_vore_belly model when the GPU mesh is drawing. Keep off to use the real belly")
+CreateConVar("vnpcs_gpu_belly_hide_entity", "1", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Hide the ent_vore_belly model when the GPU mesh is drawing. ON by default: the GPU mesh is the belly")
 
 VNPC_GPU_BELLY_BONE_NAMES = {
     "VNPC_Belly_Root",

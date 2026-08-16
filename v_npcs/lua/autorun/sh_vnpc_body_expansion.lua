@@ -16,7 +16,7 @@
 -- tension value that rises once the bloat passes that region's clothing
 -- capacity.
 
-CreateConVar("vnpcs_body_expansion_enabled", "1", {FCVAR_REPLICATED, FCVAR_ARCHIVE}, "Enable on-the-fly body matrix expansion (chest/hips/thighs/calves/arms) on any model")
+CreateConVar("vnpcs_body_expansion_enabled", "0", {FCVAR_REPLICATED, FCVAR_ARCHIVE}, "Enable on-the-fly body matrix expansion (chest/hips/thighs/calves/arms) on any model. OFF by default: the GPU belly mesh creates the belly; bone inflation is opt-in")
 CreateConVar("vnpcs_body_expansion_amp", "1.0", {FCVAR_REPLICATED, FCVAR_ARCHIVE}, "Amplitude multiplier for the body expansion envelope")
 CreateConVar("vnpcs_body_expansion_prey", "1", {FCVAR_REPLICATED, FCVAR_ARCHIVE}, "Also expand prey citizens from swallowed food/water bloat")
 

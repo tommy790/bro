@@ -620,6 +620,15 @@ if CLIENT then
                 if push > 0 then
                     world = world + nrm * (push * (chain.radius or 8))
                 end
+                -- v0.7: the GPU hull IS the belly now - carry the weight-paint
+                -- metaball lumps (merged prey bulges) + gradient normals here too
+                if VNPC_ApplyWeightPaintDeform then
+                    local wd, wn = VNPC_ApplyWeightPaintDeform(world, lp, ent, chain, nrm)
+                    if wd and wd:LengthSqr() > 0.01 then
+                        world = world + wd
+                        if wn then nrm = wn end
+                    end
+                end
                 local gpush = VNPC_ApplyGPUBellyGulpDeform and VNPC_ApplyGPUBellyGulpDeform(world, gulps)
                 if gpush and gpush:LengthSqr() > 0.01 then
                     world = world + gpush

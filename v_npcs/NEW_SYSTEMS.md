@@ -161,6 +161,9 @@ at runtime, so this approximates vertex morphing with the engine's actual
 tools: virtual belly bones + `ManipulateBoneScale` on whatever bones exist.
 Also exports the **layered stress map** (`VNPC_GetClothStress`) used by the
 cloth tear system. ConVars: `vnpcs_body_expansion_enabled/_amp/_prey`.
+**Default: OFF** — the GPU belly mesh creates the belly; bone inflation is
+opt-in (enable `vnpcs_body_expansion_enabled` / `vnpcs_gpu_belly_bonescale`
+only if you want the character's own bones to swell).
 Status: `vnpcs_body_matrix_status`.
 
 ### Layered Cloth Tear
