@@ -506,11 +506,14 @@ module (there is obvious overlap with the belly spring code in
   `ughhhhhh`. Hoist into a documented `VNPCs.Tuning` table — these are the
   values people actually want to tweak.
 
-### 3.7 Sound lifetime
+### 3.7 ✅ Sound lifetime
 `CSoundPatch` objects in `DigestSounds`/`AbsorbSounds` are never `:Stop()`ed;
 `StopAllSounds()` iterates the *filename* table and calls `self:StopSound(name)`,
 which does not stop a patch. Removing a belly mid-digestion can leave a looping
 gurgle playing until map change. Stop patches explicitly in `OnRemove`.
+
+**Fixed** in the Tier 0 pass via `ENT:StopSoundPatches()`, called from both
+`CreateSounds` and `StopAllSounds`.
 
 ---
 
