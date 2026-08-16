@@ -1,4 +1,4 @@
--- V-NPCs Belly Physics Engine - "Ragdoll Matrix" (vnpcs_belly_physics.lua)
+-- V-NPCs Belly Physics Engine (vnpcs_belly_physics.lua)
 -- Replaces the "invisible inventory slot" with a live internal physics simulation.
 -- Every swallowed prey becomes a mass point inside the belly volume:
 --   * gravity, drag, struggle impulses (personality + trait driven), soft-wall
@@ -6,16 +6,12 @@
 --   * the aggregate center-of-mass and slosh drive the GPU belly deformation
 --     (via sh_vnpc_weight_paint.lua), the visual belly entity jiggle, slosh
 --     sounds, and a movement weight penalty on the predator,
---   * optional visible "ragdoll matrix" copies (prop_ragdoll of each prey)
---     ride along inside the belly for the inside-camera and belly-view setups.
 --
 -- The integrator core (VNPC_BellyPhysicsStep) is pure and mirror-tested by
 -- test_belly_physics_sim.py so the math is verifiable without a game server.
 
 CreateConVar("vnpcs_belly_physics_enabled", "1", {FCVAR_REPLICATED, FCVAR_ARCHIVE}, "Enable the internal belly physics simulation (struggle masses, slosh, weight slowdown)")
 CreateConVar("vnpcs_belly_physics_rate", "12", {FCVAR_REPLICATED, FCVAR_ARCHIVE}, "Physics substeps per second for the belly mass simulation")
-CreateConVar("vnpcs_belly_ragdoll_visual", "1", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Create hidden ragdoll copies of swallowed NPCs inside the belly (ragdoll matrix, visible with the inside camera)")
-CreateConVar("vnpcs_belly_ragdoll_max", "6", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Maximum ragdoll matrix copies per predator")
 CreateConVar("vnpcs_belly_weight_slow", "1", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Master multiplier for movement slowdown from belly weight")
 CreateConVar("vnpcs_belly_struggle_kick", "1", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Struggling prey physically kick the belly (slosh sound + mesh impulse)")
 CreateConVar("vnpcs_belly_debug", "0", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Debug the belly physics sim (console spam)")
@@ -178,330 +174,7 @@ end
 -- ---------------------------------------------------------------------------
 
 if SERVER then
-    local function isMatrixCandidate(prey)
-        if not IsValid(prey) then return false end
-        if prey:IsPlayer() then return false end
-        return prey:IsNPC() or prey:IsNextBot() or prey.IsDrGNextbot
-    end
-
-    local function getMatrixRagdoll(pred, preyId)
-        local phys = pred.VNPC_BellyPhysics
-        if not phys or not phys.matrix then return nil end
-        return phys.matrix[preyId]
-    end
-
-    local function removeMatrixRagdoll(pred, preyId)
-        local phys = pred.VNPC_BellyPhysics
-        if not phys or not phys.matrix then return end
-        local rag = phys.matrix[preyId]
-        if IsValid(rag) then
-            rag:Remove()
-        end
-        phys.matrix[preyId] = nil
-    end
-
-    -- ------------------------------------------------------------------
-    -- Ragdoll matrix posing.
-    --
-    -- A prop_ragdoll renders from its PHYSICS OBJECTS, not from the entity
-    -- transform, so SetPos/SetParent on the ragdoll entity leaves the copy
-    -- frozen in its spawn bind pose ("standing there"). Instead we:
-    --   1. pose the ragdoll into a curled swallowed ball once, using forward
-    --      kinematics driven by the prey's measured body-part lengths and the
-    --      addon's known-good "full belly" sit bone pose,
-    --   2. store every bone as a local offset/angle relative to the pelvis,
-    --   3. drive each bone physics object to the prey mass position every
-    --      physics tick so the curled copy rides inside the belly.
-    -- ------------------------------------------------------------------
-    local MATRIX_BONE_ALTS = {
-        ["ValveBiped.Bip01_Pelvis"] = { "Pelvis", "pelvis", "bip_pelvis" },
-        ["ValveBiped.Bip01_Spine"] = { "Spine", "spine", "bip_spine_0" },
-        ["ValveBiped.Bip01_Spine1"] = { "Spine1", "spine1", "bip_spine_1" },
-        ["ValveBiped.Bip01_Spine2"] = { "Spine2", "spine2", "bip_spine_2" },
-        ["ValveBiped.Bip01_Neck1"] = { "Neck1", "Neck", "neck", "bip_neck" },
-        ["ValveBiped.Bip01_Head1"] = { "Head1", "Head", "head" },
-        ["ValveBiped.Bip01_L_Thigh"] = { "L_Thigh", "l_thigh" },
-        ["ValveBiped.Bip01_R_Thigh"] = { "R_Thigh", "r_thigh" },
-        ["ValveBiped.Bip01_L_Calf"] = { "L_Calf", "l_calf" },
-        ["ValveBiped.Bip01_R_Calf"] = { "R_Calf", "r_calf" },
-        ["ValveBiped.Bip01_L_Foot"] = { "L_Foot", "l_foot" },
-        ["ValveBiped.Bip01_R_Foot"] = { "R_Foot", "r_foot" },
-        ["ValveBiped.Bip01_L_Clavicle"] = { "L_Clavicle", "l_clavicle" },
-        ["ValveBiped.Bip01_R_Clavicle"] = { "R_Clavicle", "r_clavicle" },
-        ["ValveBiped.Bip01_L_UpperArm"] = { "L_UpperArm", "l_upperarm" },
-        ["ValveBiped.Bip01_R_UpperArm"] = { "R_UpperArm", "r_upperarm" },
-        ["ValveBiped.Bip01_L_Forearm"] = { "L_Forearm", "l_forearm" },
-        ["ValveBiped.Bip01_R_Forearm"] = { "R_Forearm", "r_forearm" },
-        ["ValveBiped.Bip01_L_Hand"] = { "L_Hand", "l_hand" },
-        ["ValveBiped.Bip01_R_Hand"] = { "R_Hand", "r_hand" }
-    }
-
-    -- FK chain: parent-before-child order used to propagate positions. The
-    -- child offset is taken from the ragdoll's REST geometry (exact, no axis
-    -- convention guessing) and reoriented by the child's new world angle.
-    local MATRIX_FK = {
-        { name = "ValveBiped.Bip01_Spine",   parent = "ValveBiped.Bip01_Pelvis" },
-        { name = "ValveBiped.Bip01_Spine1",  parent = "ValveBiped.Bip01_Spine" },
-        { name = "ValveBiped.Bip01_Spine2",  parent = "ValveBiped.Bip01_Spine1" },
-        { name = "ValveBiped.Bip01_Neck1",   parent = "ValveBiped.Bip01_Spine2" },
-        { name = "ValveBiped.Bip01_Head1",   parent = "ValveBiped.Bip01_Neck1" },
-        { name = "ValveBiped.Bip01_L_Clavicle", parent = "ValveBiped.Bip01_Spine2" },
-        { name = "ValveBiped.Bip01_R_Clavicle", parent = "ValveBiped.Bip01_Spine2" },
-        { name = "ValveBiped.Bip01_L_UpperArm", parent = "ValveBiped.Bip01_L_Clavicle" },
-        { name = "ValveBiped.Bip01_R_UpperArm", parent = "ValveBiped.Bip01_R_Clavicle" },
-        { name = "ValveBiped.Bip01_L_Forearm", parent = "ValveBiped.Bip01_L_UpperArm" },
-        { name = "ValveBiped.Bip01_R_Forearm", parent = "ValveBiped.Bip01_R_UpperArm" },
-        { name = "ValveBiped.Bip01_L_Hand",   parent = "ValveBiped.Bip01_L_Forearm" },
-        { name = "ValveBiped.Bip01_R_Hand",   parent = "ValveBiped.Bip01_R_Forearm" },
-        { name = "ValveBiped.Bip01_L_Thigh",  parent = "ValveBiped.Bip01_Pelvis" },
-        { name = "ValveBiped.Bip01_R_Thigh",  parent = "ValveBiped.Bip01_Pelvis" },
-        { name = "ValveBiped.Bip01_L_Calf",   parent = "ValveBiped.Bip01_L_Thigh" },
-        { name = "ValveBiped.Bip01_R_Calf",   parent = "ValveBiped.Bip01_R_Thigh" },
-        { name = "ValveBiped.Bip01_L_Foot",   parent = "ValveBiped.Bip01_L_Calf" },
-        { name = "ValveBiped.Bip01_R_Foot",   parent = "ValveBiped.Bip01_R_Calf" }
-    }
-
-    -- All bones we want to pose, in rest-capture order.
-    local MATRIX_POSE_ORDER = {
-        "ValveBiped.Bip01_Pelvis",
-        "ValveBiped.Bip01_Spine",
-        "ValveBiped.Bip01_Spine1",
-        "ValveBiped.Bip01_Spine2",
-        "ValveBiped.Bip01_Neck1",
-        "ValveBiped.Bip01_Head1",
-        "ValveBiped.Bip01_L_Clavicle",
-        "ValveBiped.Bip01_R_Clavicle",
-        "ValveBiped.Bip01_L_UpperArm",
-        "ValveBiped.Bip01_R_UpperArm",
-        "ValveBiped.Bip01_L_Forearm",
-        "ValveBiped.Bip01_R_Forearm",
-        "ValveBiped.Bip01_L_Hand",
-        "ValveBiped.Bip01_R_Hand",
-        "ValveBiped.Bip01_L_Thigh",
-        "ValveBiped.Bip01_R_Thigh",
-        "ValveBiped.Bip01_L_Calf",
-        "ValveBiped.Bip01_R_Calf",
-        "ValveBiped.Bip01_L_Foot",
-        "ValveBiped.Bip01_R_Foot"
-    }
-
-    local function matrixFindBonePhys(rag, name)
-        if not IsValid(rag) or not rag.LookupBone then return nil end
-        local id = rag:LookupBone(name)
-        if id and id >= 0 then
-            local po = rag:GetPhysicsObject(id)
-            if IsValid(po) then return po end
-        end
-        for _, alt in ipairs(MATRIX_BONE_ALTS[name] or {}) do
-            id = rag:LookupBone(alt)
-            if id and id >= 0 then
-                local po = rag:GetPhysicsObject(id)
-                if IsValid(po) then return po end
-            end
-        end
-        return nil
-    end
-
-    -- ------------------------------------------------------------------
-    -- Rotation composition helpers.
-    --
-    -- GMod Angle does NOT support Angle * Angle (its __mul only takes a
-    -- scalar), so all angle composition is done with explicit quaternions.
-    -- Source Euler decomposition is R = Rz(yaw) * Ry(pitch) * Rx(roll), i.e.
-    --   q = qYaw * qPitch * qRoll.
-    -- Offsets are right-multiplied (applied in the bone's own local frame),
-    -- which matches how the engine applies ManipulateBoneAngles.
-    -- ------------------------------------------------------------------
-    local function matrixEulerToQuat(ang)
-        local p = math.rad(ang.p or 0)
-        local y = math.rad(ang.y or 0)
-        local r = math.rad(ang.r or 0)
-        local cp, sp = math.cos(p * 0.5), math.sin(p * 0.5)
-        local cy, sy = math.cos(y * 0.5), math.sin(y * 0.5)
-        local cr, sr = math.cos(r * 0.5), math.sin(r * 0.5)
-        return {
-            x = sr * cp * cy - cr * sp * sy,
-            y = cr * sp * cy + sr * cp * sy,
-            z = cr * cp * sy - sr * sp * cy,
-            w = cr * cp * cy + sr * sp * sy
-        }
-    end
-
-    local function matrixQuatMul(a, b)
-        return {
-            x = a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y,
-            y = a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x,
-            z = a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w,
-            w = a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z
-        }
-    end
-
-    local function matrixQuatToEuler(q)
-        local sinp = math.Clamp(2 * (q.w * q.y - q.z * q.x), -1, 1)
-        local pitch = math.asin(sinp)
-        local yaw = math.atan2(2 * (q.w * q.z + q.x * q.y), 1 - 2 * (q.y * q.y + q.z * q.z))
-        local roll = math.atan2(2 * (q.w * q.x + q.y * q.z), 1 - 2 * (q.x * q.x + q.y * q.y))
-        return Angle(math.deg(pitch), math.deg(yaw), math.deg(roll))
-    end
-
-    local function matrixQuatConj(q)
-        return { x = -q.x, y = -q.y, z = -q.z, w = q.w }
-    end
-
-    -- Rotate a vector by a unit quaternion (pure math, no engine methods).
-    -- t = 2 * cross(q.xyz, v); v' = v + w*t + cross(q.xyz, t)
-    local function matrixQuatRotateVec(q, v)
-        local ux, uy, uz = q.x, q.y, q.z
-        local tx = 2 * (uy * v.z - uz * v.y)
-        local ty = 2 * (uz * v.x - ux * v.z)
-        local tz = 2 * (ux * v.y - uy * v.x)
-        return Vector(
-            v.x + q.w * tx + (uy * tz - uz * ty),
-            v.y + q.w * ty + (uz * tx - ux * tz),
-            v.z + q.w * tz + (ux * ty - uy * tx)
-        )
-    end
-
-    -- world = local * offset  (offset applied in the local frame)
-    local function matrixAngleCompose(a, b)
-        return matrixQuatToEuler(matrixQuatMul(matrixEulerToQuat(a), matrixEulerToQuat(b)))
-    end
-
-    local function matrixAngleInverse(ang)
-        local q = matrixEulerToQuat(ang)
-        return matrixQuatToEuler({ x = -q.x, y = -q.y, z = -q.z, w = q.w })
-    end
-
-    -- GMod Angle has no WorldToLocal / LocalToWorld, and Vector:Rotate is not
-    -- reliable for this either - so both conversions are done with pure
-    -- quaternion math (world->local = conjugate rotation, local->world = the
-    -- forward rotation). No engine rotation methods involved.
-    local function matrixWorldToLocal(ang, v)
-        return matrixQuatRotateVec(matrixQuatConj(matrixEulerToQuat(ang)), v)
-    end
-
-    local function matrixLocalToWorld(ang, v)
-        return matrixQuatRotateVec(matrixEulerToQuat(ang), v)
-    end
-
-    -- Pose the ragdoll into a curled swallowed ball and store per-bone local
-    -- offsets/angles relative to the pelvis so the update loop can drive it.
-    --
-    -- Semantics match the addon's ManipulateBoneAngles usage: each pose offset
-    -- rotates the bone around its OWN rest frame (worldAng = restAng * offset).
-    -- Positions propagate rigidly: every child keeps its rest offset from its
-    -- parent, reoriented by the child's new world angle - so the pose matches
-    -- whatever the same offsets do to NPCs in-game, and the limbs stay
-    -- connected instead of exploding.
-    function VNPC_PoseMatrixRagdoll(rag, prey)
-        -- capture rest geometry (bind pose, before any physics tick)
-        local rest = {}
-        for _, name in ipairs(MATRIX_POSE_ORDER) do
-            local po = matrixFindBonePhys(rag, name)
-            if po then
-                rest[name] = { po = po, pos = po:GetPos(), ang = po:GetAngles() }
-            end
-        end
-        local pelvis = rest["ValveBiped.Bip01_Pelvis"]
-        if not pelvis then return false end
-
-        -- Pose offsets: prefer the addon's proven in-game sitting keyframe
-        -- (childbirth pose = knees up, shins folded, arms wrapped), then the
-        -- measured "full belly" fixed pose, then identity.
-        local pose = VNPC_GetFixedBonePose and VNPC_GetFixedBonePose(prey)
-        local full = pose and pose[2] or nil
-        local function poseAng(name, fallback)
-            local kf = VNPC_ChildbirthSittingPoseKeyframe
-            if kf and kf[name] and kf[name].ang then return kf[name].ang end
-            if full and full[name] and full[name].ang then return full[name].ang end
-            return fallback
-        end
-
-        local pelvisAng = matrixAngleCompose(pelvis.ang, poseAng("ValveBiped.Bip01_Pelvis", Angle(0, 0, 0)))
-        pelvis.po:SetAngles(pelvisAng)
-        pelvis.po:SetPos(pelvis.pos)
-
-        local posed = { ["ValveBiped.Bip01_Pelvis"] = { pos = pelvis.pos, ang = pelvisAng } }
-        local bones = {
-            { phys = pelvis.po, lx = 0, ly = 0, lz = 0, localAng = Angle(0, 0, 0) }
-        }
-
-        for _, link in ipairs(MATRIX_FK) do
-            local parent = posed[link.parent]
-            local child = rest[link.name]
-            if parent and child then
-                local parentRest = rest[link.parent]
-                local newAng = matrixAngleCompose(child.ang, poseAng(link.name, Angle(0, 0, 0)))
-                -- rest offset of the child from its parent, in the child's rest frame
-                local restOffset = matrixWorldToLocal(child.ang, child.pos - (parentRest and parentRest.pos or parent.pos))
-                local newPos = parent.pos + matrixLocalToWorld(newAng, restOffset)
-                child.po:SetPos(newPos)
-                child.po:SetAngles(newAng)
-                posed[link.name] = { pos = newPos, ang = newAng }
-                -- store the offset in the pelvis-local frame (rotates around the
-                -- origin, so pass the position relative to the pelvis root)
-                local lp = matrixWorldToLocal(pelvisAng, newPos - pelvis.pos)
-                table.insert(bones, {
-                    phys = child.po,
-                    lx = lp.x,
-                    ly = lp.y,
-                    lz = lp.z,
-                    localAng = matrixAngleCompose(matrixAngleInverse(pelvisAng), newAng)
-                })
-            end
-        end
-
-        rag.VNPC_MatrixBones = bones
-        return true
-    end
-
-    function VNPC_CreateMatrixRagdoll(pred, prey, mass)
-        local enabled = GetConVar("vnpcs_belly_ragdoll_visual")
-        if enabled and not enabled:GetBool() then return nil end
-        local cap = GetConVar("vnpcs_belly_ragdoll_max")
-        local maxRags = cap and cap:GetInt() or 6
-        local phys = pred.VNPC_BellyPhysics
-        if not phys or not phys.matrix then return nil end
-        if table.Count(phys.matrix) >= maxRags then return nil end
-
-        local mdl = prey:GetModel()
-        if not isstring(mdl) or mdl == "" or not util.IsValidModel(mdl) then return nil end
-
-        local rag = ents.Create("prop_ragdoll")
-        if not IsValid(rag) then return nil end
-        rag:SetModel(mdl)
-        rag.VNPC_RagdollMatrix = true
-        rag.VNPC_MatrixOwner = prey
-        rag:SetPos(pred:GetPos())
-        rag:Spawn()
-        rag:Activate()
-        rag:SetCollisionGroup(COLLISION_GROUP_DEBRIS)
-        rag:SetSolid(SOLID_NONE)
-        -- Freeze every bone so the copy costs ~nothing and never fights the belly
-        for i = 0, rag:GetPhysicsObjectCount() - 1 do
-            local physObj = rag:GetPhysicsObject(i)
-            if IsValid(physObj) then
-                physObj:EnableMotion(false)
-                physObj:EnableCollisions(false)
-                physObj:Sleep()
-            end
-        end
-        -- Scale the copy to the prey's model scale
-        if rag.SetModelScale then
-            rag:SetModelScale(prey:GetModelScale() or 1)
-        end
-        -- Curl it into the swallowed pose; if the model has no usable pelvis
-        -- skeleton, drop the copy instead of leaving a standing ghost.
-        if not VNPC_PoseMatrixRagdoll(rag, prey) then
-            rag:Remove()
-            return nil
-        end
-        rag.VNPC_MatrixMass = mass
-        phys.matrix[prey:EntIndex()] = rag
-        return rag
-    end
-
-    -- Build masses from the belly's prey list and sync with ragdoll copies.
+    -- Build the mass list from the belly's prey list.
     local function rebuildPhysics(pred, belly, now)
         local phys = pred.VNPC_BellyPhysics
         if not phys then return end
@@ -565,71 +238,9 @@ if SERVER then
                 m.struggle = struggle
                 table.insert(newMasses, m)
 
-                -- Ragdoll matrix copies
-                if isMatrixCandidate(prey) then
-                    local rag = getMatrixRagdoll(pred, id)
-                    if not IsValid(rag) then
-                        rag = VNPC_CreateMatrixRagdoll(pred, prey, m)
-                    end
-                    if IsValid(rag) then
-                        rag.VNPC_MatrixMass = m
-                    end
-                else
-                    removeMatrixRagdoll(pred, id)
-                end
             end
         end
 
-        -- Remove masses and ragdolls for prey that left the belly
-        for _, m in ipairs(phys.masses) do
-            if not seen[m.id] then
-                removeMatrixRagdoll(pred, m.id)
-            end
-        end
-        phys.masses = newMasses
-    end
-
-    function VNPC_UpdateMatrixRagdolls(pred)
-        local phys = pred.VNPC_BellyPhysics
-        if not phys or not phys.matrix then return end
-        local now = CurTime()
-        for preyId, rag in pairs(phys.matrix) do
-            if not IsValid(rag) then
-                phys.matrix[preyId] = nil
-            else
-                local m = rag.VNPC_MatrixMass
-                if not m or not rag.VNPC_MatrixBones then
-                    phys.matrix[preyId] = nil
-                    rag:Remove()
-                else
-                    -- Base frame: the prey mass position in the predator's local
-                    -- space. The sim runs in pred-local axes (x right, y forward,
-                    -- z up), so the ragdoll ball rides exactly where the belly
-                    -- mesh bulges.
-                    local basePos = pred:LocalToWorld(Vector(m.x, m.y, m.z))
-                    local baseAng = pred:LocalToWorldAngles(Angle(0, 0, 0))
-
-                    -- Wobble so the curled copy feels alive while the prey struggles
-                    local wobble = 0
-                    if m.struggle and m.struggle > 0.3 then
-                        wobble = math.sin(now * 5.2 + preyId) * 0.6 * math.min(m.struggle, 1.5)
-                    end
-
-                    for i, bone in ipairs(rag.VNPC_MatrixBones) do
-                        if IsValid(bone.phys) then
-                            -- pelvis (i=1) anchors exactly on the mass point; limbs wobble
-                            local limbWob = (i > 1) and wobble * 0.4 * (1 - i / 24) or 0
-                            local worldPos = basePos
-                                + baseAng:Right() * (bone.lx + limbWob * 0.5)
-                                + baseAng:Forward() * bone.ly
-                                + baseAng:Up() * (bone.lz + limbWob * 0.3)
-                            bone.phys:SetPos(worldPos)
-                            bone.phys:SetAngles(matrixAngleCompose(baseAng, bone.localAng))
-                        end
-                    end
-                end
-            end
-        end
     end
 
     local function applyPredEffects(pred, phys, dt)
@@ -689,7 +300,6 @@ if SERVER then
 
             if not pred.VNPC_BellyPhysics then
                 pred.VNPC_BellyPhysics = VNPC_BellyPhysicsCreateState()
-                pred.VNPC_BellyPhysics.matrix = {}
             end
             local phys = pred.VNPC_BellyPhysics
             if (phys.nextThink or 0) > now then continue end
@@ -711,7 +321,6 @@ if SERVER then
                 VNPC_BellyPhysicsStep(phys, subDt, radii)
             end
 
-            VNPC_UpdateMatrixRagdolls(pred)
             applyPredEffects(pred, phys, subDt * 2)
 
             -- Replicate blobs for the client mesh every 0.2s
@@ -724,25 +333,6 @@ if SERVER then
         end
     end)
 
-    -- Cleanup when a predator dies or is removed
-    hook.Add("EntityRemoved", "VNPC_BellyPhysics_Cleanup", function(ent)
-        if not IsValid(ent) or not ent.VNPC_BellyPhysics or not ent.VNPC_BellyPhysics.matrix then return end
-        for _, rag in pairs(ent.VNPC_BellyPhysics.matrix) do
-            if IsValid(rag) then rag:Remove() end
-        end
-        ent.VNPC_BellyPhysics.matrix = {}
-    end)
-
-    -- Cleanup when a prey is regurgitated / removed (handled by rebuildPhysics
-    -- via the seen list, but also catch direct removals)
-    hook.Add("EntityRemoved", "VNPC_BellyPhysics_PreyCleanup", function(prey)
-        if not IsValid(prey) then return end
-        for _, pred in ipairs(ents.GetAll()) do
-            if IsValid(pred) and pred.VNPC_BellyPhysics and pred.VNPC_BellyPhysics.matrix then
-                removeMatrixRagdoll(pred, prey:EntIndex())
-            end
-        end
-    end)
 
     -- Headless self-test: run the pure integrator on synthetic masses.
     concommand.Add("vnpcs_belly_physics_sim", function(ply)
@@ -788,11 +378,10 @@ if SERVER then
 
     concommand.Add("vnpcs_belly_physics_status", function(ply)
         print("===============================================================")
-        print("        V-NPCs BELLY PHYSICS ENGINE (RAGDOLL MATRIX) STATUS    ")
+        print("        V-NPCs BELLY PHYSICS ENGINE STATUS                    ")
         print("===============================================================")
         print(" - Physics Enabled: " .. tostring(GetConVar("vnpcs_belly_physics_enabled"):GetBool()))
         print(" - Sim Rate: " .. tostring(GetConVar("vnpcs_belly_physics_rate"):GetInt()) .. " Hz")
-        print(" - Ragdoll Matrix Visuals: " .. tostring(GetConVar("vnpcs_belly_ragdoll_visual"):GetBool()) .. " (max " .. tostring(GetConVar("vnpcs_belly_ragdoll_max"):GetInt()) .. "/pred)")
         print(" - Weight Slow Master: " .. tostring(GetConVar("vnpcs_belly_weight_slow"):GetFloat()))
         print(" - Struggle Kicks: " .. tostring(GetConVar("vnpcs_belly_struggle_kick"):GetBool()))
         local count = 0
@@ -800,11 +389,10 @@ if SERVER then
             if IsValid(pred) and pred.VNPC_BellyPhysics and pred.VNPC_BellyPhysics.masses and #pred.VNPC_BellyPhysics.masses > 0 then
                 count = count + 1
                 local phys = pred.VNPC_BellyPhysics
-                local rags = table.Count(phys.matrix or {})
                 local slow = VNPC_GetBellyWeightSlow(pred)
-                print(string.format(" -> #%d [%s] masses=%d totalMass=%.1fkg com=%s slosh=%.1f ragdolls=%d slow=%.0f%%",
+                print(string.format(" -> #%d [%s] masses=%d totalMass=%.1fkg com=%s slosh=%.1f slow=%.0f%%",
                     pred:EntIndex(), pred.PrintName or pred:GetClass(), #phys.masses, phys.totalMass,
-                    tostring(phys.com), (phys.slosh or Vector(0,0,0)):Length(), rags, (1 - slow) * 100))
+                    tostring(phys.com), (phys.slosh or Vector(0,0,0)):Length(), (1 - slow) * 100))
             end
         end
         if count == 0 then print(" - No predators with simulated belly content.") end
@@ -834,6 +422,3 @@ if SERVER then
         ply:ChatPrint(string.format("[V-NPCs] Kicked the belly of %s (%d masses) - watch the mesh and listen for slosh!", tostring(target), #phys.masses))
     end)
 end
-
--- Note: belly_modules/mechanics.lua's ragdoll-removal safety hooks check for
--- ent.VNPC_RagdollMatrix and skip our matrix copies (see the edit there).

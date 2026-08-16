@@ -42,7 +42,7 @@ ConVars: `vnpcs_weight_paint_enabled`, `vnpcs_weight_paint_lumps`,
 Status: `vnpcs_weight_paint_status`; test: `vnpcs_test_paint_blob [w] [h] [d]`.
 Debug: `vnpcs_gpu_belly_debug 1` draws the blob cluster + center of mass.
 
-## 2. Full Physics-Driven Digestion (Ragdoll Matrix)
+## 2. Full Physics-Driven Digestion
 **Files:** `lua/autorun/server/vnpcs_belly_physics.lua` (new)
 
 Prey are no longer "an invisible inventory slot". A live mass-spring simulation
@@ -56,17 +56,8 @@ math, mirror-tested by `test_belly_physics_sim.py`):
   weight-painted mesh, the visual belly jiggle, and slosh sounds.
 - **Weight penalty:** a full belly slows the predator down
   (`VNPC_GetBellyWeightSlow`, integrated into DrGBase `GetAdjustedSpeeds`).
-- **Ragdoll matrix visuals:** frozen `prop_ragdoll` copies of swallowed NPCs
-  ride inside the belly (visible with the inside-camera). A prop_ragdoll's
-  bones are owned by its physics objects (entity parenting alone leaves it
-  frozen in the standing bind pose), so each copy is first curled into the
-  addon's proven in-game sitting keyframe (`VNPC_ChildbirthSittingPoseKeyframe`
-  — knees up, shins folded, arms wrapped) via rigid rest-geometry FK, then
-  every bone physics object is driven to its prey mass position each tick,
-  wobbling while the prey struggles.
 
 ConVars: `vnpcs_belly_physics_enabled`, `vnpcs_belly_physics_rate`,
-`vnpcs_belly_ragdoll_visual`, `vnpcs_belly_ragdoll_max`,
 `vnpcs_belly_weight_slow`, `vnpcs_belly_struggle_kick`.
 Status: `vnpcs_belly_physics_status`; tests: `vnpcs_belly_physics_sim`
 (headless 6-second sim), `vnpcs_test_belly_kick`.
