@@ -3,26 +3,63 @@ if not CLIENT then return end
 --[[
     V-NPC belly render-target texturing
 
-    Each rendered belly owns a non-networked clientside duplicate of its predator.
-    The duplicate is never simulated or drawn by the world.  It is copied into a
-    neutral T-pose and rendered manually into a private RT, so the belly material
-    samples the predator's live torso appearance instead of a hand-authored tint.
+    A belly samples its predator's live torso appearance instead of a
+    hand-authored tint. To do that the predator is duplicated into a hidden
+    clientside model, copied into a neutral T-pose and rendered into a render
+    target, which is then bound as the belly's material.
+
+    Resource ownership
+    ------------------
+    GetRenderTarget and CreateMaterial cache by name for the lifetime of the map
+    and there is no way to free either from Lua. Anything that allocates one per
+    entity therefore leaks permanently. This module instead uses:
+
+      * a FIXED pool of render targets with deterministic names, so the number of
+        RTs that can ever exist is bounded by (distinct sizes x max slot count)
+        rather than by how many NPCs have been spawned over the session;
+
+      * a cache keyed by the predator's *appearance signature*, so ten identical
+        NPCs share one texture and one capture instead of ten of each;
+
+      * a single shared clone entity reused across every capture, rather than one
+        hidden ClientsideModel per belly.
+
+    Slots are reclaimed by LRU. Work is entirely draw-driven: a belly that is not
+    being rendered costs nothing, because GetMaterial is only called from Draw.
 ]]
 
 VNPCS_BellyRT = VNPCS_BellyRT or {}
 
 local BellyRT = VNPCS_BellyRT
-local RT_SIZE = 512
-local CAPTURES_PER_FRAME = 1
+
+local cvarEnabled = CreateClientConVar("vnpcs_belly_rt", "1", true, false,
+    "Texture V-NPC bellies from the predator's own skin.")
+local cvarSlots = CreateClientConVar("vnpcs_belly_rt_slots", "8", true, false,
+    "How many belly render targets may exist at once. Distinct-looking predators beyond this share by least-recently-used.")
+local cvarSize = CreateClientConVar("vnpcs_belly_rt_size", "512", true, false,
+    "Belly render target resolution. 128, 256, 512 or 1024.")
+
+local MIN_SLOTS, MAX_SLOTS = 1, 32
+local ALLOWED_SIZES = {[128] = true, [256] = true, [512] = true, [1024] = true}
+local DEFAULT_SIZE = 512
+
+local CAPTURES_PER_FRAME = 2
 local SIGNATURE_POLL_RATE = 0.15
+local SWEEP_INTERVAL = 5
+local EVICT_GRACE = 0.05 -- never evict something drawn this frame
+
 local DUPLICATE_ORIGIN = Vector(0, 0, 0)
 local WHITE = Color(255, 255, 255, 255)
 local ZERO_ANGLE = Angle(0, 0, 0)
 local ONE_VECTOR = Vector(1, 1, 1)
 
-local states = {}
-local captureQueue = {}
-local nextUID = 0
+local pool = {}          -- array of { rt, material, key }
+local poolSize = 0       -- resolution the current pool was built at
+local cache = {}         -- signature -> entry { signature, slot, ready, lastUsed, predator }
+local bellyStates = {}   -- belly -> { signature, nextPoll, lastEntry }
+local captureQueue = {}  -- array of entries awaiting a capture
+local sharedClone
+local nextSweep = 0
 
 local torsoBones = {
     "ValveBiped.Bip01_Pelvis",
@@ -63,6 +100,8 @@ local function safeSet(ent, method, ...)
     if not IsValid(ent) or not ent[method] then return end
     pcall(ent[method], ent, ...)
 end
+
+--[[     APPEARANCE SIGNATURE     ]]
 
 local function getBodygroupSignature(ent)
     local parts = {}
@@ -117,6 +156,11 @@ local function getPlayerColorSignature(ent)
     return string.format("%.3f/%.3f/%.3f", playerColor.x or 0, playerColor.y or 0, playerColor.z or 0)
 end
 
+--[[
+    Two predators producing the same signature are visually indistinguishable
+    from the belly's point of view, so they can share a texture. This is what
+    turns "one RT per NPC" into "one RT per distinct look".
+]]
 local function buildSignature(predator)
     local color = predator:GetColor() or WHITE
 
@@ -135,6 +179,8 @@ local function buildSignature(predator)
         getPoseSignature(predator)
     }, "|")
 end
+
+--[[     CLONE     ]]
 
 local function copyBodygroups(src, dst)
     local count = src:GetNumBodyGroups() or 0
@@ -265,73 +311,146 @@ local function getTorsoTarget(ent)
     return center, mins, maxs
 end
 
-local function ensureDuplicate(state, predator)
-    if IsValid(state.clone) then return state.clone end
+--[[
+    One clone is reused for every capture. Captures are sequential (they all run
+    inside a single PostRender pass), so there is never a need for more than one,
+    and it means a belly no longer owns a hidden entity for its whole lifetime.
+]]
+local function ensureClone(model)
+    if not IsValid(sharedClone) then
+        sharedClone = ClientsideModel(model or "models/error.mdl", RENDERGROUP_OTHER)
+        if not IsValid(sharedClone) then return nil end
 
-    state.clone = ClientsideModel(predator:GetModel() or "models/error.mdl", RENDERGROUP_OTHER)
-    if not IsValid(state.clone) then return nil end
+        sharedClone:SetNoDraw(true)
+        safeSet(sharedClone, "SetPredictable", false)
+        sharedClone:SetSolid(SOLID_NONE)
+        sharedClone:SetMoveType(MOVETYPE_NONE)
+        sharedClone:DrawShadow(false)
+        safeSet(sharedClone, "SetLOD", 0)
+    end
 
-    state.clone:SetNoDraw(true)
-    safeSet(state.clone, "SetPredictable", false)
-    state.clone:SetSolid(SOLID_NONE)
-    state.clone:SetMoveType(MOVETYPE_NONE)
-    state.clone:DrawShadow(false)
-    safeSet(state.clone, "SetLOD", 0)
-
-    return state.clone
+    return sharedClone
 end
 
-local function createState(belly)
-    nextUID = nextUID + 1
+--[[     POOL     ]]
 
-    local rtName = "vnpcs_belly_rt_" .. belly:EntIndex() .. "_" .. nextUID
-    local matName = "vnpcs_belly_rt_mat_" .. belly:EntIndex() .. "_" .. nextUID
-    local rt = GetRenderTarget(rtName, RT_SIZE, RT_SIZE)
-    local mat = CreateMaterial(matName, "UnlitGeneric", {
-        ["$basetexture"] = rt:GetName(),
-        ["$ignorez"] = "0"
-    })
-    mat:SetTexture("$basetexture", rt)
-
-    local state = {
-        belly = belly,
-        rt = rt,
-        material = mat,
-        signature = nil,
-        nextPoll = 0,
-        queued = false,
-        ready = false
-    }
-
-    states[belly] = state
-    return state
+local function getConfiguredSize()
+    local size = math.floor(cvarSize:GetInt() or DEFAULT_SIZE)
+    if not ALLOWED_SIZES[size] then return DEFAULT_SIZE end
+    return size
 end
 
-local function queueCapture(state)
-    if state.queued then return end
-    state.queued = true
-    captureQueue[#captureQueue + 1] = state
+local function getConfiguredSlots()
+    return math.Clamp(math.floor(cvarSlots:GetInt() or 8), MIN_SLOTS, MAX_SLOTS)
 end
 
-local function pollState(state, predator)
-    local now = CurTime()
-    if state.nextPoll > now then return end
-    state.nextPoll = now + SIGNATURE_POLL_RATE
+local function clearCache()
+    cache = {}
+    captureQueue = {}
 
-    local signature = buildSignature(predator)
-    if signature ~= state.signature then
-        state.signature = signature
-        queueCapture(state)
+    for _, state in pairs(bellyStates) do
+        state.lastEntry = nil
     end
 end
 
-local function captureTorso(state, predator)
-    local clone = ensureDuplicate(state, predator)
+--[[
+    Slot names are deterministic (`vnpcs_belly_rt_<size>_<index>`), so the set of
+    render targets this addon can ever allocate is fixed and small. Rebuilding
+    the pool after a convar change reuses any name that already exists.
+]]
+local function ensurePool()
+    local size = getConfiguredSize()
+    local slots = getConfiguredSlots()
+
+    if poolSize == size and #pool == slots then return end
+
+    clearCache()
+
+    pool = {}
+    poolSize = size
+
+    for index = 1, slots do
+        local name = string.format("vnpcs_belly_rt_%d_%d", size, index)
+        local rt = GetRenderTarget(name, size, size)
+        local material = CreateMaterial(name .. "_mat", "UnlitGeneric", {
+            ["$basetexture"] = rt:GetName(),
+            ["$ignorez"] = "0",
+            ["$nolod"] = "1"
+        })
+        material:SetTexture("$basetexture", rt)
+
+        pool[index] = { rt = rt, material = material, key = nil }
+    end
+end
+
+local function releaseSlot(slot)
+    if slot.key then
+        cache[slot.key] = nil
+        slot.key = nil
+    end
+end
+
+local function acquireSlot(now)
+    for index = 1, #pool do
+        if not pool[index].key then return pool[index] end
+    end
+
+    -- everything is in use: evict the least recently drawn entry
+    local victim, victimTime
+    for _, entry in pairs(cache) do
+        if now - entry.lastUsed > EVICT_GRACE then
+            if not victimTime or entry.lastUsed < victimTime then
+                victim, victimTime = entry, entry.lastUsed
+            end
+        end
+    end
+
+    --[[
+        Every slot is in use by something drawn this very frame. Rather than
+        thrash (evict, recapture, evict again, every frame) the caller keeps its
+        previous texture, or falls back to the plain belly material. Bounded and
+        stable; the user can raise vnpcs_belly_rt_slots if they want more.
+    ]]
+    if not victim then
+        if not BellyRT._warnedExhausted then
+            BellyRT._warnedExhausted = true
+            MsgN(string.format(
+                "[V-NPCs] %d belly render target slots are all in use; extra predators will use their plain belly material. Raise vnpcs_belly_rt_slots to change this.",
+                #pool))
+        end
+
+        return nil
+    end
+
+    local slot = victim.slot
+    releaseSlot(slot)
+
+    return slot
+end
+
+local function entryIsLive(entry)
+    return entry ~= nil
+        and entry.ready
+        and cache[entry.signature] == entry
+        and entry.slot.key == entry.signature
+end
+
+local function queueCapture(entry)
+    if entry.queued then return end
+    entry.queued = true
+    captureQueue[#captureQueue + 1] = entry
+end
+
+--[[     CAPTURE     ]]
+
+local function captureTorso(entry, predator)
+    local clone = ensureClone(predator:GetModel())
     if not IsValid(clone) then return false end
 
     copyVisualState(predator, clone)
     forceTPose(clone)
 
+    local size = poolSize
     local target, mins, maxs = getTorsoTarget(clone)
     local height = math.max(maxs.z - mins.z, 32)
     local width = math.max(maxs.y - mins.y, 24)
@@ -340,13 +459,7 @@ local function captureTorso(state, predator)
     local camAng = (target - camPos):Angle()
     local fov = math.Clamp(32 + (width / height) * 10, 28, 46)
 
-    local oldX, oldY, oldW, oldH = 0, 0, ScrW(), ScrH()
-    if render.GetViewPort then
-        oldX, oldY, oldW, oldH = render.GetViewPort()
-    end
-
-    render.PushRenderTarget(state.rt)
-    render.SetViewPort(0, 0, RT_SIZE, RT_SIZE)
+    render.PushRenderTarget(entry.slot.rt, 0, 0, size, size)
     render.Clear(0, 0, 0, 255, true, true)
     render.ClearDepth()
 
@@ -362,7 +475,7 @@ local function captureTorso(state, predator)
     render.SetColorModulation(1, 1, 1)
     render.SetBlend(1)
 
-    cam.Start3D(camPos, camAng, fov, 0, 0, RT_SIZE, RT_SIZE, 1, distance + height * 2)
+    cam.Start3D(camPos, camAng, fov, 0, 0, size, size, 1, distance + height * 2)
         cam.IgnoreZ(false)
         clone:DrawModel()
     cam.End3D()
@@ -371,24 +484,15 @@ local function captureTorso(state, predator)
     render.SetColorModulation(1, 1, 1)
     render.SetBlend(1)
     if render.FogMode then render.FogMode(MATERIAL_FOG_LINEAR) end
-    render.SetViewPort(oldX or 0, oldY or 0, oldW or ScrW(), oldH or ScrH())
     render.PopRenderTarget()
 
-    state.material:SetTexture("$basetexture", state.rt)
-    state.ready = true
+    entry.slot.material:SetTexture("$basetexture", entry.slot.rt)
+    entry.ready = true
+
     return true
 end
 
-local function removeState(belly)
-    local state = states[belly]
-    if not state then return end
-
-    if IsValid(state.clone) then
-        state.clone:Remove()
-    end
-
-    states[belly] = nil
-end
+--[[     PUBLIC     ]]
 
 local function getPredatorForBelly(belly)
     local predator = belly.NPC
@@ -400,75 +504,161 @@ local function getPredatorForBelly(belly)
 end
 
 function BellyRT.GetMaterial(belly)
+    if not cvarEnabled:GetBool() then return nil end
     if not IsValid(belly) then return nil end
 
     local predator = getPredatorForBelly(belly)
     if not IsValid(predator) then return nil end
 
-    local state = states[belly] or createState(belly)
-    pollState(state, predator)
+    ensurePool()
 
-    if state.ready then
-        return state.material
+    local state = bellyStates[belly]
+    if not state then
+        state = { nextPoll = 0 }
+        bellyStates[belly] = state
+    end
+
+    local now = RealTime()
+
+    if state.nextPoll <= now then
+        state.nextPoll = now + SIGNATURE_POLL_RATE
+        state.signature = buildSignature(predator)
+    end
+
+    local signature = state.signature
+    if not signature then return nil end
+
+    local entry = cache[signature]
+
+    if not entry then
+        local slot = acquireSlot(now)
+
+        if slot then
+            slot.key = signature
+            entry = {
+                signature = signature,
+                slot = slot,
+                ready = false,
+                lastUsed = now,
+                predator = predator
+            }
+            cache[signature] = entry
+        end
+    end
+
+    if entry then
+        entry.lastUsed = now
+        entry.predator = predator
+
+        if entry.ready then
+            state.lastEntry = entry
+            return entry.slot.material
+        end
+
+        queueCapture(entry)
+    end
+
+    --[[
+        Not captured yet. Keep showing the last texture this belly displayed, as
+        long as its slot has not since been handed to a different look -- that
+        avoids an untextured flash every time the predator blinks and changes
+        its flex signature.
+    ]]
+    if entryIsLive(state.lastEntry) then
+        state.lastEntry.lastUsed = now
+        return state.lastEntry.slot.material
     end
 
     return nil
 end
 
 function BellyRT.MarkDirty(belly)
-    local state = states[belly]
-    if state then
-        state.signature = nil
-        state.nextPoll = 0
+    local state = bellyStates[belly]
+    if not state then return end
+
+    if state.signature then
+        local entry = cache[state.signature]
+        if entry then
+            entry.ready = false
+            queueCapture(entry)
+        end
+    end
+
+    state.nextPoll = 0
+end
+
+-- exposed for the console command below, and handy when profiling
+function BellyRT.GetStats()
+    local used, ready = 0, 0
+    for _, entry in pairs(cache) do
+        used = used + 1
+        if entry.ready then ready = ready + 1 end
+    end
+
+    local tracked = 0
+    for _ in pairs(bellyStates) do tracked = tracked + 1 end
+
+    return {
+        slots = #pool,
+        size = poolSize,
+        cached = used,
+        ready = ready,
+        queued = #captureQueue,
+        bellies = tracked,
+        clones = IsValid(sharedClone) and 1 or 0
+    }
+end
+
+--[[     HOOKS     ]]
+
+local function sweep(now)
+    if nextSweep > now then return end
+    nextSweep = now + SWEEP_INTERVAL
+
+    for belly in pairs(bellyStates) do
+        if not IsValid(belly) then
+            bellyStates[belly] = nil
+        end
     end
 end
 
-hook.Add("Think", "VNPCS_BellyRT_Update", function()
-    for belly, state in pairs(states) do
-        if not IsValid(belly) then
-            removeState(belly)
-        else
-            local predator = getPredatorForBelly(belly)
-            if IsValid(predator) then
-                pollState(state, predator)
-            end
-
-            -- Keep the off-screen duplicate frozen in a reference/T-pose even
-            -- between captures; it never participates in gameplay simulation.
-            if IsValid(state.clone) then
-                forceTPose(state.clone)
-            end
-        end
-    end
-end)
-
 hook.Add("PostRender", "VNPCS_BellyRT_Capture", function()
-    local captures = 0
-    local queueIndex = 1
+    local now = RealTime()
+    sweep(now)
 
-    while captureQueue[queueIndex] and captures < CAPTURES_PER_FRAME do
-        local state = table.remove(captureQueue, queueIndex)
-        if state then
-            state.queued = false
-            local belly = state.belly
-            local predator = IsValid(belly) and getPredatorForBelly(belly) or nil
-            if IsValid(belly) and IsValid(predator) then
-                captureTorso(state, predator)
-                captures = captures + 1
-            end
+    local captures = 0
+
+    while captures < CAPTURES_PER_FRAME do
+        local entry = table.remove(captureQueue, 1)
+        if not entry then break end
+
+        entry.queued = false
+
+        -- the entry may have been evicted while it sat in the queue
+        if cache[entry.signature] == entry and IsValid(entry.predator) then
+            captureTorso(entry, entry.predator)
+            captures = captures + 1
         end
     end
 end)
 
 hook.Add("EntityRemoved", "VNPCS_BellyRT_Cleanup", function(ent)
-    if states[ent] then
-        removeState(ent)
+    if bellyStates[ent] then
+        bellyStates[ent] = nil
         return
     end
 
-    for belly, state in pairs(states) do
-        if state and state.clone == ent then
-            states[belly] = nil
-        end
+    if ent == sharedClone then
+        sharedClone = nil
     end
 end)
+
+concommand.Add("vnpcs_belly_rt_stats", function()
+    local stats = BellyRT.GetStats()
+    MsgN("[V-NPCs] belly render targets")
+    MsgN(string.format("  pool        : %d slots @ %dx%d", stats.slots, stats.size, stats.size))
+    MsgN(string.format("  looks cached: %d (%d captured)", stats.cached, stats.ready))
+    MsgN(string.format("  queued      : %d", stats.queued))
+    MsgN(string.format("  bellies     : %d", stats.bellies))
+    MsgN(string.format("  clone ents  : %d", stats.clones))
+end, nil, "Print V-NPCs belly render target pool usage.")

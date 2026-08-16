@@ -3,8 +3,9 @@
 A prioritized review of the addon as of `1a66f74`. Tiers are ordered by
 "how much pain does this cause a player right now".
 
-**Status: Tier 0 is implemented.** Everything marked ✅ below has been fixed on
-this branch; Tier 1-3 are still open. See the commit for the diff.
+**Status: Tier 0 is implemented, plus the render-target leak (0.7).** Everything
+marked ✅ below has been fixed on this branch; Tier 1 and most of Tier 2-3 are
+still open. See the commits for the diffs.
 
 ---
 
@@ -146,7 +147,7 @@ Receive = function(self, len, ply)
 end
 ```
 
-### 0.7 ⬜ Render targets are allocated per belly and never reclaimed *(still open — moved to Tier 2 work)*
+### 0.7 ✅ Render targets are allocated per belly and never reclaimed
 `v_npcs/lua/autorun/client/vnpcs_belly_rt.lua:285`
 
 ```lua
@@ -164,6 +165,36 @@ them. Spawning and deleting 40 NPCs over a session permanently allocates 40
    `model+skin+bodygroups+material+color+flexes+pose`. Ten Loonas with identical
    appearance should share one texture. Key the cache on `buildSignature()`
    instead of on the belly entity — this collapses most servers to 2-3 RTs total.
+
+**Implemented**, both of the above plus two more:
+
+3. **Deterministic slot names.** RTs are now named
+   `vnpcs_belly_rt_<size>_<index>`, so the set of names the addon can ever ask
+   for is fixed. Previously the name embedded an ever-incrementing UID, so every
+   spawn asked the engine for a brand new one. Slots are reclaimed by LRU (an
+   entry drawn this frame is never evicted, so there is no capture thrash).
+4. **One shared clone.** Captures all run sequentially inside a single
+   `PostRender` pass, so a single reused `ClientsideModel` is enough — a belly no
+   longer owns a hidden entity for its whole lifetime.
+5. **Draw-driven work.** The per-frame `Think` hook is gone entirely.
+   `GetMaterial` is only called from `ENT:Draw`, so a belly that is not on screen
+   now costs literally nothing. This also removes the `forceTPose`-every-frame
+   problem listed in Tier 2.
+
+Simulated over a 2000-step spawn/remove session with ~6 distinct looks on screen:
+
+| | render targets | materials | clone entities | RT VRAM |
+|---|---|---|---|---|
+| before | 1237 (unbounded) | 1237 | 474 | ~1237 MB |
+| after | 8 | 8 | 1 | 8 MB |
+
+Ceiling after the change is `max slots (32) x distinct sizes (4) = 128` RTs even
+if a user cycles every convar, versus unbounded growth before.
+
+New convars: `vnpcs_belly_rt` (on/off), `vnpcs_belly_rt_slots` (default 8),
+`vnpcs_belly_rt_size` (128/256/512/1024). `vnpcs_belly_rt_stats` prints pool
+usage. When every slot is busy the extra bellies fall back to their plain
+material rather than thrashing, and say so once in console.
 
 ### 0.8 ✅ 10 NPCs error on spawn: `ENT.VoreSettings = {}` wipes the base defaults
 
@@ -279,13 +310,14 @@ Measured against a realistic scene (8 NPCs, 1 belly each).
 |---|---|---|
 | `ents.Iterator()` **every frame per NPC** for head-look | `npc_modules/client.lua:67` | `ents.FindInSphere(eyePos, max_dist)`, throttled to 4 Hz with a cached target |
 | `ents.FindInSphere(pos, 35)` **every think per NPC** for doors | `npc_modules/drgbase.lua:141` (the comment already says "THIS IS SCARY") | throttle to 0.25 s, and skip entirely unless moving |
-| `forceTPose(clone)` **every frame for every belly** — loops all bones, `InvalidateBoneCache` + `SetupBones` | `vnpcs_belly_rt.lua:439` | only pose the clone immediately before a capture; the clone is never drawn otherwise |
+| ~~`forceTPose(clone)` every frame for every belly~~ | `vnpcs_belly_rt.lua` | ✅ **done** — the Think hook is gone; the single shared clone is only posed immediately before a capture |
 | `util.TraceHull` per belly per frame for the floor clip fix | `belly_modules/animations.lua` | run at 10 Hz and interpolate the spring between samples; skip when the belly is small or off-screen |
 | 6 × `GetNW*` string lookups per belly per frame | `belly_modules/animations.lua:Think` | see 3.1 (`SetupDataTables`) |
 | `SetHull` loop over all players every `Think` | `lua/autorun/sh_belly_system.lua` | it already caches with `_SmoothBellyHullSize`, but the loop itself should be a per-player hook |
 
-Also: nothing checks visibility. Bellies keep running springs, traces, sound
-logic and RT captures while behind the player. Gate the expensive clientside work
+Also: nothing checks visibility. Bellies keep running springs, traces and sound
+logic while behind the player (RT captures are now draw-driven and no longer
+part of this). Gate the expensive clientside work
 on `belly:IsDormant()` / a PVS + frustum check.
 
 ---
@@ -392,9 +424,9 @@ gurgle playing until map change. Stop patches explicitly in `OnRemove`.
 
 1. ~~Per-instance tables, NULL-entity hook, player `:Remove()`, property
    validation, unified release path~~ — **done** (Tier 0).
-2. **Struggle-to-escape (1.1)** — the release plumbing from 0.5 is now in place,
+2. ~~RT pooling/sharing and the per-frame `forceTPose`~~ — **done** (0.7).
+3. **Struggle-to-escape (1.1)** — the release plumbing from 0.5 is now in place,
    so this is the natural next step and the biggest felt improvement.
-3. RT pooling/sharing and the per-frame `forceTPose` (0.7 + Tier 2).
 4. Digestion decoupled from `Entity:Health()` (1.2) and prey caps (1.3).
 5. `SetupDataTables` + centralized config + generated tool menu (3.1, 3.2).
 6. Presets/registration refactor for the NPC files (3.4), README (3.6).
