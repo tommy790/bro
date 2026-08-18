@@ -684,46 +684,8 @@ if CLIENT then
         end
     end
 
-    -- 6) Hide the belly entity visual when the GPU mesh is the live one.
-    hook.Add("Think", "VNPC_GPUBelly_HideEntity", function()
-        local now = CurTime()
-        if (VNPC_NextGPUHideThink or 0) > now then return end
-        VNPC_NextGPUHideThink = now + 0.25
-        local hideCv = GetConVar("vnpcs_gpu_belly_hide_entity")
-        local hullCv = GetConVar("vnpcs_gpu_belly_torso_hull")
-        local gpuCv = GetConVar("vnpcs_gpu_belly_enabled")
-        local meshCv = GetConVar("vnpcs_gpu_belly_mesh")
-        local hide = hideCv and hideCv:GetBool() and hullCv and hullCv:GetBool()
-        local gpu = (not gpuCv) or gpuCv:GetBool()
-        local meshOn = (not meshCv) or meshCv:GetBool()
-        for _, ent in ipairs(ents.FindByClass("npc_*")) do
-            if not IsValid(ent) then continue end
-            if ent.Vored or ent.VNPC_Vored then continue end
-            if not (ent.Predator or ent.VNPC_FemaleModelVore or ent.VNPC_Belly or ent.Belly or ent.IsDrGNextbot) then
-                continue
-            end
-            local belly = ent.VNPC_Belly or ent.Belly
-            if not IsValid(belly) and ent.GetNWEntity then
-                belly = ent:GetNWEntity("Belly")
-            end
-            if not IsValid(belly) then continue end
-            local chain = ent.VNPC_VirtualBellyBones
-            local live = chain and ((chain.size or 0) > 0.02 or (chain.pregSize or 0) > 0.04)
-            local gulp = (ent.GetNWInt and ent:GetNWInt("VNPC_GPUGulpN", 0) or 0) > 0
-            local should = hide and gpu and meshOn and (live or gulp)
-            if should then
-                if not belly.VNPC_GPUHidden then
-                    belly.VNPC_GPUHidden = true
-                    belly:SetNoDraw(true)
-                elseif not belly:GetNoDraw() then
-                    belly:SetNoDraw(true)
-                end
-            elseif belly.VNPC_GPUHidden then
-                belly.VNPC_GPUHidden = nil
-                belly:SetNoDraw(false)
-            end
-        end
-    end)
+    -- Classic belly hide is handled by VNPC_GPUBelly_HideClassicEntity in
+    -- sh_vnpc_gpu_belly.lua (no longer requires torso_hull to be on).
 end
 
 concommand.Add("vnpcs_test_gpu_fx", function(ply)

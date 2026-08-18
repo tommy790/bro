@@ -14,9 +14,11 @@ CreateConVar("vnpcs_gpu_belly_torso_hull", "0", {FCVAR_ARCHIVE, FCVAR_REPLICATED
 CreateConVar("vnpcs_gpu_belly_jiggle", "1", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Spring-damper jiggle on the GPU belly after kicks and movement")
 CreateConVar("vnpcs_gpu_belly_jiggle_amp", "1.0", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Amplitude multiplier for GPU belly jiggle")
 CreateConVar("vnpcs_gpu_belly_preg_shape", "1", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "High/round pregnancy belly vs low/heavy swallowed-prey belly")
-CreateConVar("vnpcs_gpu_belly_hide_entity", "0", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Hide the ent_vore_belly model when the GPU mesh is drawing. Keep off to use the real belly")
+CreateConVar("vnpcs_gpu_belly_hide_entity", "1", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Hide the classic ent_vore_belly model when the procedural GPU mesh is drawing")
 CreateConVar("vnpcs_gpu_belly_size_scale", "1.35", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Multiplier on procedural GPU belly half-extents from prey volume/shape")
 CreateConVar("vnpcs_gpu_belly_prefer_prey_mesh", "1", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Draw the procedural GPU belly mesh from prey shape even when ent_vore_belly exists")
+CreateConVar("vnpcs_gpu_belly_force_draw", "1", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Always draw the procedural GPU belly on full predators (not only when size is large)")
+CreateConVar("vnpcs_gpu_belly_min_size", "0.02", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Minimum live belly size before the GPU mesh is drawn (0 = always when prey present)")
 
 VNPC_GPU_BELLY_BONE_NAMES = {
     "VNPC_Belly_Root",
@@ -65,13 +67,63 @@ end
 local function isPredCandidate(ent)
     if not IsValid(ent) then return false end
     if ent.Vored or ent.VNPC_Vored then return false end
+    -- Server-side Lua flags (not always replicated to client).
     if ent.Predator or ent.VNPC_FemaleModelVore or ent.IsDrGNextbot or ent.VNPC_Belly or ent.Belly then
         return true
     end
+    -- Client-safe: NW belly entity is the reliable signal.
+    if ent.GetNWEntity then
+        local nwBelly = ent:GetNWEntity("Belly")
+        if IsValid(nwBelly) then return true end
+    end
     if ent:IsNPC() or ent:IsNextBot() then
-        return IsValid(ent.VNPC_Belly or ent.Belly) or (ent.GetNWEntity and IsValid(ent:GetNWEntity("Belly")))
+        if IsValid(ent.VNPC_Belly or ent.Belly) then return true end
+        local cls = string.lower(ent:GetClass() or "")
+        -- Dedicated V-NPC nextbots are registered as vnpcs_* / dtvore_*, not npc_*.
+        if cls:find("^vnpcs_") or cls:find("^dtvore_") or cls:find("vore") then
+            return true
+        end
     end
     return false
+end
+
+-- DrG nextbots use class names like "vnpcs_loona", not "npc_*".
+-- Female HL2 citizens are "npc_citizen". Enumerate both.
+-- Cache the list briefly so draw hooks are not O(ents) every frame.
+local _predCache, _predCacheT = {}, 0
+function VNPC_ForEachPredator(fn)
+    if not isfunction(fn) then return end
+    local now = CurTime()
+    if (_predCacheT or 0) + 0.35 < now then
+        local list, seen = {}, {}
+        local function visit(ent)
+            if not IsValid(ent) or seen[ent] then return end
+            if not isPredCandidate(ent) then return end
+            seen[ent] = true
+            list[#list + 1] = ent
+        end
+        for _, ent in ipairs(ents.FindByClass("npc_*")) do visit(ent) end
+        for _, ent in ipairs(ents.FindByClass("vnpcs_*")) do visit(ent) end
+        for _, ent in ipairs(ents.FindByClass("dtvore_*")) do visit(ent) end
+        -- Catch custom workshop nextbots / late-attached female preds (rare path).
+        if #list < 2 then
+            for _, ent in ipairs(ents.GetAll()) do
+                if IsValid(ent) and (ent.IsDrGNextbot or ent.VNPC_FemaleModelVore or ent.Predator) then
+                    visit(ent)
+                elseif IsValid(ent) and ent.GetNWEntity and IsValid(ent:GetNWEntity("Belly")) then
+                    visit(ent)
+                end
+            end
+        else
+            -- Still pick up non-npc DrG nextbots that aren't vnpcs_* named.
+            for _, ent in ipairs(ents.FindByClass("*nextbot*")) do visit(ent) end
+        end
+        _predCache, _predCacheT = list, now
+    end
+    for i = 1, #_predCache do
+        local ent = _predCache[i]
+        if IsValid(ent) then fn(ent) end
+    end
 end
 
 local function liveSize(ent)
@@ -754,8 +806,16 @@ function VNPC_ApplyGeneratedBellyBoneScale(ent, chain)
 end
 
 if CLIENT then
-    local LAT, LON = 11, 16
+    local LAT, LON = 12, 18
     local UNIT_VERTS, UNIT_TRIS
+    local CACHED_MAT = nil
+    local FALLBACK_MATS = {
+        "models/wormonlooker/belly/belly",
+        "models/wormonlooker/belly/belly_unshaded",
+        "models/flesh",
+        "models/debug/debugwhite",
+        "vnpcs/gpu_belly",
+    }
 
     local function buildUnitSphere()
         UNIT_VERTS = {}
@@ -765,11 +825,16 @@ if CLIENT then
             local sp, cp = math.sin(phi), math.cos(phi)
             for j = 0, LON - 1 do
                 local th = (j / LON) * math.pi * 2
-                -- local: x=right, y=forward, z=up; squash into a teardrop belly
+                -- local: x=right, y=forward, z=up; teardrop belly (fuller front/bottom)
                 local x, y, z = sp * math.cos(th), sp * math.sin(th), cp
                 local down = math.Clamp((-z + 0.15) * 0.55, 0, 1)
+                local front = math.Clamp(y, 0, 1)
                 table.insert(UNIT_VERTS, {
-                    pos = Vector(x * (0.92 + down * 0.22), y * (1.05 + down * 0.18), z * 0.88 - 0.08),
+                    pos = Vector(
+                        x * (0.95 + down * 0.28),
+                        y * (1.18 + down * 0.28 + front * 0.12),
+                        z * 0.90 - 0.10
+                    ),
                     nrm = Vector(x, y, z),
                     u = j / LON,
                     v = i / LAT
@@ -789,51 +854,102 @@ if CLIENT then
     end
 
     local function bellyMaterial(ent)
+        -- Prefer a reliable flesh/belly material. The custom VoreGPUDeformer
+        -- proxy on vnpcs/gpu_belly fails silently when the shader isn't loaded,
+        -- which made the mesh invisible on most clients.
+        if CACHED_MAT and not CACHED_MAT:IsError() then
+            return CACHED_MAT
+        end
+        -- Match predator skin tone from their own materials when possible.
         if IsValid(ent) and ent.GetMaterials then
             local mats = ent:GetMaterials()
             if istable(mats) then
                 for _, name in ipairs(mats) do
-                    if isstring(name) and name ~= "" and not name:find("eyeball") and not name:find("eye") then
+                    if not isstring(name) or name == "" then continue end
+                    local lower = string.lower(name)
+                    if lower:find("eyeball") or lower:find("eye") or lower:find("hair")
+                        or lower:find("lash") or lower:find("tear") then
+                        continue
+                    end
+                    if lower:find("skin") or lower:find("body") or lower:find("torso")
+                        or lower:find("flesh") or lower:find("face") then
                         local mat = Material(name)
                         if mat and not mat:IsError() then
+                            CACHED_MAT = mat
                             return mat
                         end
                     end
                 end
             end
         end
-        return Material("vnpcs/gpu_belly")
+        for _, path in ipairs(FALLBACK_MATS) do
+            local mat = Material(path)
+            if mat and not mat:IsError() then
+                CACHED_MAT = mat
+                return mat
+            end
+        end
+        return Material("models/debug/debugwhite")
+    end
+
+    local function shouldDrawGPUMesh(ent, chain)
+        if not chain or not chain.mid then return false end
+        local force = GetConVar("vnpcs_gpu_belly_force_draw")
+        local minCv = GetConVar("vnpcs_gpu_belly_min_size")
+        local minSize = minCv and minCv:GetFloat() or 0.02
+        local size = chain.size or 0
+        if size >= minSize then return true end
+        -- Prey present via NW paint blobs even if size is still ramping.
+        local blobN = (ent.GetNWInt and ent:GetNWInt("VNPC_PaintBlobN", 0)) or 0
+        if blobN > 0 then return true end
+        local belly = (VNPC_GetPredBelly and VNPC_GetPredBelly(ent)) or ent.VNPC_Belly or ent.Belly
+        if not IsValid(belly) and ent.GetNWEntity then
+            belly = ent:GetNWEntity("Belly")
+        end
+        if IsValid(belly) then
+            local bs = (belly.GetNWFloat and belly:GetNWFloat("BellySize", 0)) or 0
+            if bs >= minSize then return true end
+            if force and force:GetBool() and bs > 0.001 then return true end
+        end
+        if force and force:GetBool() and size > 0.001 then return true end
+        if chain.pregSize and chain.pregSize > 0.04 then return true end
+        return false
     end
 
     local function drawGeneratedBelly(ent, chain)
         if not UNIT_VERTS then buildUnitSphere() end
         local mid = chain.mid
-        if not mid then return end
-        local rx = chain.width * 0.5
-        local ry = chain.depth * 0.5
-        local rz = chain.height * 0.5
-        local right, fwd, up = chain.right, chain.forward, chain.up
+        if not mid or not mid.pos then return end
+        local right = chain.right or chain.rightDir
+        local fwd = chain.forward
+        local up = chain.up
+        if not isvector(right) or not isvector(fwd) or not isvector(up) then return end
+        if right:LengthSqr() < 0.01 or fwd:LengthSqr() < 0.01 or up:LengthSqr() < 0.01 then return end
+
+        local rx = math.max(6, (chain.width or (chain.radius or 12) * 2) * 0.5)
+        local ry = math.max(7, (chain.depth or (chain.radius or 12) * 2) * 0.5)
+        local rz = math.max(5, (chain.height or (chain.radius or 12) * 1.8) * 0.5)
+
         local spots = VNPC_GetGPUBellyStruggleSpots(ent, chain)
         local gulps = VNPC_GetGPUBellyGulpSpots(ent, chain)
         local mat = bellyMaterial(ent)
-        if mat and chain.mid then
-            mat:SetVector("$gore_center", mid.pos)
-            mat:SetFloat("$gore_radius", chain.radius or 8)
-            mat:SetFloat("$gore_intensity", math.Clamp((chain.size or 0) * 14, 0, 80))
-            for i = 1, 4 do
-                local spot = spots[i]
-                if spot and spot.world then
-                    mat:SetVector("$gore_spot" .. i, spot.world)
-                    mat:SetFloat("$gore_spotamp" .. i, spot.amp or 0)
-                    mat:SetFloat("$gore_spotradius" .. i, (spot.radius or 0.28) * (chain.radius or 8))
-                else
-                    mat:SetVector("$gore_spot" .. i, mid.pos)
-                    mat:SetFloat("$gore_spotamp" .. i, 0)
-                    mat:SetFloat("$gore_spotradius" .. i, 0)
-                end
-            end
+
+        -- Skin-tone tint from the classic belly entity color when available.
+        local col = Color(210, 160, 130, 255)
+        local liveBelly = (VNPC_GetPredBelly and VNPC_GetPredBelly(ent)) or ent.VNPC_Belly or ent.Belly
+        if not IsValid(liveBelly) and ent.GetNWEntity then
+            liveBelly = ent:GetNWEntity("Belly")
         end
+        if IsValid(liveBelly) and liveBelly.GetColor then
+            local c = liveBelly:GetColor()
+            if c then col = Color(c.r or 210, c.g or 160, c.b or 130, 255) end
+        end
+
+        render.SetBlend(1)
+        render.SetColorModulation(col.r / 255, col.g / 255, col.b / 255)
         render.SetMaterial(mat)
+        render.SuppressEngineLighting(false)
+
         mesh.Begin(MATERIAL_TRIANGLES, #UNIT_TRIS)
         for t = 1, #UNIT_TRIS do
             local tri = UNIT_TRIS[t]
@@ -841,25 +957,24 @@ if CLIENT then
                 local v = UNIT_VERTS[tri[k]]
                 local lp = v.pos
                 local world = mid.pos + right * (lp.x * rx) + fwd * (lp.y * ry) + up * (lp.z * rz)
-                -- pull the sides toward the generated L/R bones so the mesh is actually skinned
-                if chain.left and lp.x < -0.15 then
-                    world = LerpVector((-lp.x) * 0.35, world, chain.left.pos + fwd * (lp.y * ry * 0.4) + up * (lp.z * rz * 0.4))
-                elseif chain.right and lp.x > 0.15 then
-                    world = LerpVector(lp.x * 0.35, world, chain.right.pos + fwd * (lp.y * ry * 0.4) + up * (lp.z * rz * 0.4))
+                -- Skin toward generated L/R/upper/lower bones.
+                if chain.left and chain.left.pos and lp.x < -0.15 then
+                    world = LerpVector((-lp.x) * 0.40, world, chain.left.pos + fwd * (lp.y * ry * 0.4) + up * (lp.z * rz * 0.4))
+                elseif chain.right and chain.right.pos and lp.x > 0.15 then
+                    world = LerpVector(lp.x * 0.40, world, chain.right.pos + fwd * (lp.y * ry * 0.4) + up * (lp.z * rz * 0.4))
                 end
-                if chain.lower and lp.z < -0.2 then
-                    world = LerpVector((-lp.z) * 0.28, world, chain.lower.pos + fwd * (lp.y * ry * 0.25))
+                if chain.lower and chain.lower.pos and lp.z < -0.2 then
+                    world = LerpVector((-lp.z) * 0.32, world, chain.lower.pos + fwd * (lp.y * ry * 0.25))
                 end
-                if chain.upper and lp.z > 0.35 then
-                    world = LerpVector(lp.z * 0.18, world, chain.upper.pos)
+                if chain.upper and chain.upper.pos and lp.z > 0.35 then
+                    world = LerpVector(lp.z * 0.20, world, chain.upper.pos)
                 end
                 local nrm = (right * v.nrm.x + fwd * v.nrm.y + up * v.nrm.z)
-                nrm:Normalize()
+                if nrm:LengthSqr() < 0.001 then nrm = fwd else nrm:Normalize() end
                 local push = VNPC_ApplyGPUBellyStruggleDeform(lp, spots)
                 if push > 0 then
-                    world = world + nrm * (push * (chain.radius or 8))
+                    world = world + nrm * (push * (chain.radius or 12))
                 end
-                -- Metaball iso-surface deform (merged prey bulges) + field normals
                 chain._lastMetaNormal = nil
                 if VNPC_ApplyWeightPaintDeform then
                     local wd = VNPC_ApplyWeightPaintDeform(world, lp, ent, chain)
@@ -877,11 +992,12 @@ if CLIENT then
                 mesh.Position(world)
                 mesh.Normal(nrm)
                 mesh.TexCoord(0, v.u, v.v)
-                mesh.Color(255, 255, 255, 255)
+                mesh.Color(col.r, col.g, col.b, 255)
                 mesh.AdvanceVertex()
             end
         end
         mesh.End()
+        render.SetColorModulation(1, 1, 1)
     end
 
     local function drawGulpBulges(ent, chain)
@@ -922,60 +1038,122 @@ if CLIENT then
         end
     end
 
-    hook.Add("PreDrawOpaqueRenderables", "VNPC_GPUBelly_GenerateBones", function()
-        local enabled = GetConVar("vnpcs_gpu_belly_enabled")
-        if enabled and not enabled:GetBool() then return end
-        for _, ent in ipairs(ents.FindByClass("npc_*")) do
-            if isPredCandidate(ent) then
-                local chain = VNPC_UpdateVirtualBellyBones(ent)
-                if chain then
-                    VNPC_ApplyGeneratedBellyBoneScale(ent, chain)
+    local function updateAndDrawPred(ent)
+        if not isPredCandidate(ent) then return end
+        if ent:IsDormant() then return end
+        if ent.GetNoDraw and ent:GetNoDraw() then return end
+        local chain = VNPC_UpdateVirtualBellyBones(ent)
+        if not chain then return end
+        VNPC_ApplyGeneratedBellyBoneScale(ent, chain)
+
+        -- Optional torso-hull FX (off by default). Never blocks the main mesh.
+        if VNPC_DrawGPUBellyFX then
+            pcall(VNPC_DrawGPUBellyFX, ent, chain)
+        end
+
+        if shouldDrawGPUMesh(ent, chain) then
+            local preferGPU = true
+            local preferCv = GetConVar("vnpcs_gpu_belly_prefer_prey_mesh")
+            if preferCv then preferGPU = preferCv:GetBool() end
+            if preferGPU then
+                pcall(drawGeneratedBelly, ent, chain)
+            else
+                local liveBelly = (VNPC_GetPredBelly and VNPC_GetPredBelly(ent)) or ent.VNPC_Belly or ent.Belly
+                if not IsValid(liveBelly) and ent.GetNWEntity then
+                    liveBelly = ent:GetNWEntity("Belly")
+                end
+                if not IsValid(liveBelly) then
+                    pcall(drawGeneratedBelly, ent, chain)
                 end
             end
         end
+
+        if VNPC_DrawGPUGulpFX then
+            pcall(VNPC_DrawGPUGulpFX, ent, chain)
+        else
+            pcall(drawGulpBulges, ent, chain)
+        end
+    end
+
+    hook.Add("PreDrawOpaqueRenderables", "VNPC_GPUBelly_GenerateBones", function()
+        local enabled = GetConVar("vnpcs_gpu_belly_enabled")
+        if enabled and not enabled:GetBool() then return end
+        VNPC_ForEachPredator(function(ent)
+            local chain = VNPC_UpdateVirtualBellyBones(ent)
+            if chain then
+                VNPC_ApplyGeneratedBellyBoneScale(ent, chain)
+            end
+        end)
     end)
 
-    hook.Add("PostDrawOpaqueRenderables", "VNPC_GPUBelly_DrawMesh", function()
+    -- Draw in translucent pass so the belly sits over the character body cleanly
+    -- and is not depth-rejected by the torso.
+    hook.Add("PostDrawTranslucentRenderables", "VNPC_GPUBelly_DrawMesh", function()
         local enabled = GetConVar("vnpcs_gpu_belly_enabled")
         if enabled and not enabled:GetBool() then return end
         local meshOn = GetConVar("vnpcs_gpu_belly_mesh")
         if meshOn and not meshOn:GetBool() then return end
-        for _, ent in ipairs(ents.FindByClass("npc_*")) do
-            if not isPredCandidate(ent) then continue end
-            if ent:IsDormant() or (ent.GetNoDraw and ent:GetNoDraw()) then continue end
-            local chain = ent.VNPC_VirtualBellyBones or VNPC_UpdateVirtualBellyBones(ent)
-            if not chain then continue end
-            local usedFX = false
-            if VNPC_DrawGPUBellyFX then
-                local ok, res = pcall(VNPC_DrawGPUBellyFX, ent, chain)
-                usedFX = ok and res ~= false
-            end
-            if not usedFX and (chain.size or 0) >= 0.035 then
-                local liveBelly = (VNPC_GetPredBelly and VNPC_GetPredBelly(ent)) or ent.VNPC_Belly or ent.Belly
-                local preferGPU = true
-                local preferCv = GetConVar("vnpcs_gpu_belly_prefer_prey_mesh")
-                if preferCv then preferGPU = preferCv:GetBool() end
-                -- Draw procedural mesh from prey volume even when the classic
-                -- belly entity exists (unless prefer is off and a live belly is present).
-                if preferGPU or not IsValid(liveBelly) then
-                    pcall(drawGeneratedBelly, ent, chain)
+        VNPC_ForEachPredator(updateAndDrawPred)
+    end)
+
+    -- Opaque pass: primary lit draw (translucent pass below is a depth-safe backup).
+    hook.Add("PostDrawOpaqueRenderables", "VNPC_GPUBelly_DrawMeshOpaque", function()
+        local enabled = GetConVar("vnpcs_gpu_belly_enabled")
+        if enabled and not enabled:GetBool() then return end
+        local meshOn = GetConVar("vnpcs_gpu_belly_mesh")
+        if meshOn and not meshOn:GetBool() then return end
+        VNPC_ForEachPredator(updateAndDrawPred)
+    end)
+
+    -- Hide classic belly model when GPU mesh is the live visual.
+    hook.Add("Think", "VNPC_GPUBelly_HideClassicEntity", function()
+        local now = CurTime()
+        if (VNPC_NextGPUHideClassic or 0) > now then return end
+        VNPC_NextGPUHideClassic = now + 0.2
+        local hideCv = GetConVar("vnpcs_gpu_belly_hide_entity")
+        local meshCv = GetConVar("vnpcs_gpu_belly_mesh")
+        local gpuCv = GetConVar("vnpcs_gpu_belly_enabled")
+        local hide = (not hideCv) or hideCv:GetBool()
+        local meshOn = (not meshCv) or meshCv:GetBool()
+        local gpu = (not gpuCv) or gpuCv:GetBool()
+        if not (hide and meshOn and gpu) then
+            -- Restore any previously hidden classic bellies.
+            VNPC_ForEachPredator(function(ent)
+                local belly = ent.VNPC_Belly or ent.Belly or (ent.GetNWEntity and ent:GetNWEntity("Belly"))
+                if IsValid(belly) and belly.VNPC_GPUHidden then
+                    belly.VNPC_GPUHidden = nil
+                    belly:SetNoDraw(false)
                 end
-            end
-            if VNPC_DrawGPUGulpFX then
-                pcall(VNPC_DrawGPUGulpFX, ent, chain)
-            else
-                pcall(drawGulpBulges, ent, chain)
-            end
+            end)
+            return
         end
+        VNPC_ForEachPredator(function(ent)
+            local belly = ent.VNPC_Belly or ent.Belly
+            if not IsValid(belly) and ent.GetNWEntity then
+                belly = ent:GetNWEntity("Belly")
+            end
+            if not IsValid(belly) then return end
+            local chain = ent.VNPC_VirtualBellyBones
+            local draw = chain and shouldDrawGPUMesh(ent, chain)
+            if draw then
+                if not belly.VNPC_GPUHidden or not belly:GetNoDraw() then
+                    belly.VNPC_GPUHidden = true
+                    belly:SetNoDraw(true)
+                end
+            elseif belly.VNPC_GPUHidden then
+                belly.VNPC_GPUHidden = nil
+                belly:SetNoDraw(false)
+            end
+        end)
     end)
 
     hook.Add("PostDrawTranslucentRenderables", "VNPC_GPUBelly_Debug", function()
         local dbg = GetConVar("vnpcs_gpu_belly_debug")
         if not dbg or not dbg:GetBool() then return end
         render.SetColorMaterial()
-        for _, ent in ipairs(ents.FindByClass("npc_*")) do
-            local chain = IsValid(ent) and ent.VNPC_VirtualBellyBones or nil
-            if not chain then continue end
+        VNPC_ForEachPredator(function(ent)
+            local chain = IsValid(ent) and (ent.VNPC_VirtualBellyBones or VNPC_UpdateVirtualBellyBones(ent)) or nil
+            if not chain then return end
             local cols = {
                 VNPC_Belly_Root = Color(255, 255, 80),
                 VNPC_Belly_Mid = Color(255, 120, 220),
@@ -993,32 +1171,15 @@ if CLIENT then
             end
             if chain.root and chain.mid then
                 render.DrawLine(chain.root.pos, chain.mid.pos, Color(255, 200, 255), true)
-                render.DrawLine(chain.mid.pos, chain.upper.pos, Color(180, 220, 255), true)
-                render.DrawLine(chain.mid.pos, chain.lower.pos, Color(255, 180, 120), true)
-                render.DrawLine(chain.left.pos, chain.right.pos, Color(120, 255, 180), true)
-            end
-            local spots = VNPC_GetGPUBellyStruggleSpots(ent, chain)
-            for _, spot in ipairs(spots) do
-                if spot.world then
-                    local r = math.max(2.2, (spot.radius or 0.28) * (chain.radius or 8) * (0.45 + (spot.amp or 0)))
-                    render.DrawWireframeSphere(spot.world, r, 8, 8, Color(255, 80, 140, 200), true)
-                    render.DrawSphere(spot.world, 1.4 + (spot.amp or 0) * 3, 7, 7, Color(255, 60, 120, 220))
+                if chain.upper then render.DrawLine(chain.mid.pos, chain.upper.pos, Color(180, 220, 255), true) end
+                if chain.lower then render.DrawLine(chain.mid.pos, chain.lower.pos, Color(255, 180, 120), true) end
+                if chain.left and chain.right then
+                    render.DrawLine(chain.left.pos, chain.right.pos, Color(120, 255, 180), true)
                 end
+                -- Solid preview of the full belly volume.
+                render.DrawWireframeSphere(chain.mid.pos, chain.radius or 12, 14, 14, Color(255, 140, 200, 160), true)
             end
-            if chain.gulpNeck and chain.gulpChest then
-                render.DrawLine(chain.gulpNeck.pos, chain.gulpChest.pos, Color(255, 200, 80), true)
-                if chain.upper then
-                    render.DrawLine(chain.gulpChest.pos, chain.upper.pos, Color(255, 170, 60), true)
-                end
-            end
-            local gulps = VNPC_GetGPUBellyGulpSpots(ent, chain)
-            for _, spot in ipairs(gulps) do
-                if spot.world then
-                    render.DrawWireframeSphere(spot.world, spot.radius or 6, 9, 9, Color(255, 190, 70, 210), true)
-                    render.DrawSphere(spot.world, 1.8 + (spot.preyScale or 1) * 1.4, 7, 7, Color(255, 160, 40, 230))
-                end
-            end
-        end
+        end)
     end)
 end
 
@@ -1029,12 +1190,11 @@ if SERVER then
         VNPC_NextGPUStruggleSync = now + 0.2
         local enabled = GetConVar("vnpcs_gpu_belly_struggle")
         if enabled and not enabled:GetBool() then return end
-        for _, ent in ipairs(ents.FindByClass("npc_*")) do
-            if isPredCandidate(ent) then
-                VNPC_SyncGPUBellyStruggle(ent)
-                if VNPC_SyncGPUBellyGulp then VNPC_SyncGPUBellyGulp(ent) end
-            end
-        end
+        VNPC_ForEachPredator(function(ent)
+            VNPC_SyncGPUBellyStruggle(ent)
+            if VNPC_SyncGPUBellyGulp then VNPC_SyncGPUBellyGulp(ent) end
+            if VNPC_SyncPaintBlobNW then pcall(VNPC_SyncPaintBlobNW, ent) end
+        end)
     end)
     hook.Add("Think", "VNPC_GPUBelly_SyncGulp", function()
         local now = CurTime()
@@ -1042,11 +1202,9 @@ if SERVER then
         VNPC_NextGPUGulpSync = now + 0.1
         local enabled = GetConVar("vnpcs_gpu_belly_gulp")
         if enabled and not enabled:GetBool() then return end
-        for _, ent in ipairs(ents.FindByClass("npc_*")) do
-            if isPredCandidate(ent) then
-                VNPC_SyncGPUBellyGulp(ent)
-            end
-        end
+        VNPC_ForEachPredator(function(ent)
+            VNPC_SyncGPUBellyGulp(ent)
+        end)
     end)
 end
 
@@ -1098,33 +1256,34 @@ concommand.Add("vnpcs_gpu_belly_status", function(ply)
     print("===============================================================")
     print(" - Enabled: " .. tostring(GetConVar("vnpcs_gpu_belly_enabled"):GetBool()))
     print(" - GPU Mesh: " .. tostring(GetConVar("vnpcs_gpu_belly_mesh"):GetBool()))
+    print(" - Force Draw: " .. tostring(GetConVar("vnpcs_gpu_belly_force_draw"):GetBool()))
+    print(" - Prefer Prey Mesh: " .. tostring(GetConVar("vnpcs_gpu_belly_prefer_prey_mesh"):GetBool()))
+    print(" - Hide Classic Belly: " .. tostring(GetConVar("vnpcs_gpu_belly_hide_entity"):GetBool()))
     print(" - Bone Scale: " .. tostring(GetConVar("vnpcs_gpu_belly_bonescale"):GetBool()))
     print(" - Debug: " .. tostring(GetConVar("vnpcs_gpu_belly_debug"):GetBool()))
+    print(" - Size Scale: " .. tostring(GetConVar("vnpcs_gpu_belly_size_scale"):GetFloat()))
     print(" - Struggle Deform: " .. tostring(GetConVar("vnpcs_gpu_belly_struggle"):GetBool()) .. " amp=" .. tostring(GetConVar("vnpcs_gpu_belly_struggle_amp"):GetFloat()))
     print(" - Gulp Neck Deform: " .. tostring(GetConVar("vnpcs_gpu_belly_gulp"):GetBool()) .. " amp=" .. tostring(GetConVar("vnpcs_gpu_belly_gulp_amp"):GetFloat()))
-    print(" - Torso Hull: " .. tostring(GetConVar("vnpcs_gpu_belly_torso_hull"):GetBool()))
-    print(" - Jiggle: " .. tostring(GetConVar("vnpcs_gpu_belly_jiggle"):GetBool()) .. " amp=" .. tostring(GetConVar("vnpcs_gpu_belly_jiggle_amp"):GetFloat()))
-    print(" - Preg/Prey Shape: " .. tostring(GetConVar("vnpcs_gpu_belly_preg_shape"):GetBool()))
-    print(" - Hide Belly Entity: " .. tostring(GetConVar("vnpcs_gpu_belly_hide_entity"):GetBool()))
     print("-----------------------------------------")
     local count = 0
-    for _, ent in ipairs(ents.FindByClass("npc_*")) do
-        if isPredCandidate(ent) then
-            local chain = VNPC_UpdateVirtualBellyBones(ent)
-            if chain then
-                count = count + 1
-                local preyN = (ent.GetNWInt and ent:GetNWInt("VNPC_GPUStruggleN", 0)) or 0
-                local gulpN = (ent.GetNWInt and ent:GetNWInt("VNPC_GPUGulpN", 0)) or 0
-                print(string.format(" -> #%d [%s] size=%.3f radius=%.1f W/H %.1f/%.1f modelBellyBones=%s strugglePrey=%d spots=%d gulp=%d",
-                    ent:EntIndex(), ent.PrintName or ent:GetClass(), chain.size, chain.radius,
-                    chain.width, chain.height, tostring(chain.hasModelBellyBones), preyN, preyN * 4, gulpN))
-            end
+    VNPC_ForEachPredator(function(ent)
+        local chain = VNPC_UpdateVirtualBellyBones(ent)
+        if chain then
+            count = count + 1
+            local preyN = (ent.GetNWInt and ent:GetNWInt("VNPC_GPUStruggleN", 0)) or 0
+            local gulpN = (ent.GetNWInt and ent:GetNWInt("VNPC_GPUGulpN", 0)) or 0
+            local blobN = (ent.GetNWInt and ent:GetNWInt("VNPC_PaintBlobN", 0)) or 0
+            print(string.format(" -> #%d [%s] cls=%s size=%.3f r=%.1f W/D/H %.1f/%.1f/%.1f blobs=%d gulp=%d",
+                ent:EntIndex(), ent.PrintName or "?", ent:GetClass(),
+                chain.size or 0, chain.radius or 0,
+                chain.width or 0, chain.depth or 0, chain.height or 0,
+                blobN, gulpN))
         end
-    end
+    end)
     print("Generated belly skeletons: " .. count)
     print("===============================================================")
     if IsValid(ply) then
-        ply:ChatPrint("[V-NPCs] GPU belly bone status printed to console. Generated: " .. count)
+        ply:ChatPrint("[V-NPCs] GPU belly status printed. Predators with chain: " .. count)
     end
 end)
 

@@ -78,40 +78,52 @@ hook.Add("PreDrawOpaqueRenderables", "VNPCS_GPU_Vore_UpdateUniforms", function()
     end
 
     if not IsValid(activePredator) then
-        -- Find closest active predator in view
+        -- Find closest active predator in view (npc_* + vnpcs_* DrG nextbots)
         local eyePos = EyePos()
         local minDist = 4000000 -- 2000^2
-        for _, npc in ipairs(ents.FindByClass("npc_*")) do
-            if IsValid(npc) and (npc.Predator or npc.VNPC_FemaleModelVore or npc.VNPC_Belly) then
-                local d = eyePos:DistToSqr(npc:GetPos())
-                if d < minDist then
-                    minDist = d
-                    activePredator = npc
-                end
+        local function consider(npc)
+            if not IsValid(npc) then return end
+            local hasBelly = npc.Predator or npc.VNPC_FemaleModelVore or npc.VNPC_Belly or npc.Belly
+                or npc.IsDrGNextbot
+                or (npc.GetNWEntity and IsValid(npc:GetNWEntity("Belly")))
+            if not hasBelly then return end
+            local d = eyePos:DistToSqr(npc:GetPos())
+            if d < minDist then
+                minDist = d
+                activePredator = npc
             end
         end
+        for _, npc in ipairs(ents.FindByClass("npc_*")) do consider(npc) end
+        for _, npc in ipairs(ents.FindByClass("vnpcs_*")) do consider(npc) end
+        for _, npc in ipairs(ents.FindByClass("dtvore_*")) do consider(npc) end
     end
 
     g_ActivePredator = activePredator
     g_UpdatedMaterialsCount = 0
 
-    -- Bind generated-bone uniforms on every nearby pred, not only the closest.
-    for _, npc in ipairs(ents.FindByClass("npc_*")) do
-        if IsValid(npc) and (npc.Predator or npc.VNPC_FemaleModelVore or npc.VNPC_Belly or npc.Belly) then
-            local c, r, i = GetPredatorBellyData(npc)
-            if c and (i or 0) > 0 then
-                for _, matName in ipairs(npc:GetMaterials() or {}) do
-                    local mat = Material(matName)
-                    if mat and not mat:IsError() then
-                        mat:SetVector("$gore_center", c)
-                        mat:SetFloat("$gore_radius", r)
-                        mat:SetFloat("$gore_intensity", i)
-                        g_UpdatedMaterialsCount = g_UpdatedMaterialsCount + 1
-                    end
+    -- Bind generated-bone uniforms on every nearby pred (npc_* + vnpcs_*).
+    local function bindPred(npc)
+        if not IsValid(npc) then return end
+        local hasBelly = npc.Predator or npc.VNPC_FemaleModelVore or npc.VNPC_Belly or npc.Belly
+            or npc.IsDrGNextbot
+            or (npc.GetNWEntity and IsValid(npc:GetNWEntity("Belly")))
+        if not hasBelly then return end
+        local c, r, i = GetPredatorBellyData(npc)
+        if c and (i or 0) > 0 and npc.GetMaterials then
+            for _, matName in ipairs(npc:GetMaterials() or {}) do
+                local mat = Material(matName)
+                if mat and not mat:IsError() then
+                    pcall(mat.SetVector, mat, "$gore_center", c)
+                    pcall(mat.SetFloat, mat, "$gore_radius", r)
+                    pcall(mat.SetFloat, mat, "$gore_intensity", i)
+                    g_UpdatedMaterialsCount = g_UpdatedMaterialsCount + 1
                 end
             end
         end
     end
+    for _, npc in ipairs(ents.FindByClass("npc_*")) do bindPred(npc) end
+    for _, npc in ipairs(ents.FindByClass("vnpcs_*")) do bindPred(npc) end
+    for _, npc in ipairs(ents.FindByClass("dtvore_*")) do bindPred(npc) end
 
     if IsValid(activePredator) then
         local center, radius, intensity = GetPredatorBellyData(activePredator)
