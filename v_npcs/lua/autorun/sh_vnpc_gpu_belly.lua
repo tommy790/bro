@@ -15,7 +15,7 @@ CreateConVar("vnpcs_gpu_belly_jiggle", "1", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "
 CreateConVar("vnpcs_gpu_belly_jiggle_amp", "1.0", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Amplitude multiplier for GPU belly jiggle")
 CreateConVar("vnpcs_gpu_belly_preg_shape", "1", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "High/round pregnancy belly vs low/heavy swallowed-prey belly")
 CreateConVar("vnpcs_gpu_belly_hide_entity", "0", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Hide the ent_vore_belly model when the GPU mesh is drawing. Keep off to use the real belly")
-CreateConVar("vnpcs_gpu_belly_size_scale", "1.15", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Multiplier on procedural GPU belly half-extents from prey volume/shape")
+CreateConVar("vnpcs_gpu_belly_size_scale", "1.35", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Multiplier on procedural GPU belly half-extents from prey volume/shape")
 CreateConVar("vnpcs_gpu_belly_prefer_prey_mesh", "1", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Draw the procedural GPU belly mesh from prey shape even when ent_vore_belly exists")
 
 VNPC_GPU_BELLY_BONE_NAMES = {
@@ -179,10 +179,10 @@ function VNPC_UpdateVirtualBellyBones(ent)
 
     local mdlScale = (ent.GetModelScale and ent:GetModelScale()) or 1
     local size = liveSize(ent)
-    local sizeMul = 1.15
+    local sizeMul = 1.35
     local sizeMulCv = GetConVar("vnpcs_gpu_belly_size_scale")
-    if sizeMulCv then sizeMul = math.max(0.25, sizeMulCv:GetFloat() or 1.15) end
-    local radius = math.max(5.5, 18 * math.max(size, 0.12) * math.max(mdlScale, 0.25) * sizeMul)
+    if sizeMulCv then sizeMul = math.max(0.25, sizeMulCv:GetFloat() or 1.35) end
+    local radius = math.max(6.5, 18 * math.max(size, 0.15) * math.max(mdlScale, 0.25) * sizeMul)
     if size < 0.05 and not ent.VNPC_IsPregnant then
         -- Resting abdomen only when truly empty — not a hard cap while prey is present.
         local hasPrey = false

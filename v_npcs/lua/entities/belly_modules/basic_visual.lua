@@ -89,8 +89,8 @@ function ENT:GetProceduralBellySizeFromPrey()
     end
 
     if best <= 0 then return nil end
-    -- One adult human curled in the gut should read around size 1.1–1.6, not 0.3.
-    return math.Clamp(best * 1.35, 0.08, 6.5)
+    -- One adult human curled in the gut should read around size 1.2–2.0, not 0.3.
+    return math.Clamp(best * 1.85, 0.12, 7.5)
 end
 
 function ENT:GetBellySize() --this gets the scale of all the stuff in the stomach

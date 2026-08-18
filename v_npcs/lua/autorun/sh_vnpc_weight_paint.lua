@@ -40,8 +40,8 @@ function VNPC_GetPreyShapeBlob(prey)
     end
     if not isnumber(scale) or scale <= 0 then scale = 1 end
 
-    local rx, ry, rz = 7.5 * scale, 9.0 * scale, 6.5 * scale
-    local headR, limbR = 3.2 * scale, 2.4 * scale
+    local rx, ry, rz = 10.5 * scale, 12.0 * scale, 9.0 * scale
+    local headR, limbR = 4.0 * scale, 3.2 * scale
     if VNPC_MeasureBodyParts then
         local parts = VNPC_MeasureBodyParts(prey)
         if parts then
@@ -50,17 +50,33 @@ function VNPC_GetPreyShapeBlob(prey)
             local head = parts.head
             local arm = parts.arm
             local leg = parts.leg
-            -- Curled mass: torso cross-section dominates; length is compressed.
-            rx = math.max(torso and torso.width or 14, pelvis and pelvis.width or 12, head and head.width or 7.2) * 0.48 * scale
-            ry = math.max((torso and torso.length or 20) * 0.26, (leg and leg.length or 30) * 0.18, (arm and arm.length or 23) * 0.18) * scale
-            rz = math.max((torso and torso.height or 16) * 0.38, (head and head.height or 8.5) * 0.48) * scale
-            headR = math.max((head and head.width or 7.2) * 0.38, 2.4) * scale
-            limbR = math.max((arm and arm.length or 20) * 0.08, 1.8) * scale
+            -- Curled mass in the gut: still compressed along body length, but
+            -- shoulder/hip width must stay large enough that one adult reads as
+            -- a full belly (not a fist-sized lump).
+            rx = math.max(torso and torso.width or 14, pelvis and pelvis.width or 12, head and head.width or 7.2) * 0.62 * scale
+            ry = math.max((torso and torso.length or 20) * 0.38, (leg and leg.length or 30) * 0.24, (arm and arm.length or 23) * 0.22) * scale
+            rz = math.max((torso and torso.height or 16) * 0.52, (head and head.height or 8.5) * 0.55) * scale
+            headR = math.max((head and head.width or 7.2) * 0.45, 3.0) * scale
+            limbR = math.max((arm and arm.length or 20) * 0.10, 2.2) * scale
         end
     end
-    rx = math.Clamp(rx, 3.2, 48)
-    ry = math.Clamp(ry, 3.2, 55)
-    rz = math.Clamp(rz, 2.8, 45)
+    -- Prefer full model half-extents when larger (props / big nextbots).
+    if prey.GetModelBounds then
+        local ok, mins, maxs = pcall(prey.GetModelBounds, prey)
+        if ok and isvector(mins) and isvector(maxs) then
+            local half = (maxs - mins) * 0.5 * scale
+            -- Curl compresses height into a ball; width/depth stay closer to real.
+            local curlW = math.max(math.abs(half.x), math.abs(half.y)) * 0.55
+            local curlD = math.max(math.abs(half.x), math.abs(half.y)) * 0.48
+            local curlH = math.abs(half.z) * 0.28
+            rx = math.max(rx, curlW)
+            ry = math.max(ry, curlD)
+            rz = math.max(rz, curlH)
+        end
+    end
+    rx = math.Clamp(rx, 4.5, 56)
+    ry = math.Clamp(ry, 4.5, 62)
+    rz = math.Clamp(rz, 3.8, 50)
     headR = math.Clamp(headR, 2.0, 14)
     limbR = math.Clamp(limbR, 1.5, 10)
 
@@ -406,27 +422,27 @@ function VNPC_GetBellyDeformMetrics(pred)
     local volR = 0
     local volOn = GetConVar("vnpcs_weight_paint_volume")
     if not volOn or volOn:GetBool() then
-        -- reference: ~45 mass ≈ radius ~11 (one adult human curled meal)
-        volR = math.max(7.5, (totalMass ^ (1 / 3)) * 3.05)
+        -- reference: ~55 mass ≈ radius ~16 (one adult human = full mid-belly)
+        volR = math.max(10.0, (totalMass ^ (1 / 3)) * 4.15)
         -- also respect packed volume so elongated meals aren't crushed to a sphere
-        local packVolR = (totalVol > 0) and ((totalVol) ^ (1 / 3)) * 1.55 or 0
+        local packVolR = (totalVol > 0) and ((totalVol) ^ (1 / 3)) * 1.85 or 0
         volR = math.max(volR, packVolR)
     end
 
     -- Blend: extent-driven axes keep elongation; volume floor prevents underfill.
     -- Single full-size prey should fill a substantial belly, not a tiny bump.
-    local rx = math.max(boxRx * 1.08, volR * 0.82)
-    local ry = math.max(boxRy * 1.10, volR * 0.90)
-    local rz = math.max(boxRz * 1.05, volR * 0.75)
+    local rx = math.max(boxRx * 1.18, volR * 0.92)
+    local ry = math.max(boxRy * 1.22, volR * 1.00)
+    local rz = math.max(boxRz * 1.12, volR * 0.85)
     if #blobs >= 1 then
         -- Always honour the largest torso blob so measured prey drives size.
         local best = blobs[1]
         for _, b in ipairs(blobs) do
             if (b.rx * b.ry * b.rz) > (best.rx * best.ry * best.rz) then best = b end
         end
-        rx = math.max(rx, best.rx * 1.15)
-        ry = math.max(ry, best.ry * 1.20)
-        rz = math.max(rz, best.rz * 1.10)
+        rx = math.max(rx, best.rx * 1.45)
+        ry = math.max(ry, best.ry * 1.55)
+        rz = math.max(rz, best.rz * 1.35)
     end
 
     -- Gravity sag: drop COM and slightly squash height / stretch depth with mass
