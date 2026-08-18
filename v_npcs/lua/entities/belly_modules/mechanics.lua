@@ -946,8 +946,12 @@ function ENT:GetCollectivePreyValue() --: number
     for _, prey in ipairs(self.Prey) do
         local value = prey.Value or 0
         local ent = prey.Entity
+        -- While the oral swallow animation runs, keep a solid fraction of the
+        -- value so the belly grows with the meal instead of staying near-zero
+        -- until the last frame of a 5s calm swallow.
         if IsValid(ent) and ent.VNPC_IsBeingSwallowed and ent.VNPC_IngestionDepth then
-            value = value * math.Clamp(ent.VNPC_IngestionDepth, 0, 1)
+            local depth = math.Clamp(ent.VNPC_IngestionDepth, 0, 1)
+            value = value * math.Clamp(0.40 + depth * 0.60, 0.40, 1)
         end
         total = total + value
     end

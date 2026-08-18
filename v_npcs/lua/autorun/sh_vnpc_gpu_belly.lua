@@ -15,6 +15,8 @@ CreateConVar("vnpcs_gpu_belly_jiggle", "1", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "
 CreateConVar("vnpcs_gpu_belly_jiggle_amp", "1.0", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Amplitude multiplier for GPU belly jiggle")
 CreateConVar("vnpcs_gpu_belly_preg_shape", "1", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "High/round pregnancy belly vs low/heavy swallowed-prey belly")
 CreateConVar("vnpcs_gpu_belly_hide_entity", "0", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Hide the ent_vore_belly model when the GPU mesh is drawing. Keep off to use the real belly")
+CreateConVar("vnpcs_gpu_belly_size_scale", "1.15", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Multiplier on procedural GPU belly half-extents from prey volume/shape")
+CreateConVar("vnpcs_gpu_belly_prefer_prey_mesh", "1", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Draw the procedural GPU belly mesh from prey shape even when ent_vore_belly exists")
 
 VNPC_GPU_BELLY_BONE_NAMES = {
     "VNPC_Belly_Root",
@@ -83,10 +85,37 @@ local function liveSize(ent)
     end
     local fromPreg = pregR / 18
     if fromPreg > scale then scale = fromPreg end
+
+    -- Prefer measured / packed prey volume so GPU size is procedural, not stuck
+    -- on the old compressed value curve.
+    if VNPC_GetBellyDeformMetrics then
+        local m = VNPC_GetBellyDeformMetrics(ent)
+        if m then
+            local meanHalf = ((m.rx or 0) + (m.ry or 0) + (m.rz or 0)) / 3
+            if meanHalf > 0 then
+                scale = math.max(scale, meanHalf / 18)
+            end
+            if m.volRadius and m.volRadius > 0 then
+                scale = math.max(scale, m.volRadius / 18)
+            end
+            if m.totalMass and m.totalMass > 0 then
+                -- Cube-root mass → radius, same family as weight-paint volume floor.
+                local massR = (m.totalMass ^ (1 / 3)) * 2.55
+                scale = math.max(scale, massR / 18)
+            end
+        end
+    end
+
     if ent.GetNWFloat then
         local boneScale = (ent:GetNWFloat("Bonescale", 1) or 1) - 1
         if boneScale > 0 then
             scale = math.max(scale, boneScale * 0.35)
+        end
+        -- Networked belly half extents (server paint sync)
+        local half = ent:GetNWVector("VNPC_BellyHalf", vector_origin)
+        if isvector(half) and half:LengthSqr() > 1 then
+            local mean = (half.x + half.y + half.z) / 3
+            scale = math.max(scale, mean / 18)
         end
     end
     return math.max(0, scale)
@@ -150,13 +179,22 @@ function VNPC_UpdateVirtualBellyBones(ent)
 
     local mdlScale = (ent.GetModelScale and ent:GetModelScale()) or 1
     local size = liveSize(ent)
-    local radius = math.max(4.5, 18 * math.max(size, 0.08) * math.max(mdlScale, 0.25))
-    if size < 0.02 and not ent.VNPC_IsPregnant then
-        radius = math.max(4.5, (ent.VNPC_BodyParts and ent.VNPC_BodyParts.torso and ent.VNPC_BodyParts.torso.width or 14) * 0.28)
+    local sizeMul = 1.15
+    local sizeMulCv = GetConVar("vnpcs_gpu_belly_size_scale")
+    if sizeMulCv then sizeMul = math.max(0.25, sizeMulCv:GetFloat() or 1.15) end
+    local radius = math.max(5.5, 18 * math.max(size, 0.12) * math.max(mdlScale, 0.25) * sizeMul)
+    if size < 0.05 and not ent.VNPC_IsPregnant then
+        -- Resting abdomen only when truly empty — not a hard cap while prey is present.
+        local hasPrey = false
+        local belly = ent.VNPC_Belly or ent.Belly
+        if IsValid(belly) and istable(belly.Prey) and #belly.Prey > 0 then hasPrey = true end
+        if not hasPrey then
+            radius = math.max(4.5, (ent.VNPC_BodyParts and ent.VNPC_BodyParts.torso and ent.VNPC_BodyParts.torso.width or 14) * 0.28)
+        end
     end
 
     -- Metaball / weight-paint metrics: per-axis half extents (not max-of-box),
-    -- volume floor, and gravity sag via COM shift.
+    -- volume floor, and gravity sag via COM shift. Prey geometry drives size.
     local blobMetrics = nil
     if VNPC_GetBellyDeformMetrics then
         blobMetrics = VNPC_GetBellyDeformMetrics(ent)
@@ -165,17 +203,28 @@ function VNPC_UpdateVirtualBellyBones(ent)
     local halfW, halfD, halfH = radius, radius, radius
     if blobMetrics then
         -- Keep elongation: use each axis independently instead of max(rx,ry,rz).
-        halfW = math.max(radius * 0.72, (blobMetrics.rx or radius) * 1.02)
-        halfD = math.max(radius * 0.78, (blobMetrics.ry or radius) * 1.05)
-        halfH = math.max(radius * 0.68, (blobMetrics.rz or radius) * 0.98)
+        -- sizeMul scales the whole procedural field so one adult human reads large.
+        local sm = sizeMul
+        halfW = math.max(radius * 0.55, (blobMetrics.rx or radius) * 1.15 * sm)
+        halfD = math.max(radius * 0.60, (blobMetrics.ry or radius) * 1.20 * sm)
+        halfH = math.max(radius * 0.50, (blobMetrics.rz or radius) * 1.10 * sm)
         -- Volume-correct floor so more mass = bigger belly even if tightly packed
         if blobMetrics.volRadius and blobMetrics.volRadius > 0 then
-            local vr = blobMetrics.volRadius
-            halfW = math.max(halfW, vr * 0.70)
-            halfD = math.max(halfD, vr * 0.76)
-            halfH = math.max(halfH, vr * 0.62)
+            local vr = blobMetrics.volRadius * sm
+            halfW = math.max(halfW, vr * 0.85)
+            halfD = math.max(halfD, vr * 0.92)
+            halfH = math.max(halfH, vr * 0.78)
+        end
+        -- Mass floor: 80 value-ish meals should never collapse to a fist-sized bump.
+        if blobMetrics.totalMass and blobMetrics.totalMass > 0 then
+            local massR = (blobMetrics.totalMass ^ (1 / 3)) * 3.1 * sm
+            halfW = math.max(halfW, massR * 0.78)
+            halfD = math.max(halfD, massR * 0.88)
+            halfH = math.max(halfH, massR * 0.70)
         end
         radius = (halfW + halfD + halfH) / 3
+        -- Re-derive size from true geometry so bone-scale / consumers see full belly.
+        size = math.max(size, radius / 18)
         if VNPC_GetBellyComShift then
             comShift = VNPC_GetBellyComShift(ent)
         end
@@ -903,7 +952,12 @@ if CLIENT then
             end
             if not usedFX and (chain.size or 0) >= 0.035 then
                 local liveBelly = (VNPC_GetPredBelly and VNPC_GetPredBelly(ent)) or ent.VNPC_Belly or ent.Belly
-                if not IsValid(liveBelly) then
+                local preferGPU = true
+                local preferCv = GetConVar("vnpcs_gpu_belly_prefer_prey_mesh")
+                if preferCv then preferGPU = preferCv:GetBool() end
+                -- Draw procedural mesh from prey volume even when the classic
+                -- belly entity exists (unless prefer is off and a live belly is present).
+                if preferGPU or not IsValid(liveBelly) then
                     pcall(drawGeneratedBelly, ent, chain)
                 end
             end

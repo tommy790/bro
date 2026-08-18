@@ -64,17 +64,30 @@ function VNPC_GetPreyShapeBlob(prey)
     headR = math.Clamp(headR, 2.0, 14)
     limbR = math.Clamp(limbR, 1.5, 10)
 
-    local mass = 45 * scale
+    local mass = 55 * scale
     if prey.GetPhysicsObject then
         local phys = prey:GetPhysicsObject()
         if IsValid(phys) and phys.GetMass then
             local m = phys:GetMass()
-            if m and m > 1 then mass = m end
+            if m and m > 1 then mass = math.max(mass, m) end
         end
     end
     if VNPC_CalculatePreyValue then
         local val = VNPC_CalculatePreyValue(prey)
-        mass = math.max(mass * 0.8, (tonumber(val) or 0) * 0.22)
+        -- Value units map more strongly into mass so an ~80-value human
+        -- produces a full belly (was *0.22 → underfilled the volume floor).
+        mass = math.max(mass * 0.85, (tonumber(val) or 0) * 0.55)
+    end
+    -- Body-part volume estimate as a floor (adult torso ≈ solid meal).
+    if VNPC_MeasureBodyParts then
+        local parts = VNPC_MeasureBodyParts(prey)
+        if parts and parts.torso then
+            local tw = parts.torso.width or 14
+            local th = parts.torso.height or 16
+            local tl = parts.torso.length or 20
+            local partMass = (tw * th * tl) * 0.045 * scale
+            mass = math.max(mass, partMass)
+        end
     end
 
     local isPerson = prey:IsPlayer() or prey:IsNPC() or prey:IsNextBot() or prey.IsDrGNextbot
@@ -393,22 +406,27 @@ function VNPC_GetBellyDeformMetrics(pred)
     local volR = 0
     local volOn = GetConVar("vnpcs_weight_paint_volume")
     if not volOn or volOn:GetBool() then
-        -- reference: ~40 mass units ≈ radius 9
-        volR = math.max(5.5, (totalMass ^ (1 / 3)) * 2.55)
+        -- reference: ~45 mass ≈ radius ~11 (one adult human curled meal)
+        volR = math.max(7.5, (totalMass ^ (1 / 3)) * 3.05)
         -- also respect packed volume so elongated meals aren't crushed to a sphere
-        local packVolR = (totalVol > 0) and ((totalVol) ^ (1 / 3)) * 1.35 or 0
+        local packVolR = (totalVol > 0) and ((totalVol) ^ (1 / 3)) * 1.55 or 0
         volR = math.max(volR, packVolR)
     end
 
     -- Blend: extent-driven axes keep elongation; volume floor prevents underfill.
-    local rx = math.max(boxRx, volR * 0.72)
-    local ry = math.max(boxRy, volR * 0.78)
-    local rz = math.max(boxRz, volR * 0.65)
-    if #blobs == 1 then
-        local b = blobs[1]
-        rx = math.max(rx, b.rx * 0.95)
-        ry = math.max(ry, b.ry * 0.98)
-        rz = math.max(rz, b.rz * 0.92)
+    -- Single full-size prey should fill a substantial belly, not a tiny bump.
+    local rx = math.max(boxRx * 1.08, volR * 0.82)
+    local ry = math.max(boxRy * 1.10, volR * 0.90)
+    local rz = math.max(boxRz * 1.05, volR * 0.75)
+    if #blobs >= 1 then
+        -- Always honour the largest torso blob so measured prey drives size.
+        local best = blobs[1]
+        for _, b in ipairs(blobs) do
+            if (b.rx * b.ry * b.rz) > (best.rx * best.ry * best.rz) then best = b end
+        end
+        rx = math.max(rx, best.rx * 1.15)
+        ry = math.max(ry, best.ry * 1.20)
+        rz = math.max(rz, best.rz * 1.10)
     end
 
     -- Gravity sag: drop COM and slightly squash height / stretch depth with mass

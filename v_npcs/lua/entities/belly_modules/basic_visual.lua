@@ -2,6 +2,96 @@ ENT.BaseScale = 0 --AKA BELLY FAT LEFT OVER
 ENT.MaxBaseScale = 0.5
 
 local shape_deform_enabled = CreateConVar("vnpcs_shape_deform", "1", {FCVAR_ARCHIVE, FCVAR_NOTIFY, FCVAR_REPLICATED}, "Shape-aware belly deform from packed prey bounding boxes")
+-- Classic belly model treats size 1.0 ≈ 36 hammer-units across (radius ~18).
+local BELLY_SIZE_REF_RADIUS = 18
+CreateConVar("vnpcs_belly_size_from_prey", "1", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Size the belly procedurally from measured/packed prey volume instead of the old value*0.013 sqrt curve")
+CreateConVar("vnpcs_belly_size_scale", "1.0", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Global multiplier on procedural / value-based belly size")
+CreateConVar("vnpcs_belly_value_to_size", "0.022", {FCVAR_ARCHIVE, FCVAR_REPLICATED}, "Fallback: prey-value units → belly size when measured extents are unavailable")
+
+-- Procedural belly scale from packed prey half-extents / metaball metrics.
+-- Returns nil when there is nothing to measure yet.
+function ENT:GetProceduralBellySizeFromPrey()
+    local fromPrey = GetConVar("vnpcs_belly_size_from_prey")
+    if fromPrey and not fromPrey:GetBool() then return nil end
+
+    local best = 0
+
+    -- 1) Live weight-paint / metaball metrics on the predator (preferred).
+    local pred = self.NPC
+    if IsValid(pred) and VNPC_GetBellyDeformMetrics then
+        local m = VNPC_GetBellyDeformMetrics(pred)
+        if m then
+            local meanHalf = ((m.rx or 0) + (m.ry or 0) + (m.rz or 0)) / 3
+            if meanHalf > 0 then
+                best = math.max(best, meanHalf / BELLY_SIZE_REF_RADIUS)
+            end
+            if m.volRadius and m.volRadius > 0 then
+                best = math.max(best, m.volRadius / BELLY_SIZE_REF_RADIUS)
+            end
+            -- Diagonal of the packed AABB → diameter → size
+            if m.width and m.depth and m.height then
+                local diag = math.sqrt(m.width * m.width + m.depth * m.depth + m.height * m.height)
+                best = math.max(best, (diag * 0.42) / BELLY_SIZE_REF_RADIUS)
+            end
+        end
+    end
+
+    -- 2) Direct sum of stored HalfExtents on each prey entry (works even before paint sync).
+    if istable(self.Prey) and #self.Prey > 0 then
+        local maxHalf = 0
+        local volSum = 0
+        local n = 0
+        for _, info in ipairs(self.Prey) do
+            if not istable(info) then continue end
+            local remaining = 1
+            if info.Absorbing and info.TrueValue and info.TrueValue > 0 then
+                remaining = math.Clamp((info.Value or 0) / info.TrueValue, 0, 1)
+            end
+            if remaining < 0.04 then continue end
+            local shrink = remaining ^ (1 / 3)
+            local ext = info.HalfExtents
+            -- While still sliding in, keep most of the measured bulk so the
+            -- belly swells with the meal instead of staying tiny until finish.
+            local depthMul = 1
+            local ent = info.Entity
+            if IsValid(ent) and ent.VNPC_IsBeingSwallowed and ent.VNPC_IngestionDepth then
+                depthMul = math.Clamp(0.55 + 0.45 * math.Clamp(ent.VNPC_IngestionDepth, 0, 1), 0.55, 1)
+            end
+            shrink = shrink * depthMul
+
+            if isvector(ext) then
+                local hx = math.abs(ext.x) * shrink
+                local hy = math.abs(ext.y) * shrink
+                local hz = math.abs(ext.z) * shrink
+                local mean = (hx + hy + hz) / 3
+                maxHalf = math.max(maxHalf, mean)
+                volSum = volSum + math.max(hx * hy * hz, 1)
+                n = n + 1
+            elseif IsValid(info.Entity) and VNPC_MeasureBodyParts then
+                local parts = VNPC_MeasureBodyParts(info.Entity)
+                if parts and parts.torso then
+                    local tw = (parts.torso.width or 14) * 0.5 * shrink
+                    local th = (parts.torso.height or 16) * 0.5 * shrink
+                    local tl = (parts.torso.length or 20) * 0.35 * shrink
+                    local mean = (tw + th + tl) / 3
+                    maxHalf = math.max(maxHalf, mean)
+                    volSum = volSum + math.max(tw * th * tl, 1)
+                    n = n + 1
+                end
+            end
+        end
+        if n > 0 then
+            best = math.max(best, maxHalf / BELLY_SIZE_REF_RADIUS)
+            -- Multi-prey volume add: cube-root so 2 humans ≈ +26% radius not 2×
+            local packR = (volSum) ^ (1 / 3) * 1.15
+            best = math.max(best, packR / BELLY_SIZE_REF_RADIUS)
+        end
+    end
+
+    if best <= 0 then return nil end
+    -- One adult human curled in the gut should read around size 1.1–1.6, not 0.3.
+    return math.Clamp(best * 1.35, 0.08, 6.5)
+end
 
 function ENT:GetBellySize() --this gets the scale of all the stuff in the stomach
     -- Ensure consuming prop meals causes ZERO belly expansion ONLY for male prey who chew or explicitly flagged non-expanding eaters
@@ -12,20 +102,37 @@ function ENT:GetBellySize() --this gets the scale of all the stuff in the stomac
     local waterVal = (self.VNPC_WaterWeight or 0) + (IsValid(self.NPC) and (self.NPC.VNPC_WaterDrank or 0) or 0)
     local foodMealVal = (self.VNPC_FoodMealWeight or 0) + (IsValid(self.NPC) and (self.NPC.VNPC_FoodMealWeight or 0) or 0)
     local totalVal = self:GetCollectivePreyValue() + waterVal + foodMealVal
-    local scale = totalVal * 0.013 --no meaning number
 
-    if scale > 1 then
-        scale = math.pow(scale, 0.5)
+    -- Fallback value curve (milder than the old value*0.013 + hard sqrt).
+    local valueCoef = 0.022
+    local coefCv = GetConVar("vnpcs_belly_value_to_size")
+    if coefCv then valueCoef = coefCv:GetFloat() or valueCoef end
+    local valueScale = totalVal * valueCoef
+    -- Soft compression only for enormous multi-prey totals (keeps 1 human ~ full belly).
+    if valueScale > 1.8 then
+        valueScale = 1.8 + math.pow(valueScale - 1.8, 0.62) * 0.72
     end
 
-    if scale == 0 then
+    -- Procedural size from measured prey geometry (dominates when available).
+    local procScale = self:GetProceduralBellySizeFromPrey()
+    local scale = valueScale
+    if procScale and procScale > 0 then
+        scale = math.max(valueScale * 0.55, procScale)
+    end
+
+    local globalMul = 1.0
+    local mulCv = GetConVar("vnpcs_belly_size_scale")
+    if mulCv then globalMul = math.max(0.1, mulCv:GetFloat() or 1) end
+    scale = scale * globalMul
+
+    if scale <= 0 and waterVal <= 0 and foodMealVal <= 0 then
         return self.BaseScale
     end
 
-	local target = math.max(scale, self.BaseScale)
-	local delta = target - self.BaseScale
-	local blend = 1 - math.exp(-delta * 3)
-	local adjustedScale = self.BaseScale + delta * blend
+    local target = math.max(scale, self.BaseScale)
+    local delta = target - self.BaseScale
+    local blend = 1 - math.exp(-math.max(delta, 0.05) * 2.4)
+    local adjustedScale = self.BaseScale + delta * blend
 
     return adjustedScale
 end
