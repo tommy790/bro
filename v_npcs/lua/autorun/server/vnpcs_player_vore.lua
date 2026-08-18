@@ -102,7 +102,11 @@ concommand.Add("vnpcs_player_swallow", function(ply)
 
     -- Swallow the target into player's belly!
     if belly.AddPrey and belly:AddPrey(target) then
-        ply:EmitSound("gulps/g" .. math.random(1, 10) .. ".wav", 85, math.random(95, 105))
+        if VNPC_PlayGulpSound then
+            VNPC_PlayGulpSound(ply, 90, math.random(95, 105), true)
+        else
+            ply:EmitSound("gulps/g" .. math.random(1, 10) .. ".wav", 90, math.random(95, 105), 1, CHAN_VOICE)
+        end
         ply:ChatPrint("[V-NPCs] Swallowed [" .. (target.PrintName or target:GetClass()) .. "] alive!")
     else
         ply:ChatPrint("[V-NPCs] Could not swallow target right now.")

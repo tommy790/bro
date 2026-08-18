@@ -831,6 +831,11 @@ if CLIENT then
     hook.Add("EntityEmitSound", "VNPC_FemaleModelVore_MuffleAudio", function(info)
         local ply = LocalPlayer()
         if not IsValid(ply) or not (ply.Vored or ply.VNPC_Vored) then return end
+        -- Keep predator gulps/burps clear for the swallowed player.
+        local name = string.lower(tostring(info.SoundName or info.OriginalSoundName or ""))
+        if name:find("gulps/", 1, true) or name:find("burps/", 1, true) or name:find("vore_stomach/swallowed", 1, true) then
+            return
+        end
         local parent = ply:GetParent()
         if IsValid(parent) and (parent.VNPC_FemaleModelVore or VNPC_IsFemaleModelNPC(parent)) then
             info.DSP = 15 -- Muffled underwater DSP

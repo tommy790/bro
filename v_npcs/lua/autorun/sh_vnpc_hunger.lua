@@ -430,8 +430,10 @@ if SERVER then
                             belly.VNPC_WaterWeight = ent.VNPC_WaterDrank
                             belly:SetBellySize()
                         end
-                        if ent.EmitSound then
-                            ent:EmitSound("gulps/g" .. math.random(1, 10) .. ".wav", 80, math.random(95, 105))
+                        if VNPC_PlayGulpSound then
+                            VNPC_PlayGulpSound(ent, 80, math.random(95, 105), true)
+                        elseif ent.EmitSound then
+                            ent:EmitSound("gulps/g" .. math.random(1, 10) .. ".wav", 80, math.random(95, 105), 1, CHAN_VOICE)
                         end
                         if curThirst <= 0 or (ent.VNPC_WaterDrank or 0) >= (ent.VNPC_TargetWaterAmount or 60.0) then
                             ent.VNPC_IsDrinkingWater = false
@@ -659,8 +661,10 @@ concommand.Add("vnpcs_test_prey_swallow_meal", function(ply, cmd, args)
                     ent.VNPC_Belly:SetBellySize()
                 end
             end
-            if ent.EmitSound then
-                ent:EmitSound("gulps/g" .. math.random(1, 10) .. ".wav", 75, math.random(95, 105))
+            if VNPC_PlayGulpSound then
+                VNPC_PlayGulpSound(ent, 75, math.random(95, 105), true)
+            elseif ent.EmitSound then
+                ent:EmitSound("gulps/g" .. math.random(1, 10) .. ".wav", 75, math.random(95, 105), 1, CHAN_VOICE)
             end
             found = found + 1
             print(string.format("[V-NPCs] Test: Female Citizen Prey #%d swallowed a %s whole without chewing! Belly expanded! (Food Weight = %.1f)", ent:EntIndex(), string.upper(mealType), ent.VNPC_FoodMealWeight))

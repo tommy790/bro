@@ -760,7 +760,6 @@ hook.Add("Think", "VNPC_BabyCitizenGrowth_Loop", function()
                         end
                         if IsValid(bestSmall) then
                             if bestDistSqr <= (90 * 90) then
-                                if ent.EmitSound then ent:EmitSound("gulps/g" .. math.random(1, 10) .. ".wav", 80, 105) end
                                 print("[V-NPCs] Baby Female Swallowed Small Prey: Baby " .. tostring(ent) .. " swallowed small prey " .. tostring(bestSmall) .. "! (Will grow once digestion is finished)")
                                 if not ent.EatEntity and VNPC_AttachFemaleModelVore then
                                     VNPC_AttachFemaleModelVore(ent)
@@ -770,6 +769,12 @@ hook.Add("Think", "VNPC_BabyCitizenGrowth_Loop", function()
                                 elseif ent.VNPC_Belly and ent.VNPC_Belly.AddPrey then
                                     ent.VNPC_Belly:AddPrey(bestSmall)
                                 else
+                                    -- Direct remove path never hits OnPreySwallowed — play gulp here.
+                                    if VNPC_PlayGulpSound then
+                                        VNPC_PlayGulpSound(ent, 80, 105, true)
+                                    elseif ent.EmitSound then
+                                        ent:EmitSound("gulps/g" .. math.random(1, 10) .. ".wav", 80, 105, 1, CHAN_VOICE)
+                                    end
                                     bestSmall:Remove()
                                     ent.VNPC_GrowthProgress = math.Clamp((ent.VNPC_GrowthProgress or 0.0) + 35.0, 0, 100)
                                 end

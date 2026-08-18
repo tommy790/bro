@@ -590,6 +590,12 @@ hook.Add("Think", "VNPCS_IngestionAnimation_Loop", function()
                 deflateBoneCategory(prey, "head", Vector(0.01, 0.01, 0.01))
             end
             if prey.EmitSound then prey:EmitSound("physics/flesh/flesh_squishy_impact_hard" .. math.random(1, 4) .. ".wav", 75, math.random(95, 105)) end
+            -- First throat gulp as the head goes in.
+            if VNPC_PlayGulpSound then
+                VNPC_PlayGulpSound(pred, 90, math.random(98, 108), true)
+            elseif pred.EmitSound then
+                pred:EmitSound("gulps/g" .. math.random(1, 10) .. ".wav", 90, math.random(98, 108), 1, CHAN_VOICE)
+            end
         end
         if isHumanOral and tEase >= headEnter then
             lerpDeflateCategory(prey, "head", (tEase - headEnter) / 0.14)
@@ -602,12 +608,18 @@ hook.Add("Think", "VNPCS_IngestionAnimation_Loop", function()
                 deflateBoneCategory(prey, "torso", Vector(0.01, 0.01, 0.01))
             end
             if prey.EmitSound then prey:EmitSound("physics/flesh/flesh_squishy_impact_hard" .. math.random(1, 4) .. ".wav", 75, math.random(95, 105)) end
+            -- Mid-swallow gulp (peristalsis).
+            if VNPC_PlayGulpSound then
+                VNPC_PlayGulpSound(pred, 95, math.random(94, 104), true)
+            elseif pred.EmitSound then
+                pred:EmitSound("gulps/g" .. math.random(1, 10) .. ".wav", 95, math.random(94, 104), 1, CHAN_VOICE)
+            end
         end
         if isHumanOral and tEase >= torsoEnter then
             lerpDeflateCategory(prey, "torso", (tEase - torsoEnter) / 0.16)
         end
 
-        -- STAGE 3: Legs and feet slide in.
+        -- STAGE 3: Legs and feet slide in — final gulp (this was silent before).
         if tEase >= legsEnter and anim.stage < 3 then
             anim.stage = 3
             if not isHumanOral then
@@ -616,6 +628,11 @@ hook.Add("Think", "VNPCS_IngestionAnimation_Loop", function()
             if prey.EmitSound then prey:EmitSound("physics/flesh/flesh_squishy_impact_hard" .. math.random(1, 4) .. ".wav", 75, math.random(95, 105)) end
             if pred.SetFacialExpression then
                 pcall(pred.SetFacialExpression, pred, 4) -- Final Gulp face!
+            end
+            if VNPC_PlayGulpSound then
+                VNPC_PlayGulpSound(pred, 110, math.random(92, 100), true)
+            elseif pred.EmitSound then
+                pred:EmitSound("gulps/g" .. math.random(1, 10) .. ".wav", 110, math.random(92, 100), 1, CHAN_VOICE)
             end
         end
         if isHumanOral and tEase >= legsEnter then
@@ -651,6 +668,12 @@ hook.Add("Think", "VNPCS_IngestionAnimation_Loop", function()
 
             if pred.SetFacialExpression then
                 pcall(pred.SetFacialExpression, pred, 2) -- Full Belly face!
+            end
+            -- Settling gulp when prey lands in the belly.
+            if VNPC_PlayGulpSound then
+                VNPC_PlayGulpSound(pred, 85, math.random(90, 98), true)
+            elseif pred.EmitSound then
+                pred:EmitSound("gulps/g" .. math.random(1, 10) .. ".wav", 85, math.random(90, 98), 1, CHAN_VOICE)
             end
             VNPC_ResetEsophagusBulge(pred)
 

@@ -183,10 +183,16 @@ function VNPC_GiveFemaleModelVore(ent)
         end
         
         if belly:AddPrey(target) then
-            local snd_list = self.VoreSounds and self.VoreSounds["swallow"]
-            if snd_list and #snd_list > 0 then
-                local snd = snd_list[math.random(1, #snd_list)]
-                self:EmitSound(snd, 100, 100)
+            -- Gulp audio: VNPC_OnPreySwallowed + PlaySwallowedSound handle the
+            -- primary clip; call helper directly so female-model preds always gulp.
+            if VNPC_PlayGulpSound then
+                VNPC_PlayGulpSound(self, 100, (self.VoreSoundPitch or 1) * 100)
+            else
+                local snd_list = self.VoreSounds and self.VoreSounds["swallow"]
+                if snd_list and #snd_list > 0 then
+                    local snd = snd_list[math.random(1, #snd_list)]
+                    self:EmitSound(snd, 100, 100, 1, CHAN_VOICE)
+                end
             end
             if VNPC_PlayNativeVoreGesture then
                 VNPC_PlayNativeVoreGesture(self, "swallow")

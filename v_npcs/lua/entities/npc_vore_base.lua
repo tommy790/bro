@@ -363,8 +363,14 @@ function ENT:EatEntity(ent)
 	
 	if self.Belly:AddPrey(ent) then
 		self:PlayVoreGesture("swallow")
-		local swallow_sound = GetRandomFromTable(self.VoreSounds["swallow"])
-		self:EmitSound(swallow_sound, 100, 100)
+		-- Gulp audio is centralized (VNPC_PlayGulpSound / VNPC_OnPreySwallowed).
+		-- Keep a direct call so possession/EatEntity still gulps if the hook is late.
+		if VNPC_PlayGulpSound then
+			VNPC_PlayGulpSound(self, 100, (self.VoreSoundPitch or 1) * 100)
+		else
+			local swallow_sound = GetRandomFromTable(self.VoreSounds["swallow"])
+			if swallow_sound then self:EmitSound(swallow_sound, 100, 100, 1, CHAN_VOICE) end
+		end
 
 		if not self._InClumpVore and VNPC_GetClumpedPreyGroup then
 			self._InClumpVore = true

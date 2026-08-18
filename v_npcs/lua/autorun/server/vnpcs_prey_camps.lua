@@ -981,19 +981,23 @@ function VNPC_PreyMealConsumption_AI(camp, now)
                             bestConsumer.VNPC_Belly:SetBellySize()
                         end
                     end
-                    if bestConsumer.EmitSound then
-                        bestConsumer:EmitSound("gulps/g" .. math.random(1, 10) .. ".wav", 75, math.random(95, 105))
+                    if VNPC_PlayGulpSound then
+                        VNPC_PlayGulpSound(bestConsumer, 75, math.random(95, 105), true)
+                    elseif bestConsumer.EmitSound then
+                        bestConsumer:EmitSound("gulps/g" .. math.random(1, 10) .. ".wav", 75, math.random(95, 105), 1, CHAN_VOICE)
                     end
                     print(string.format("[V-NPCs] Female Prey Citizen #%d [%s] swallowed prop meal %s (%s) whole without chewing! Belly expanded! [Hunger = %.1f%%, Thirst = %.1f%%, Food Weight = %.1f]", bestConsumer:EntIndex(), bestConsumer.PrintName or bestConsumer:GetClass(), mealData.name or prop.VNPC_MealType, prop.VNPC_MealType, VNPC_GetHunger(bestConsumer), VNPC_GetThirst(bestConsumer), bestConsumer.VNPC_FoodMealWeight))
                 else
                     -- MALE PREY CITIZENS CHEW NORMALLY -> ZERO BELLY EXPANSION
                     bestConsumer.VNPC_NoBellyExpansionFromMeal = true
-                    if bestConsumer.EmitSound then
-                        if prop.VNPC_MealType == "soda" then
-                            bestConsumer:EmitSound("gulps/g" .. math.random(1, 10) .. ".wav", 75, math.random(95, 105))
-                        else
-                            bestConsumer:EmitSound("npc/barnacle/barnacle_crunch2.wav", 75, math.random(95, 105))
+                    if prop.VNPC_MealType == "soda" then
+                        if VNPC_PlayGulpSound then
+                            VNPC_PlayGulpSound(bestConsumer, 75, math.random(95, 105), true)
+                        elseif bestConsumer.EmitSound then
+                            bestConsumer:EmitSound("gulps/g" .. math.random(1, 10) .. ".wav", 75, math.random(95, 105), 1, CHAN_VOICE)
                         end
+                    elseif bestConsumer.EmitSound then
+                        bestConsumer:EmitSound("npc/barnacle/barnacle_crunch2.wav", 75, math.random(95, 105))
                     end
                     print(string.format("[V-NPCs] Male Prey Citizen #%d [%s] chewed and ate prop meal %s (%s) [Hunger = %.1f%%, Thirst = %.1f%%, Belly Expansion = NONE]!", bestConsumer:EntIndex(), bestConsumer.PrintName or bestConsumer:GetClass(), mealData.name or prop.VNPC_MealType, prop.VNPC_MealType, VNPC_GetHunger(bestConsumer), VNPC_GetThirst(bestConsumer)))
                 end

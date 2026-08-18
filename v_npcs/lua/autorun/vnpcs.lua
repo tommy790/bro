@@ -65,10 +65,16 @@ hook.Add("EntityEmitSound", "MuffleVoredSounds", function( sound_info )
     --local server_or_client = SERVER and "SERVER" or "CLIENT"
 	local ent = sound_info.Entity
     if not ent or not IsValid(ent) then return end
-    
+
+    -- Never muffle predator gulp/burp swallow audio (path or name match).
+    local name = string.lower(tostring(sound_info.SoundName or sound_info.OriginalSoundName or ""))
+    if name:find("gulps/", 1, true) or name:find("/g%d+%.wav") or name:find("burps/", 1, true) then
+        return
+    end
+
     local parent = ent:GetParent()
     --print(server_or_client, ent, parent)
-    if ent.Vored or parent.Vored then
+    if ent.Vored or (IsValid(parent) and parent.Vored) then
         --print(server_or_client, ent, parent)
         --sound_info.Volume = sound_info.Volume * 2 --lowers volume
         sound_info.SoundLevel = 60 --distance falloff

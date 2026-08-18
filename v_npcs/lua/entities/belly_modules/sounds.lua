@@ -102,10 +102,10 @@ function ENT:PlayRandomGurgle()
         local snd = GetRandomFromTable(self.Sounds.Gurgles)
         self:EmitSound(snd, 45, math.random(85, 115), 1)
 
-        self.GurgleSoundDebounce = true 
+        self.GurgleSoundDebounce = true
         timer.Simple(1.25, function()
             if self and IsValid(self) then
-                self.SwallowSoundDebounce = nil
+                self.GurgleSoundDebounce = nil
             end
         end)
     end
@@ -153,11 +153,20 @@ end
 
 function ENT:PlaySwallowedSound()
     if self.SwallowSoundDebounce then return end
-    self.SwallowSoundDebounce = true 
+    self.SwallowSoundDebounce = true
 
+    -- Primary gulp (gulps/g*.wav) on the predator so listeners hear the swallow.
+    local pred = self.NPC or self:GetOwner() or self:GetParent()
+    if VNPC_PlayGulpSound then
+        VNPC_PlayGulpSound(IsValid(pred) and pred or self, 100, math.random(95, 105))
+    end
+
+    -- Secondary stomach "swallowed" stinger (mp3 bed).
     local snd = GetRandomFromTable(self.Sounds.Swallowed)
-    self:EmitSound(snd)
-    
+    if snd then
+        self:EmitSound(snd, 75, math.random(95, 105), 1.0, CHAN_AUTO)
+    end
+
     timer.Simple(1, function()
         if self and IsValid(self) then
             self.SwallowSoundDebounce = nil
