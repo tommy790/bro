@@ -601,8 +601,8 @@ function VNPC_ApplyWeightPaintDeform(worldPos, lp, ent, chain)
         -- Legacy independent gaussians (fallback)
         local offset = Vector(0, 0, 0)
         for _, blob in ipairs(metrics.blobs) do
-            if blob.womb and GetConVar("vnpcs_gpu_belly_preg_shape") and not GetConVar("vnpcs_gpu_belly_preg_shape"):GetBool() then
-                continue
+            if blob.womb then
+                -- pregnancy blobs always contribute to classic belly packing
             end
             if not blob.pos then continue end
             local dx = localP.x - blob.pos.x
@@ -803,6 +803,6 @@ concommand.Add("vnpcs_test_paint_blob", function(ply, _, args)
         table.insert(target.VNPC_BellyBlobs, testBlob)
         VNPC_SyncPaintBlobNW(target)
     end
-    ply:ChatPrint(string.format("[V-NPCs] Attached test paint blob (WxHxD %.0fx%.0fx%.0f) to %s. Enable vnpcs_gpu_belly_debug 1 to see the mesh.",
+    ply:ChatPrint(string.format("[V-NPCs] Attached test paint blob (WxHxD %.0fx%.0fx%.0f) to %s. Use vnpcs_weight_paint_status to inspect belly blobs.",
         w, h, d, tostring(target)))
 end)

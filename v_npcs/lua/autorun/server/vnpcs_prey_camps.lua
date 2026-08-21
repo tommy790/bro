@@ -3,7 +3,10 @@
 
 local camps_enabled = CreateConVar("vnpcs_prey_camps_enabled", "1", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Enable prey camp establishment and defensive wall fortifications")
 local camp_target_size = CreateConVar("vnpcs_prey_camp_target_size", "10", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Target number of prey NPCs per camp (at least 10 prey)")
-local camp_resource_rate = CreateConVar("vnpcs_prey_camp_resource_rate", "1.5", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Base resource accumulation rate per second for prey camps")
+local camp_resource_rate = CreateConVar("vnpcs_prey_camp_resource_rate", "0.45", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Base resource accumulation rate per free camp member per second")
+local camp_found_delay = CreateConVar("vnpcs_prey_camp_found_delay", "40", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Seconds a prey NPC must be free before founding/joining a camp")
+local camp_min_founders = CreateConVar("vnpcs_prey_camp_min_founders", "3", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Minimum free prey that must gather before founding a new camp")
+local camp_start_resources = CreateConVar("vnpcs_prey_camp_start_resources", "0", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Starting resources when a prey camp is founded (0 = must gather everything)")
 local camp_wall_cost = CreateConVar("vnpcs_prey_camp_wall_cost", "25.0", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Resource cost to construct one defensive wall prop")
 local camp_max_walls = CreateConVar("vnpcs_prey_camp_max_walls", "24", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Maximum number of defensive wall props around a prey camp perimeter")
 local camp_hut_cost = CreateConVar("vnpcs_prey_camp_hut_cost", "8.0", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Resource cost to construct one piece of a breakable dupe hut inside a fortified prey camp")
@@ -15,6 +18,41 @@ local town_evolve_enabled = CreateConVar("vnpcs_town_evolution_enabled", "1", {F
 local town_evolve_rate = CreateConVar("vnpcs_town_evolution_rate", "1.5", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Base town development points earned per second per camp")
 
 VNPC_ActivePreyCamps = VNPC_ActivePreyCamps or {}
+
+function VNPC_CanCampWork(ent)
+    if not IsValid(ent) or ent:Health() <= 0 then return false end
+    if ent.Vored or ent.VNPC_Vored or ent.VNPC_IsBeingSwallowed then return false end
+    if ent.Swallowing then return false end
+    if ent.VNPC_IsHumanOralSwallow or (ent.GetNWBool and ent:GetNWBool("VNPC_IsHumanOralSwallow")) then return false end
+    if ent.VNPC_IsUnbornBaby or ent.VNPC_IsGrowingBaby then return false end
+    if ent.VNPC_IsSleeping then return false end
+    if ent:IsPlayer() then return true end -- players can still "count" if free
+    return true
+end
+
+function VNPC_CountFreeCampMembers(camp)
+    if not camp or not camp.members then return 0 end
+    local n = 0
+    for _, mem in ipairs(camp.members) do
+        if VNPC_CanCampWork(mem) then n = n + 1 end
+    end
+    return n
+end
+
+function VNPC_CampCanBuild(camp)
+    if not camp then return false end
+    return VNPC_CountFreeCampMembers(camp) > 0
+end
+
+function VNPC_CampSpend(camp, cost)
+    cost = tonumber(cost) or 0
+    if cost <= 0 then return true end
+    camp.resources = camp.resources or 0
+    if camp.resources < cost then return false end
+    camp.resources = camp.resources - cost
+    return true
+end
+
 
 AddCSLuaFile("autorun/client/cl_vnpcs_prey_camp_ui.lua")
 util.AddNetworkString("VNPC_PreyCampJoinPrompt")
@@ -94,6 +132,7 @@ VNPC_TownDevelopmentStages = VNPC_TownDevelopmentStages or {
 }
 
 function VNPC_ConstructTownInfrastructure(camp, stage)
+    if VNPC_CampCanBuild and not VNPC_CampCanBuild(camp) then return end
     if not camp or not camp.pos then return end
     camp.townInfrastructure = camp.townInfrastructure or {}
 
@@ -449,7 +488,7 @@ function VNPC_CreatePreyCamp(pos, founder)
         townInfrastructure = {},
         layoutSeed = math.random(100000, 999999),
         fortified = false,
-        resources = 15.0,
+        resources = (camp_start_resources and camp_start_resources:GetFloat()) or 0,
         createTime = CurTime(),
         lastUpdateTime = CurTime()
     }
@@ -466,6 +505,14 @@ function VNPC_AssignPreyToCamp(npc, force)
     if not camps_enabled:GetBool() or not VNPC_IsEligiblePreyNPC(npc) then return nil end
     if npc.VNPC_IsPermanentFortPredator then return nil end
     if npc.VNPC_IsSecretAssassin then return nil end
+    if not force and not VNPC_CanCampWork(npc) then return nil end
+    if not force then
+        npc.VNPC_SpawnTime = npc.VNPC_SpawnTime or CurTime()
+        local delay = camp_found_delay and camp_found_delay:GetFloat() or 40
+        if (CurTime() - npc.VNPC_SpawnTime) < delay then
+            return nil
+        end
+    end
 
     if not npc.VNPC_PreyPersonality and not npc.PreyPersonality then
         local preyPersList = { "fighter", "passive", "panicked", "stubborn", "willing" }
@@ -524,9 +571,24 @@ function VNPC_AssignPreyToCamp(npc, force)
         table.insert(bestCamp.members, npc)
         npc.VNPC_PreyCampID = bestCamp.id
         return bestCamp
-    else
-        return VNPC_CreatePreyCamp(npcPos, npc)
     end
+
+    -- Found a new camp only when enough free prey have gathered, or forced.
+    local need = math.max(1, (camp_min_founders and camp_min_founders:GetInt()) or 3)
+    if not force and need > 1 then
+        local nearby = 1
+        for _, other in ipairs(ents.FindInSphere(npcPos, 800)) do
+            if other ~= npc and VNPC_CanCampWork(other) and VNPC_IsEligiblePreyNPC(other)
+                and (not other.VNPC_PreyCampID or other.VNPC_PreyCampID == "wild") then
+                nearby = nearby + 1
+            end
+        end
+        if nearby < need then
+            npc.VNPC_SeekingCampSite = true
+            return nil
+        end
+    end
+    return VNPC_CreatePreyCamp(npcPos, npc)
 end
 
 hook.Add("KeyPress", "VNPC_PreyCamp_PlayerUseJoin", function(ply, key)
@@ -616,6 +678,7 @@ function VNPC_PlanPreyCampLayout(camp)
 end
 
 function VNPC_ConstructPreyCampFire(camp)
+    if camp and VNPC_CampCanBuild and not VNPC_CampCanBuild(camp) then return false end
     if not camps_enabled:GetBool() or not camp or not camp.pos then return false end
     if IsValid(camp.campfire) then return false end
 
@@ -691,6 +754,7 @@ function VNPC_EnsurePreyCampLeader(camp)
 end
 
 function VNPC_ConstructPreyCampLeaderHut(camp)
+    if camp and VNPC_CampCanBuild and not VNPC_CampCanBuild(camp) then return false end
     if not camps_enabled:GetBool() or not camp or not camp.pos then return false end
     if IsValid(camp.leaderTable) then return false end
 
@@ -1020,6 +1084,7 @@ function VNPC_PreyMealConsumption_AI(camp, now)
 end
 
 function VNPC_ConstructPreyCampWall(camp)
+    if camp and VNPC_CampCanBuild and not VNPC_CampCanBuild(camp) then return false end
     if not camps_enabled:GetBool() or not camp then return false end
     if not camp.plannedWalls or #camp.plannedWalls == 0 then
         VNPC_PlanPreyCampLayout(camp)
@@ -1178,6 +1243,7 @@ function VNPC_CreateHutSite(camp)
 end
 
 function VNPC_ConstructPreyCampHut(camp)
+    if camp and VNPC_CampCanBuild and not VNPC_CampCanBuild(camp) then return false end
     if not camps_enabled:GetBool() or not camp then return false end
     if not camp.activeHutSite then
         camp.activeHutSite = VNPC_CreateHutSite(camp)
@@ -1283,6 +1349,7 @@ function VNPC_PredatorBreachPreyCampHut(pred, hutOrPiece, camp)
 end
 
 function VNPC_ConstructPreyCampCourtyardDefense(camp)
+    if camp and VNPC_CampCanBuild and not VNPC_CampCanBuild(camp) then return false end
     if not camps_enabled:GetBool() or not camp or not camp.fortified then return false end
     camp.courtyardDefenses = camp.courtyardDefenses or {}
     local maxDefenses = math.Clamp(math.floor(camp_max_walls:GetInt() * 0.5), 2, 12)
@@ -1654,11 +1721,17 @@ hook.Add("Think", "VNPC_PreyCamps_AI_Loop", function()
 
     local now = CurTime()
 
-    -- 1. Enroll eligible prey NPCs into prey camps
-    for _, ent in ipairs(ents.GetAll()) do
-        if VNPC_IsEligiblePreyNPC(ent) and (not ent.VNPC_PreyCampID or ent.VNPC_PreyCampID == "wild") then
-            ent.VNPC_PreyCampID = nil
-            VNPC_AssignPreyToCamp(ent)
+    -- 1. Enroll free, settled prey into camps (not every spawn tick).
+    if (VNPC_NextPreyCampEnroll or 0) <= now then
+        VNPC_NextPreyCampEnroll = now + 2.5
+        for _, ent in ipairs(ents.GetAll()) do
+            if not VNPC_IsEligiblePreyNPC(ent) then continue end
+            ent.VNPC_SpawnTime = ent.VNPC_SpawnTime or now
+            if not VNPC_CanCampWork(ent) then continue end
+            if (not ent.VNPC_PreyCampID or ent.VNPC_PreyCampID == "wild") then
+                ent.VNPC_PreyCampID = nil
+                VNPC_AssignPreyToCamp(ent)
+            end
         end
     end
 
@@ -1722,13 +1795,31 @@ hook.Add("Think", "VNPC_PreyCamps_AI_Loop", function()
             end
         end
 
-        if not IsValid(camp.campfire) and (now - (camp.createTime or now)) > 3.0 then
-            VNPC_ConstructPreyCampFire(camp)
+        -- Building requires free members outside bellies.
+        if not VNPC_CampCanBuild(camp) then
+            continue
+        end
+
+        -- Campfire costs resources (and free builders).
+        local fireCost = 12
+        if not IsValid(camp.campfire) and (now - (camp.createTime or now)) > 25.0
+            and (camp.resources or 0) >= fireCost then
+            if VNPC_CampSpend(camp, fireCost) then
+                if not VNPC_ConstructPreyCampFire(camp) then
+                    camp.resources = (camp.resources or 0) + fireCost -- refund
+                end
+            end
         end
 
         VNPC_EnsurePreyCampLeader(camp)
-        if not IsValid(camp.leaderTable) and (now - (camp.createTime or now)) > 4.0 then
-            VNPC_ConstructPreyCampLeaderHut(camp)
+        local leaderHutCost = 30
+        if not IsValid(camp.leaderTable) and (now - (camp.createTime or now)) > 50.0
+            and (camp.resources or 0) >= leaderHutCost then
+            if VNPC_CampSpend(camp, leaderHutCost) then
+                if not VNPC_ConstructPreyCampLeaderHut(camp) then
+                    camp.resources = (camp.resources or 0) + leaderHutCost
+                end
+            end
         end
         if VNPC_PreyCampLeaderDecision_AI then
             VNPC_PreyCampLeaderDecision_AI(camp, now)
@@ -1760,18 +1851,32 @@ hook.Add("Think", "VNPC_PreyCamps_AI_Loop", function()
             camp.abandonedTime = nil
         end
 
-        -- Accumulate resources based on camp member count and base rate
+        -- Accumulate resources from FREE members only (swallowed prey contribute nothing).
+        local freeN = VNPC_CountFreeCampMembers(camp)
         local baseRate = camp_resource_rate:GetFloat()
-        camp.resources = (camp.resources or 0) + ((baseRate + #camp.members * 0.35) * dt)
+        camp.resources = (camp.resources or 0) + ((baseRate * math.max(freeN, 0)) * dt)
 
-        -- Intelligent Resource Harvesting: scan for nearby scrap/junk props around the camp to harvest
-        for _, scrap in ipairs(ents.FindInSphere(camp.pos, 1000)) do
-            if IsValid(scrap) and scrap:GetClass() == "prop_physics" and not scrap.VNPC_IsPreyCampWall and not scrap.VNPC_IsPreyCampHutPiece and not scrap.VNPC_IsCourtyardDefense and not scrap.VNPC_NoVore and not scrap.VNPC_IsCookedPropMeal then
-                if scrap:GetPos():DistToSqr(camp.pos) < (300 * 300) then
-                    camp.resources = (camp.resources or 0) + 10.0
-                    camp.townDevPoints = (camp.townDevPoints or 0) + 15.0
-                    scrap:Remove()
+        -- Resource harvesting: free members must be near scrap; don't auto-vacuum map props.
+        if freeN > 0 and (camp.nextScrapHarvest or 0) <= now then
+            camp.nextScrapHarvest = now + 4.0
+            local harvester = nil
+            for _, mem in ipairs(camp.members) do
+                if VNPC_CanCampWork(mem) and not mem:IsPlayer() then
+                    harvester = mem
                     break
+                end
+            end
+            if IsValid(harvester) then
+                for _, scrap in ipairs(ents.FindInSphere(harvester:GetPos(), 160)) do
+                    if IsValid(scrap) and scrap:GetClass() == "prop_physics"
+                        and not scrap.VNPC_IsPreyCampWall and not scrap.VNPC_IsPreyCampHutPiece
+                        and not scrap.VNPC_IsCourtyardDefense and not scrap.VNPC_NoVore
+                        and not scrap.VNPC_IsCookedPropMeal and not scrap.VNPC_IsTownInfrastructure then
+                        camp.resources = (camp.resources or 0) + 6.0
+                        camp.townDevPoints = (camp.townDevPoints or 0) + 8.0
+                        scrap:Remove()
+                        break
+                    end
                 end
             end
         end

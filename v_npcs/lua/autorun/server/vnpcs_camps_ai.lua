@@ -6,8 +6,52 @@ local camp_min_dist = CreateConVar("vnpcs_camp_min_distance", "1400.0", {FCVAR_A
 local camp_cap = CreateConVar("vnpcs_camp_member_cap", "4", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Maximum number of sister predators belonging to a single camp (overridden per-member by social preference pack limits)")
 local camp_hunger_thresh = CreateConVar("vnpcs_camp_hunger_thresh", "45.0", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Hunger percentage required for a camp to dispatch foragers to capture prey")
 local camp_max_tents = CreateConVar("vnpcs_pred_camp_max_tents", "2", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Maximum number of tents built at a predator camp")
+local camp_found_delay = CreateConVar("vnpcs_camp_found_delay", "45", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Seconds a predator must be alive/free before she may found or join a camp")
+local camp_min_founders = CreateConVar("vnpcs_camp_min_founders", "2", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Minimum free predators that must gather before founding a new camp (1 = solitary allowed)")
+local camp_resource_rate = CreateConVar("vnpcs_pred_camp_resource_rate", "0.35", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Resources gained per free camp member per second")
+local camp_fire_cost = CreateConVar("vnpcs_pred_camp_fire_cost", "18", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Resource cost to build a predator campfire")
+local camp_water_cost = CreateConVar("vnpcs_pred_camp_water_cost", "22", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Resource cost to build a predator water source")
+local camp_barricade_cost = CreateConVar("vnpcs_pred_camp_barricade_cost", "14", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Resource cost per predator barricade piece")
+local camp_tent_cost = CreateConVar("vnpcs_pred_camp_tent_cost", "28", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Resource cost per tent/hut piece")
+local camp_leader_hut_cost = CreateConVar("vnpcs_pred_camp_leader_hut_cost", "40", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Resource cost to finish a predator leader hut")
 
 VNPC_ActivePredatorCamps = VNPC_ActivePredatorCamps or {}
+
+-- True when an NPC is free in the world and can gather/build (not swallowed).
+function VNPC_CanCampWork(ent)
+    if not IsValid(ent) or ent:Health() <= 0 then return false end
+    if ent.Vored or ent.VNPC_Vored or ent.VNPC_IsBeingSwallowed then return false end
+    if ent.Swallowing then return false end
+    if ent.VNPC_IsHumanOralSwallow or (ent.GetNWBool and ent:GetNWBool("VNPC_IsHumanOralSwallow")) then return false end
+    if ent.VNPC_IsUnbornBaby or ent.VNPC_IsGrowingBaby then return false end
+    if ent.VNPC_IsSleeping then return false end
+    return true
+end
+
+function VNPC_CountFreeCampMembers(camp)
+    if not camp or not camp.members then return 0 end
+    local n = 0
+    for _, mem in ipairs(camp.members) do
+        if VNPC_CanCampWork(mem) then n = n + 1 end
+    end
+    return n
+end
+
+function VNPC_CampCanBuild(camp)
+    if not camp then return false end
+    -- Nobody free outside a belly → no construction.
+    if VNPC_CountFreeCampMembers(camp) <= 0 then return false end
+    return true
+end
+
+function VNPC_CampSpend(camp, cost)
+    cost = tonumber(cost) or 0
+    if cost <= 0 then return true end
+    camp.resources = camp.resources or 0
+    if camp.resources < cost then return false end
+    camp.resources = camp.resources - cost
+    return true
+end
 
 local PRED_TENT_MODELS = {
     "models/props_wasteland/wood_room001a.mdl",       -- Wooden cabin / tent shelter
@@ -52,11 +96,13 @@ function VNPC_CreatePredatorCamp(pos, founder)
         members = { founder },
         tents = {},
         huts = {},
+        barricades = {},
         founder = founder,
         layoutSeed = math.random(100000, 999999),
         faction = myFaction,
         createTime = CurTime(),
-        state = "idle",
+        resources = 0,
+        state = "gathering", -- must gather before building
         lastUpdateTime = CurTime()
     }
 
@@ -99,6 +145,16 @@ function VNPC_AssignPredatorToCamp(pred, force)
     if not IsValid(pred) or pred:Health() <= 0 then return nil end
     if pred.VNPC_IsPermanentFortPredator then return nil end
     if pred.VNPC_IsSecretAssassin then return nil end
+    -- Swallowed / locked NPCs cannot found or join camps.
+    if not force and not VNPC_CanCampWork(pred) then return nil end
+    -- Fresh spawns must wait and "settle" before founding a camp.
+    if not force then
+        pred.VNPC_SpawnTime = pred.VNPC_SpawnTime or CurTime()
+        local delay = camp_found_delay:GetFloat() or 45
+        if (CurTime() - pred.VNPC_SpawnTime) < delay then
+            return nil
+        end
+    end
 
     if not pred.VNPC_PredatorPersonality and not (pred.VoreSettings and pred.VoreSettings.PredatorPersonality) then
         local predPersList = { "aggressive", "opportunistic", "glutton", "shy", "selective", "gentle", "loving" }
@@ -120,11 +176,14 @@ function VNPC_AssignPredatorToCamp(pred, force)
         return currentCamp
     end
 
-    -- Solitary social preference: found their own tiny camp / stay alone.
+    -- Solitary social preference: found their own tiny camp / stay alone (still after found-delay).
     local myPackLimit = (VNPC_GetPackLimit and VNPC_GetPackLimit(pred)) or (camp_cap:GetInt() or 4)
     if myPackLimit <= 1 and not force then
         return VNPC_CreatePredatorCamp(pred:GetPos(), pred)
     end
+
+    -- Prefer joining an existing camp. Only found a new one if enough free
+    -- uncamped predators have gathered nearby (or force).
 
     local myFaction = (VNPC_GetPredatorFaction and VNPC_GetPredatorFaction(pred)) or "metrocop"
     local maxCap = math.min(camp_cap:GetInt() or 4, myPackLimit)
@@ -150,17 +209,37 @@ function VNPC_AssignPredatorToCamp(pred, force)
         pred.VNPC_CampRole = "stayer"
         VNPC_SetPredatorCampmateRelations(bestCamp)
         return bestCamp
-    else
-        return VNPC_CreatePredatorCamp(predPos, pred)
     end
+
+    -- Found a new camp only when enough free predators are nearby, or forced.
+    local need = math.max(1, camp_min_founders:GetInt() or 2)
+    if not force and need > 1 then
+        local nearby = 1
+        for _, other in ipairs(ents.FindInSphere(predPos, 700)) do
+            if other ~= pred and VNPC_CanCampWork(other)
+                and (other.IsDrGNextbot or other.VNPC_FemaleModelVore or other.Predator)
+                and (not other.VNPC_CampID or other.VNPC_CampID == "wild") then
+                nearby = nearby + 1
+            end
+        end
+        if nearby < need then
+            -- Mark as seeking a site; camp AI will retry later.
+            pred.VNPC_SeekingCampSite = true
+            return nil
+        end
+    end
+    return VNPC_CreatePredatorCamp(predPos, pred)
 end
 
 function VNPC_ConstructPredatorCampTent(camp)
     if not camps_enabled:GetBool() or not camp or not camp.pos then return false end
+    if not VNPC_CampCanBuild or not VNPC_CampCanBuild(camp) then return false end
     local maxTents = camp_max_tents:GetInt()
     camp.tents = camp.tents or {}
     camp.huts = camp.huts or {}
     if #camp.tents >= maxTents then return false end
+    local _cost = camp_tent_cost:GetFloat() or 28
+    if (camp.resources or 0) < _cost then return false end
 
     if not camp.activeTentSite and VNPC_FindClearHutSite then
         local pos, ang = VNPC_FindClearHutSite(camp, 21 + #camp.tents)
@@ -179,7 +258,12 @@ function VNPC_ConstructPredatorCampTent(camp)
     if not site then return false end
 
     if VNPC_ConstructWalkableHutPiece then
+        local _cost = camp_tent_cost:GetFloat() or 28
+        if (camp.resources or 0) < _cost then return false end
         local placed = VNPC_ConstructWalkableHutPiece(camp, site)
+        if placed then
+            camp.resources = math.max(0, (camp.resources or 0) - _cost)
+        end
         if (not placed) and site.plan and site.stage and site.stage >= #site.plan then
             local hut = VNPC_FinalizeHutSite and VNPC_FinalizeHutSite(camp, site) or {
                 pos = site.pos,
@@ -215,7 +299,10 @@ end
 
 function VNPC_ConstructPredatorCampFire(camp)
     if not camps_enabled:GetBool() or not camp or not camp.pos then return false end
+    if not VNPC_CampCanBuild or not VNPC_CampCanBuild(camp) then return false end
     if IsValid(camp.campfire) then return false end
+    local _cost = camp_fire_cost:GetFloat() or 18
+    if (camp.resources or 0) < _cost then return false end
 
     local tr = util.TraceLine({
         start = camp.pos + Vector(0, 0, 40),
@@ -252,13 +339,17 @@ function VNPC_ConstructPredatorCampFire(camp)
         phys:Sleep()
     end
 
+    camp.resources = math.max(0, (camp.resources or 0) - (camp_fire_cost:GetFloat() or 18))
     camp.campfire = fire
     return true
 end
 
 function VNPC_ConstructPredatorCampWater(camp)
     if not camps_enabled:GetBool() or not camp or not camp.pos then return false end
+    if not VNPC_CampCanBuild or not VNPC_CampCanBuild(camp) then return false end
     if IsValid(camp.watersource) then return false end
+    local _cost = camp_water_cost:GetFloat() or 22
+    if (camp.resources or 0) < _cost then return false end
 
     local angle = math.rad(math.random(0, 360))
     local candidatePos = camp.pos + Vector(math.cos(angle) * 75, math.sin(angle) * 75, 40)
@@ -293,12 +384,14 @@ function VNPC_ConstructPredatorCampWater(camp)
         phys:Sleep()
     end
 
+    camp.resources = math.max(0, (camp.resources or 0) - (camp_water_cost:GetFloat() or 22))
     camp.watersource = water
     return true
 end
 
 function VNPC_ConstructPredatorCampBarricades(camp)
     if not camps_enabled:GetBool() or not camp or not camp.pos then return false end
+    if not VNPC_CampCanBuild or not VNPC_CampCanBuild(camp) then return false end
     camp.barricades = camp.barricades or {}
     for b = #camp.barricades, 1, -1 do
         if not IsValid(camp.barricades[b]) then
@@ -306,6 +399,8 @@ function VNPC_ConstructPredatorCampBarricades(camp)
         end
     end
     if #camp.barricades >= 6 then return false end
+    local _cost = camp_barricade_cost:GetFloat() or 14
+    if (camp.resources or 0) < _cost then return false end
 
     local idx = #camp.barricades
     local angle = math.rad(idx * 60 + math.random(-10, 10))
@@ -344,6 +439,7 @@ function VNPC_ConstructPredatorCampBarricades(camp)
         phys:Sleep()
     end
 
+    camp.resources = math.max(0, (camp.resources or 0) - (camp_barricade_cost:GetFloat() or 14))
     table.insert(camp.barricades, barricade)
     return true
 end
@@ -376,7 +472,10 @@ end
 
 function VNPC_ConstructPredatorCampLeaderHut(camp)
     if not camps_enabled:GetBool() or not camp or not camp.pos then return false end
+    if not VNPC_CampCanBuild or not VNPC_CampCanBuild(camp) then return false end
     if IsValid(camp.leaderTable) then return false end
+    local _cost = camp_leader_hut_cost:GetFloat() or 40
+    if (camp.resources or 0) < _cost then return false end
 
     local pos, ang
     if VNPC_FindClearHutSite then
@@ -423,6 +522,7 @@ function VNPC_ConstructPredatorCampLeaderHut(camp)
     camp.tents = camp.tents or {}
     table.insert(camp.tents, hut)
 
+    camp.resources = math.max(0, (camp.resources or 0) - (camp_leader_hut_cost:GetFloat() or 40))
     print(string.format("[V-NPCs] Built walkable roofed Leader Hut for Predator Camp #%s at (%.1f, %.1f, %.1f)!", tostring(camp.id), pos.x, pos.y, pos.z))
     return true
 end
@@ -588,22 +688,27 @@ hook.Add("Think", "VNPC_PredatorCamps_AI_Loop", function()
 
     local now = CurTime()
 
-    -- 1. Ensure all female V-NPC predators belong to a camp
-    for _, pred in ipairs(ents.GetAll()) do
-        if not IsValid(pred) or pred:Health() <= 0 then continue end
-        local isPred = (pred.IsDrGNextbot or pred.VNPC_FemaleModelVore or pred.Predator
-            or (VNPC_ShouldBePredator and VNPC_ShouldBePredator(pred))
-            or (VNPC_IsAnyFemale and VNPC_IsAnyFemale(pred))
-            or (VNPC_IsFemaleModelNPC and VNPC_IsFemaleModelNPC(pred)))
-        if not isPred then continue end
-        if not pred.VNPC_FemaleModelVore and VNPC_GiveFemaleModelVore then
-            pred.VNPC_ForceFemaleVore = true
-            VNPC_GiveFemaleModelVore(pred)
-        end
-        if pred.VNPC_IsSecretAssassin then continue end
-        if (not pred.VNPC_CampID or pred.VNPC_CampID == "wild") and not pred.VNPC_IsPermanentFortPredator then
-            pred.VNPC_CampID = nil
-            VNPC_AssignPredatorToCamp(pred)
+    -- 1. Track spawn times; only try camp assignment for free, settled predators.
+    if (VNPC_NextPredCampEnroll or 0) <= now then
+        VNPC_NextPredCampEnroll = now + 2.5
+        for _, pred in ipairs(ents.GetAll()) do
+            if not IsValid(pred) or pred:Health() <= 0 then continue end
+            local isPred = (pred.IsDrGNextbot or pred.VNPC_FemaleModelVore or pred.Predator
+                or (VNPC_ShouldBePredator and VNPC_ShouldBePredator(pred))
+                or (VNPC_IsAnyFemale and VNPC_IsAnyFemale(pred))
+                or (VNPC_IsFemaleModelNPC and VNPC_IsFemaleModelNPC(pred)))
+            if not isPred then continue end
+            pred.VNPC_SpawnTime = pred.VNPC_SpawnTime or now
+            if not VNPC_CanCampWork(pred) then continue end
+            if not pred.VNPC_FemaleModelVore and VNPC_GiveFemaleModelVore then
+                pred.VNPC_ForceFemaleVore = true
+                VNPC_GiveFemaleModelVore(pred)
+            end
+            if pred.VNPC_IsSecretAssassin then continue end
+            if (not pred.VNPC_CampID or pred.VNPC_CampID == "wild") and not pred.VNPC_IsPermanentFortPredator then
+                pred.VNPC_CampID = nil
+                VNPC_AssignPredatorToCamp(pred)
+            end
         end
     end
 
@@ -644,31 +749,44 @@ hook.Add("Think", "VNPC_PredatorCamps_AI_Loop", function()
             end
         end
 
-        -- Construct a Camp Tent/Shelter when resting at camp
-        if camp.state == "idle" and #camp.tents < camp_max_tents:GetInt() and (now - (camp.createTime or now)) > 15.0 and (camp.lastTentBuildTime or 0) <= now then
+        -- Gather resources from free (not swallowed) members before any building.
+        local freeN = VNPC_CountFreeCampMembers(camp)
+        local rate = camp_resource_rate:GetFloat() or 0.35
+        camp.resources = (camp.resources or 0) + freeN * rate * 1.0 -- lastUpdate is ~1s
+        if freeN <= 0 then
+            -- Entire camp swallowed/asleep: freeze construction this tick.
+            continue
+        end
+        if camp.state == "gathering" and (camp.resources or 0) >= (camp_fire_cost:GetFloat() or 18) then
+            camp.state = "idle"
+        end
+
+        -- Build only when free members exist and resources have been spent inside construct fns.
+        if (camp.state == "idle" or camp.state == "gathering") and #camp.tents < camp_max_tents:GetInt()
+            and (now - (camp.createTime or now)) > 25.0 and (camp.lastTentBuildTime or 0) <= now then
             if VNPC_ConstructPredatorCampTent(camp) then
-                camp.lastTentBuildTime = now + 35.0
+                camp.lastTentBuildTime = now + 40.0
+                camp.state = "idle"
             end
         end
 
-        -- Construct Campfire, Water Source, and Barricades when resting at camp
-        if camp.state == "idle" then
-            if not IsValid(camp.campfire) and (now - (camp.createTime or now)) > 5.0 then
+        if camp.state == "idle" or (camp.resources or 0) > 0 then
+            if not IsValid(camp.campfire) and (now - (camp.createTime or now)) > 20.0 then
                 VNPC_ConstructPredatorCampFire(camp)
             end
-            if not IsValid(camp.watersource) and (now - (camp.createTime or now)) > 6.0 then
+            if not IsValid(camp.watersource) and (now - (camp.createTime or now)) > 30.0 then
                 VNPC_ConstructPredatorCampWater(camp)
             end
             camp.barricades = camp.barricades or {}
-            if #camp.barricades < 10 and (now - (camp.createTime or now)) > 8.0 and (camp.lastBarricadeBuildTime or 0) <= now then
+            if #camp.barricades < 10 and (now - (camp.createTime or now)) > 35.0 and (camp.lastBarricadeBuildTime or 0) <= now then
                 if VNPC_ConstructPredatorCampBarricades(camp) then
-                    camp.lastBarricadeBuildTime = now + 12.0
+                    camp.lastBarricadeBuildTime = now + 18.0
                 end
             end
         end
 
         VNPC_EnsurePredatorCampLeader(camp)
-        if camp.state == "idle" and not IsValid(camp.leaderTable) and (now - (camp.createTime or now)) > 7.0 then
+        if (camp.state == "idle") and not IsValid(camp.leaderTable) and (now - (camp.createTime or now)) > 45.0 then
             VNPC_ConstructPredatorCampLeaderHut(camp)
         end
         if VNPC_PredatorCampLeaderDecision_AI then
