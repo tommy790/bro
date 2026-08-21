@@ -679,6 +679,8 @@ hook.Add("Think", "VNPC_FemaleModelVore_Think", function()
                 end
             end
 
+            -- Full-belly "stay put" used to ClearSchedule + zero velocity every
+            -- Think, which made NPCs stutter-walk. Only nudge idle once via arbiter.
             if not GetConVar("vnpcs_patrol_full"):GetBool() and (VNPC_BellyHasSwallowedPrey and VNPC_BellyHasSwallowedPrey(belly) or ((not VNPC_BellyHasSwallowedPrey) and (belly.DigestionPhase ~= 0 or (belly.Prey and #belly.Prey > 0)))) then
                 local hasEnemy = false
                 if npc.GetEnemy then
@@ -686,26 +688,18 @@ hook.Add("Think", "VNPC_FemaleModelVore_Think", function()
                     hasEnemy = ok and IsValid(en)
                 end
                 if not hasEnemy then
-                    local isMovingOrWandering = false
-                    if npc.IsMoving and npc:IsMoving() then isMovingOrWandering = true end
-                    if npc.GetVelocity and npc:GetVelocity():Length2DSqr() > 4 then isMovingOrWandering = true end
-                    if npc.GetCurrentSchedule then
-                        local sched = npc:GetCurrentSchedule()
-                        if sched ~= SCHED_IDLE_STAND and sched ~= SCHED_NPC_FREEZE and sched ~= SCHED_WAIT_FOR_SCRIPT then
-                            isMovingOrWandering = true
-                        end
-                    end
-                    if isMovingOrWandering then
-                        if npc.ClearSchedule then pcall(npc.ClearSchedule, npc) end
-                        if npc.ClearPatrols then pcall(npc.ClearPatrols, npc) end
+                    if VNPC_AI_Idle then
+                        VNPC_AI_Idle(npc, "idle", "full_belly_rest", { hold = 2.5 })
+                    elseif (npc.VNPC_NextFullBellyIdle or 0) <= now then
+                        npc.VNPC_NextFullBellyIdle = now + 2.5
                         if npc.SetSchedule then pcall(npc.SetSchedule, npc, SCHED_IDLE_STAND) end
-                        if npc.StopMoving then pcall(npc.StopMoving, npc) end
-                        if npc.SetVelocity then pcall(npc.SetVelocity, npc, Vector(0, 0, 0)) end
                     end
                 end
             end
         end
-        if VNPC_AnimatedBoneOffsets then
+        -- Bone offsets every entity every tick is expensive; throttle.
+        if VNPC_AnimatedBoneOffsets and (npc.VNPC_NextBoneOffset or 0) <= now then
+            npc.VNPC_NextBoneOffset = now + 0.05
             VNPC_AnimatedBoneOffsets(npc)
         end
     end
@@ -723,19 +717,22 @@ hook.Add("Think", "VNPC_FemaleModelVore_AI", function()
     for _, npc in ipairs(ents.GetAll()) do
         if not IsValid(npc) or not npc.VNPC_FemaleModelVore then continue end
         if (npc.VNPC_NextAIThink or 0) > now then continue end
-        npc.VNPC_NextAIThink = now + 0.5
+        -- 1.1s cadence: was 0.5s and re-issued CHASE every tick → walk/stop stutter.
+        npc.VNPC_NextAIThink = now + 1.1
+
+        if VNPC_AI_IsLocked and VNPC_AI_IsLocked(npc) then continue end
 
         -- Secret assassins are driven by vnpcs_secret_assassins.lua while on mission.
         if npc.VNPC_IsSecretAssassin and npc.VNPC_AssassinPhase ~= "night" then
-            if npc.SetEnemy then pcall(npc.SetEnemy, npc, nil) end
             continue
         end
         
         local belly = npc.VNPC_Belly or npc.Belly
         if IsValid(belly) and (VNPC_BellyHasSwallowedPrey and VNPC_BellyHasSwallowedPrey(belly) or ((not VNPC_BellyHasSwallowedPrey) and (belly.DigestionPhase ~= 0 or (belly.Prey and #belly.Prey > 0)))) then
             if VNPC_IsPredatorCalm and VNPC_IsPredatorCalm(npc) then
-                if npc.ClearSchedule then pcall(npc.ClearSchedule, npc) end
-                if npc.SetSchedule then pcall(npc.SetSchedule, npc, SCHED_IDLE_STAND) end
+                if VNPC_AI_Idle then
+                    VNPC_AI_Idle(npc, "idle", "female_calm_digest", { hold = 3.0 })
+                end
                 continue
             end
         end
@@ -753,25 +750,35 @@ hook.Add("Think", "VNPC_FemaleModelVore_AI", function()
         end
         local eff_grab = grab_dist * (pers_data and pers_data.grab_multiplier or 1.0)
         local eff_detect = detect_dist * (pers_data and pers_data.range_multiplier or 1.0)
-        -- Welfare: activity span + dormancy shrink hunt range off-peak / when sun-starved
         if VNPC_GetWelfareVisionMult then
             local vMult = VNPC_GetWelfareVisionMult(npc)
             eff_grab = eff_grab * math.max(0.55, vMult)
             eff_detect = eff_detect * vMult
         end
         if npc.VNPC_IsDormant then
-            -- Dormant preds barely hunt
-            if npc.SetEnemy then pcall(npc.SetEnemy, npc, nil) end
             continue
         end
 
-        -- Target enemy if present (many custom nextbots have no GetEnemy)
+        local prefer_swallow = GetConVar("vnpcs_ai_prefer_swallowing")
+        local function tryChase(target)
+            if not IsValid(target) then return false end
+            if prefer_swallow and prefer_swallow:GetBool() and npc.CapabilitiesRemove then
+                pcall(npc.CapabilitiesRemove, npc, CAP_WEAPON_RANGE_ATTACK1)
+                npc.VNPC_RemovedRangeAttack = true
+            end
+            if VNPC_AI_Chase then
+                return VNPC_AI_Chase(npc, target, "combat", "female_model_ai", { hold = 2.0 })
+            end
+            if npc.SetEnemy then pcall(npc.SetEnemy, npc, target) end
+            if npc.SetSchedule then pcall(npc.SetSchedule, npc, SCHED_CHASE_ENEMY) end
+            return true
+        end
+
         local enemy = nil
         if npc.GetEnemy then
             local ok, en = pcall(npc.GetEnemy, npc)
             if ok then enemy = en end
         end
-        local prefer_swallow = GetConVar("vnpcs_ai_prefer_swallowing")
         if IsValid(enemy) and enemy ~= npc and not enemy.Vored then
             if VNPC_IsFamilyOrMate and VNPC_IsFamilyOrMate(npc, enemy) then
                 if npc.SetEnemy then pcall(npc.SetEnemy, npc, nil) end
@@ -794,11 +801,7 @@ hook.Add("Think", "VNPC_FemaleModelVore_AI", function()
                 end
                 npc:EatEntity(enemy)
             elseif dist <= eff_detect then
-                if prefer_swallow and prefer_swallow:GetBool() and npc.CapabilitiesRemove then
-                    pcall(npc.CapabilitiesRemove, npc, CAP_WEAPON_RANGE_ATTACK1)
-                    npc.VNPC_RemovedRangeAttack = true
-                end
-                if npc.SetSchedule then pcall(npc.SetSchedule, npc, SCHED_CHASE_ENEMY) end
+                tryChase(enemy)
             end
         else
             if npc.CapabilitiesAdd and npc.VNPC_RemovedRangeAttack then
@@ -806,29 +809,30 @@ hook.Add("Think", "VNPC_FemaleModelVore_AI", function()
                 npc.VNPC_RemovedRangeAttack = nil
             end
             if pers_data and pers_data.only_enemies then continue end
-            -- Search for nearby hostile target or corpses
             for _, ent in ipairs(ents.FindInSphere(npc:GetPos(), eff_detect)) do
-                if IsValid(ent) and ent ~= npc and not ent.Vored and (ent:IsPlayer() or ent:IsNPC()) then
+                if IsValid(ent) and ent ~= npc and not ent.Vored and (ent:IsPlayer() or ent:IsNPC() or ent:IsNextBot()) then
                     if ent.VNPC_DigestedBone or ent.VNPC_BoneOwner or ent.VNPC_NoVore then continue end
                     if VNPC_IsFamilyOrMate and VNPC_IsFamilyOrMate(npc, ent) then continue end
                     if npc.VNPC_CampID and ent.VNPC_CampID and npc.VNPC_CampID ~= "wild" and npc.VNPC_CampID == ent.VNPC_CampID then continue end
                     if not (npc.VNPC_IsWildWanderer and npc.VNPC_WildType == "predator") and VNPC_IsProtectedChildPrey and VNPC_IsProtectedChildPrey(ent) then continue end
                     if VNPC_IsPreyEmissary and VNPC_IsPreyEmissary(ent) then continue end
                     if VNPC_CanSwallowOwnSpecies and not VNPC_CanSwallowOwnSpecies(npc, ent) then continue end
-                    if npc.GetRelationship and npc:GetRelationship(ent) == D_HT then
+                    local isHostile = false
+                    if npc.GetRelationship then
+                        local ok, rel = pcall(npc.GetRelationship, npc, ent)
+                        isHostile = ok and rel == D_HT
+                    end
+                    if not isHostile and (ent:IsPlayer() or ent.Predator or ent.VNPC_FemaleModelVore or ent.IsDrGNextbot) then
+                        isHostile = true
+                    end
+                    if isHostile then
                         local targetRad = (ent.OBBMaxs and ent:OBBMaxs():Length2D() or 30)
-                        local levelBonus = (VNPC_GetPredatorLevel and (VNPC_GetPredatorLevel(npc) - 1) * 3) or 0
                         local grab_reach = math.max(110, eff_grab) + targetRad + levelBonus
                         if npc:GetPos():Distance(ent:GetPos()) <= grab_reach then
                             npc:EatEntity(ent)
                             break
-                        elseif npc.SetEnemy then
-                            pcall(npc.SetEnemy, npc, ent)
-                            if prefer_swallow and prefer_swallow:GetBool() and npc.CapabilitiesRemove then
-                                pcall(npc.CapabilitiesRemove, npc, CAP_WEAPON_RANGE_ATTACK1)
-                                npc.VNPC_RemovedRangeAttack = true
-                            end
-                            if npc.SetSchedule then pcall(npc.SetSchedule, npc, SCHED_CHASE_ENEMY) end
+                        else
+                            tryChase(ent)
                             break
                         end
                     end
@@ -872,18 +876,18 @@ hook.Add("EntityTakeDamage", "VNPC_Battle_PreferVore", function(target, dmginfo)
     end
 end)
 
--- AI Think loop for willing/desire prey NPCs to seek out predators and present themselves to be eaten
+-- AI Think loop for willing/desire prey NPCs to seek out predators
 hook.Add("Think", "VNPC_WillingPrey_AI", function()
     local enabled = GetConVar("vnpcs_personalities_enabled")
     if enabled and not enabled:GetBool() then return end
 
     local now = CurTime()
-    local grab_dist = GetConVar("vnpcs_female_model_vore_grab_range"):GetFloat() or 75
 
     for _, npc in ipairs(ents.FindByClass("npc_*")) do
         if not IsValid(npc) or npc.Vored or npc.VNPC_Vored then continue end
         if (npc.VNPC_NextWillingThink or 0) > now then continue end
-        npc.VNPC_NextWillingThink = now + 0.6
+        npc.VNPC_NextWillingThink = now + 1.4
+        if VNPC_AI_IsLocked and VNPC_AI_IsLocked(npc) then continue end
 
         local pers, pers_data = "fighter", nil
         if VNPC_GetPreyPersonality then
@@ -891,9 +895,8 @@ hook.Add("Think", "VNPC_WillingPrey_AI", function()
         end
 
         if pers_data and (pers_data.seek_predator or pers_data.willing) then
-            -- Search for nearby female model vore predator
             for _, pred in ipairs(ents.FindInSphere(npc:GetPos(), 600)) do
-                if IsValid(pred) and pred ~= npc and (pred.Predator or pred.VNPC_FemaleModelVore or VNPC_IsFemaleModelNPC(pred)) and not pred.Vored then
+                if IsValid(pred) and pred ~= npc and (pred.Predator or pred.VNPC_FemaleModelVore or (VNPC_IsFemaleModelNPC and VNPC_IsFemaleModelNPC(pred))) and not pred.Vored then
                     if pred.VNPC_IsSecretAssassin and pred.VNPC_AssassinPhase ~= "night" then
                         continue
                     end
@@ -913,14 +916,27 @@ hook.Add("Think", "VNPC_WillingPrey_AI", function()
                         end
                         break
                     elseif dist <= 220 then
-                        if npc.SetTarget then pcall(npc.SetTarget, npc, pred) end
-                        if npc.SetSchedule then pcall(npc.SetSchedule, npc, SCHED_TARGET_FACE) end
-                        if pred.SetEnemy then pcall(pred.SetEnemy, pred, npc) end
-                        if pred.SetSchedule then pcall(pred.SetSchedule, pred, SCHED_CHASE_ENEMY) end
+                        if VNPC_AI_SetSchedule then
+                            VNPC_AI_SetSchedule(npc, SCHED_TARGET_FACE, "hunt", "willing_face", {
+                                target = pred, hold = 2.0
+                            })
+                        else
+                            if npc.SetTarget then pcall(npc.SetTarget, npc, pred) end
+                            if npc.SetSchedule then pcall(npc.SetSchedule, npc, SCHED_TARGET_FACE) end
+                        end
+                        if VNPC_AI_Chase then
+                            VNPC_AI_Chase(pred, npc, "combat", "willing_attract", { hold = 2.0 })
+                        end
                         break
-                    elseif npc.SetSchedule then
-                        if npc.SetTarget then pcall(npc.SetTarget, npc, pred) end
-                        pcall(npc.SetSchedule, npc, SCHED_TARGET_CHASE)
+                    else
+                        if VNPC_AI_SetSchedule then
+                            VNPC_AI_SetSchedule(npc, SCHED_TARGET_CHASE, "hunt", "willing_approach", {
+                                target = pred, hold = 2.0
+                            })
+                        elseif npc.SetSchedule then
+                            if npc.SetTarget then pcall(npc.SetTarget, npc, pred) end
+                            pcall(npc.SetSchedule, npc, SCHED_TARGET_CHASE)
+                        end
                         break
                     end
                 end

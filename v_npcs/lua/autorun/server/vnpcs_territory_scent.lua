@@ -121,10 +121,20 @@ hook.Add("Think", "VNPC_TerritoryScent_AI_Loop", function()
                     end
 
                     if IsValid(node.pred) and node.pred:Health() > 0 then
-                        if ent.SetEnemy then pcall(ent.SetEnemy, ent, node.pred) end
-                        if ent.SetSchedule then pcall(ent.SetSchedule, ent, SCHED_RUN_FROM_ENEMY) end
+                        if VNPC_AI_SetSchedule then
+                            VNPC_AI_SetSchedule(ent, SCHED_RUN_FROM_ENEMY, "flee", "scent_flee", {
+                                enemy = node.pred, hold = 3.0
+                            })
+                        else
+                            if ent.SetEnemy then pcall(ent.SetEnemy, ent, node.pred) end
+                            if ent.SetSchedule then pcall(ent.SetSchedule, ent, SCHED_RUN_FROM_ENEMY) end
+                        end
                     else
-                        if ent.SetSchedule then pcall(ent.SetSchedule, ent, SCHED_TAKE_COVER_FROM_ORIGIN) end
+                        if VNPC_AI_SetSchedule then
+                            VNPC_AI_SetSchedule(ent, SCHED_TAKE_COVER_FROM_ORIGIN, "flee", "scent_cover", { hold = 3.0 })
+                        elseif ent.SetSchedule then
+                            pcall(ent.SetSchedule, ent, SCHED_TAKE_COVER_FROM_ORIGIN)
+                        end
                     end
                 end
             end

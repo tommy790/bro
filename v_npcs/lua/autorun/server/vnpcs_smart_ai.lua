@@ -119,7 +119,8 @@ hook.Add("Think", "VNPCS_SmartAI_TacticalLoop", function()
         if not IsValid(pred) or pred.Vored or pred.VNPC_Vored then continue end
         if not (pred.IsDrGNextbot or pred.VNPC_FemaleModelVore or pred.Predator) then continue end
         if (pred.VNPC_NextSmartThink or 0) > now then continue end
-        pred.VNPC_NextSmartThink = now + 0.4
+        pred.VNPC_NextSmartThink = now + 1.0
+        if VNPC_AI_IsLocked and VNPC_AI_IsLocked(pred) then continue end
 
         local belly = pred.VNPC_Belly or pred.Belly
         local preyCount = IsValid(belly) and (belly.Prey and #belly.Prey or 0) or 0
@@ -130,16 +131,18 @@ hook.Add("Think", "VNPCS_SmartAI_TacticalLoop", function()
         if VNPC_GetBellyCapacity and IsValid(belly) then
             local used = belly:GetCollectivePreyValue() or 0
             if used >= VNPC_GetBellyCapacity(belly, pred) then
-                if pred.SetEnemy then pcall(pred.SetEnemy, pred, nil) end
-                if pred.SetSchedule then pcall(pred.SetSchedule, pred, SCHED_IDLE_STAND) end
+                if VNPC_AI_Idle then
+                    VNPC_AI_Idle(pred, "idle", "smart_full", { hold = 3.0 })
+                end
                 continue
             end
         end
 
         -- DEFENSIVE TACTIC: If heavily full and low HP, retreat/seek safe distance while digesting
         if isHeavilyStuffed and pred:Health() < pred:GetMaxHealth() * 0.35 then
-            if pred.SetEnemy then pcall(pred.SetEnemy, pred, nil) end
-            if pred.SetSchedule then pcall(pred.SetSchedule, pred, SCHED_TAKE_COVER_FROM_ENEMY) end
+            if VNPC_AI_SetSchedule then
+                VNPC_AI_SetSchedule(pred, SCHED_TAKE_COVER_FROM_ENEMY, "flee", "smart_retreat", { hold = 3.0 })
+            end
             continue
         end
 
@@ -173,8 +176,12 @@ hook.Add("Think", "VNPCS_SmartAI_TacticalLoop", function()
                     belly:AddPrey(smartTarget)
                 end
             else
-                if pred.SetEnemy then pcall(pred.SetEnemy, pred, smartTarget) end
-                if pred.SetSchedule then pcall(pred.SetSchedule, pred, SCHED_CHASE_ENEMY) end
+                if VNPC_AI_Chase then
+                    VNPC_AI_Chase(pred, smartTarget, "combat", "smart_ai", { hold = 2.0 })
+                else
+                    if pred.SetEnemy then pcall(pred.SetEnemy, pred, smartTarget) end
+                    if pred.SetSchedule then pcall(pred.SetSchedule, pred, SCHED_CHASE_ENEMY) end
+                end
 
                 -- TACTICAL AMBUSH: Sprint faster when target is not looking at us
                 if smartTarget.GetAimVector then

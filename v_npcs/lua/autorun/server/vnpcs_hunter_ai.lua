@@ -185,12 +185,25 @@ end
 function VNPC_MoveEntTo(ent, pos, run, speedScale)
     if not IsValid(ent) or not isvector(pos) then return false end
     speedScale = speedScale or 1.0
+    -- Debounce path spam: same goal within 64u and recent order → keep walking.
+    local now = CurTime()
+    if ent.VNPC_LastMovePos and ent.VNPC_LastMovePos:DistToSqr(pos) < (64 * 64)
+        and (ent.VNPC_LastMoveTime or 0) + 1.4 > now then
+        return true
+    end
+    ent.VNPC_LastMovePos = Vector(pos)
+    ent.VNPC_LastMoveTime = now
+
+    if VNPC_AI_MoveTo and (not ent.MoveToPos) then
+        return VNPC_AI_MoveTo(ent, pos, run, "hunt", "hunter_move", { hold = 1.6 })
+    end
     if ent.MoveToPos then
         local ok = pcall(ent.MoveToPos, ent, pos, {
             speed = (run and (ent.RunSpeed or 320) or (ent.WalkSpeed or 120)) * speedScale,
-            use_navmesh = VNPC_NavmeshLoaded(),
-            repath = 0.5
+            use_navmesh = VNPC_NavmeshLoaded and VNPC_NavmeshLoaded() or false,
+            repath = 1.25
         })
+        if VNPC_AI_Claim then VNPC_AI_Claim(ent, "hunt", "hunter_move", 1.6) end
         return ok ~= false
     end
     if ent.SetLastPosition then
@@ -198,6 +211,7 @@ function VNPC_MoveEntTo(ent, pos, run, speedScale)
         if ent.SetSchedule then
             pcall(ent.SetSchedule, ent, run and SCHED_FORCED_GO_RUN or SCHED_FORCED_GO)
         end
+        if VNPC_AI_Claim then VNPC_AI_Claim(ent, "hunt", "hunter_move", 1.6) end
         return true
     end
     return false
@@ -553,7 +567,8 @@ hook.Add("Think", "VNPC_HunterAI_TacticalLoop", function()
     for _, pred in ipairs(ents.GetAll()) do
         if not predIsHunter(pred) then continue end
         if (pred.VNPC_NextHunterThink or 0) > now then continue end
-        pred.VNPC_NextHunterThink = now + 0.3
+        pred.VNPC_NextHunterThink = now + 0.9
+        if VNPC_AI_IsLocked and VNPC_AI_IsLocked(pred) then continue end
 
         local enemy = getEnemy(pred)
         local state = pred.VNPC_HuntState or "idle"
