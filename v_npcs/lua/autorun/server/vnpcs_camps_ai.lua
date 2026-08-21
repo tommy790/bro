@@ -8,7 +8,8 @@ local camp_hunger_thresh = CreateConVar("vnpcs_camp_hunger_thresh", "45.0", {FCV
 local camp_max_tents = CreateConVar("vnpcs_pred_camp_max_tents", "2", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Maximum number of tents built at a predator camp")
 local camp_found_delay = CreateConVar("vnpcs_camp_found_delay", "45", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Seconds a predator must be alive/free before she may found or join a camp")
 local camp_min_founders = CreateConVar("vnpcs_camp_min_founders", "2", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Minimum free predators that must gather before founding a new camp (1 = solitary allowed)")
-local camp_resource_rate = CreateConVar("vnpcs_pred_camp_resource_rate", "0.35", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Resources gained per free camp member per second")
+local camp_scrap_value = CreateConVar("vnpcs_pred_camp_scrap_value", "8", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Resources gained when a free camp member gathers one scrap prop")
+local camp_gather_radius = CreateConVar("vnpcs_pred_camp_gather_radius", "1400", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "How far predator gatherers search for scrap around camp")
 local camp_fire_cost = CreateConVar("vnpcs_pred_camp_fire_cost", "18", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Resource cost to build a predator campfire")
 local camp_water_cost = CreateConVar("vnpcs_pred_camp_water_cost", "22", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Resource cost to build a predator water source")
 local camp_barricade_cost = CreateConVar("vnpcs_pred_camp_barricade_cost", "14", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Resource cost per predator barricade piece")
@@ -52,6 +53,117 @@ function VNPC_CampSpend(camp, cost)
     camp.resources = camp.resources - cost
     return true
 end
+
+local function isGatherableScrap(ent, camp)
+    if not IsValid(ent) then return false end
+    if ent:GetClass() ~= "prop_physics" and ent:GetClass() ~= "prop_physics_multiplayer" then return false end
+    if ent.VNPC_NoVore or ent.VNPC_IsCookedPropMeal or ent.VNPC_IsTownInfrastructure then return false end
+    if ent.VNPC_IsPreyCampWall or ent.VNPC_IsPreyCampHutPiece or ent.VNPC_IsCourtyardDefense then return false end
+    if ent.VNPC_IsPredatorCampFire or ent.VNPC_IsPredatorCampWater or ent.VNPC_IsPredatorCampBarricade then return false end
+    if ent.VNPC_IsPredatorTent or ent.VNPC_IsLeaderTable or ent.VNPC_IsLeaderHutWall then return false end
+    if camp then
+        if ent.VNPC_PredatorCampID and ent.VNPC_PredatorCampID == camp.id then return false end
+        if ent.VNPC_CampID and ent.VNPC_CampID == camp.id then return false end
+        -- Don't harvest own camp structures
+        for _, t in ipairs(camp.tents or {}) do
+            if istable(t) and t.props then
+                for _, p in ipairs(t.props) do if p == ent then return false end end
+            elseif t == ent then return false end
+        end
+        for _, b in ipairs(camp.barricades or {}) do if b == ent then return false end end
+        if camp.campfire == ent or camp.watersource == ent or camp.leaderTable == ent then return false end
+    end
+    local phys = ent.GetPhysicsObject and ent:GetPhysicsObject()
+    -- Prefer loose junk; skip giant map props
+    if IsValid(phys) and phys.GetMass and phys:GetMass() > 800 then return false end
+    return true
+end
+
+-- Send free camp members out to pick up scrap. Resources ONLY increase here.
+function VNPC_CampGatherResources(camp, now, opts)
+    if not camp or not camp.members or not camp.pos then return 0 end
+    if not VNPC_CampCanBuild or not VNPC_CampCanBuild(camp) then return 0 end
+    opts = opts or {}
+    local radius = opts.radius or (camp_gather_radius and camp_gather_radius:GetFloat()) or 1400
+    local value = opts.value or (camp_scrap_value and camp_scrap_value:GetFloat()) or 8
+    local maxGatherers = opts.maxGatherers or 2
+    local interval = opts.interval or 2.5
+    if (camp.nextGatherAI or 0) > now then return 0 end
+    camp.nextGatherAI = now + interval
+
+    local gained = 0
+    local gatherers = 0
+    for _, mem in ipairs(camp.members) do
+        if gatherers >= maxGatherers then break end
+        if not VNPC_CanCampWork(mem) or mem:IsPlayer() then continue end
+        if mem.VNPC_IsCarryingPreyForCamp then continue end
+        local enemy = VNPC_GetEntityEnemy and VNPC_GetEntityEnemy(mem) or nil
+        if IsValid(enemy) then continue end
+
+        -- Already next to scrap → pick it up.
+        local picked = false
+        for _, scrap in ipairs(ents.FindInSphere(mem:GetPos(), 90)) do
+            if isGatherableScrap(scrap, camp) then
+                camp.resources = (camp.resources or 0) + value
+                if opts.townPoints then
+                    camp.townDevPoints = (camp.townDevPoints or 0) + (opts.townPoints or 0)
+                end
+                if scrap.EmitSound then
+                    scrap:EmitSound("physics/wood/wood_box_impact_soft1.wav", 60, math.random(95, 105))
+                end
+                scrap:Remove()
+                mem.VNPC_IsCollectingScrap = nil
+                mem.VNPC_GatherTarget = nil
+                gained = gained + value
+                gatherers = gatherers + 1
+                picked = true
+                break
+            end
+        end
+        if picked then continue end
+
+        -- Find nearest scrap around camp (not auto-vacuum from whole map without travel).
+        local best, bestD = nil, radius * radius
+        for _, scrap in ipairs(ents.FindInSphere(camp.pos, radius)) do
+            if not isGatherableScrap(scrap, camp) then continue end
+            local d = mem:GetPos():DistToSqr(scrap:GetPos())
+            if d < bestD then
+                best, bestD = scrap, d
+            end
+        end
+        if IsValid(best) then
+            mem.VNPC_IsCollectingScrap = true
+            mem.VNPC_GatherTarget = best
+            gatherers = gatherers + 1
+            if VNPC_AI_MoveTo then
+                VNPC_AI_MoveTo(mem, best:GetPos(), bestD > (400 * 400), "camp", "camp_gather", { hold = 2.0 })
+            else
+                if mem.SetLastPosition then pcall(mem.SetLastPosition, mem, best:GetPos()) end
+                if mem.SetSchedule then
+                    pcall(mem.SetSchedule, mem, bestD > (400 * 400) and SCHED_FORCED_GO_RUN or SCHED_FORCED_GO)
+                end
+            end
+        else
+            mem.VNPC_IsCollectingScrap = nil
+            mem.VNPC_GatherTarget = nil
+            -- No scrap: wander a bit outside camp looking for junk.
+            if (mem.VNPC_NextGatherWander or 0) <= now then
+                mem.VNPC_NextGatherWander = now + 8
+                local ang = math.rad(math.random(0, 359))
+                local r = math.random(250, math.floor(radius * 0.7))
+                local spot = camp.pos + Vector(math.cos(ang) * r, math.sin(ang) * r, 0)
+                if VNPC_AI_MoveTo then
+                    VNPC_AI_MoveTo(mem, spot, false, "camp", "camp_gather_wander", { hold = 4.0 })
+                elseif mem.SetLastPosition then
+                    pcall(mem.SetLastPosition, mem, spot)
+                    if mem.SetSchedule then pcall(mem.SetSchedule, mem, SCHED_FORCED_GO) end
+                end
+            end
+        end
+    end
+    return gained
+end
+
 
 local PRED_TENT_MODELS = {
     "models/props_wasteland/wood_room001a.mdl",       -- Wooden cabin / tent shelter
@@ -749,13 +861,17 @@ hook.Add("Think", "VNPC_PredatorCamps_AI_Loop", function()
             end
         end
 
-        -- Gather resources from free (not swallowed) members before any building.
+        -- Resources only from active gathering (no passive income).
         local freeN = VNPC_CountFreeCampMembers(camp)
-        local rate = camp_resource_rate:GetFloat() or 0.35
-        camp.resources = (camp.resources or 0) + freeN * rate * 1.0 -- lastUpdate is ~1s
         if freeN <= 0 then
-            -- Entire camp swallowed/asleep: freeze construction this tick.
             continue
+        end
+        if VNPC_CampGatherResources then
+            VNPC_CampGatherResources(camp, now, {
+                radius = (camp_gather_radius and camp_gather_radius:GetFloat()) or 1400,
+                value = (camp_scrap_value and camp_scrap_value:GetFloat()) or 8,
+                maxGatherers = math.min(2, freeN),
+            })
         end
         if camp.state == "gathering" and (camp.resources or 0) >= (camp_fire_cost:GetFloat() or 18) then
             camp.state = "idle"

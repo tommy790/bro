@@ -3,7 +3,8 @@
 
 local camps_enabled = CreateConVar("vnpcs_prey_camps_enabled", "1", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Enable prey camp establishment and defensive wall fortifications")
 local camp_target_size = CreateConVar("vnpcs_prey_camp_target_size", "10", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Target number of prey NPCs per camp (at least 10 prey)")
-local camp_resource_rate = CreateConVar("vnpcs_prey_camp_resource_rate", "0.45", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Base resource accumulation rate per free camp member per second")
+local camp_scrap_value = CreateConVar("vnpcs_prey_camp_scrap_value", "6", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Resources gained when a free prey gatherer collects one scrap prop")
+local camp_gather_radius = CreateConVar("vnpcs_prey_camp_gather_radius", "1200", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "How far prey gatherers search for scrap around camp")
 local camp_found_delay = CreateConVar("vnpcs_prey_camp_found_delay", "40", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Seconds a prey NPC must be free before founding/joining a camp")
 local camp_min_founders = CreateConVar("vnpcs_prey_camp_min_founders", "3", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Minimum free prey that must gather before founding a new camp")
 local camp_start_resources = CreateConVar("vnpcs_prey_camp_start_resources", "0", {FCVAR_ARCHIVE, FCVAR_NOTIFY}, "Starting resources when a prey camp is founded (0 = must gather everything)")
@@ -306,23 +307,11 @@ function VNPC_UpdatePreyCampTownEvolution(camp, now, dt)
 
     local curStage = camp.townStage
     if curStage >= 5 then
-        if (camp.resources or 0) < 350.0 then
-            camp.resources = (camp.resources or 0) + (1.5 * dt)
-        end
         return
     end
 
-    local baseRate = town_evolve_rate:GetFloat() or 1.5
-    local ptsEarned = (baseRate + (#camp.members * 0.45)) * dt
-
-    if camp.fortified then
-        ptsEarned = ptsEarned * 1.35
-    end
-    if (camp.resources or 0) >= 60.0 then
-        ptsEarned = ptsEarned * 1.20
-    end
-
-    camp.townDevPoints = camp.townDevPoints + ptsEarned
+    -- Town development points are earned only by gathering scrap and building
+    -- (see VNPC_CampGatherResources / wall+hut construction), not passively over time.
 
     local nextStage = curStage + 1
     local nextData = VNPC_TownDevelopmentStages[nextStage]
@@ -1851,34 +1840,16 @@ hook.Add("Think", "VNPC_PreyCamps_AI_Loop", function()
             camp.abandonedTime = nil
         end
 
-        -- Accumulate resources from FREE members only (swallowed prey contribute nothing).
+        -- Resources ONLY from members walking out and gathering scrap (no passive income).
         local freeN = VNPC_CountFreeCampMembers(camp)
-        local baseRate = camp_resource_rate:GetFloat()
-        camp.resources = (camp.resources or 0) + ((baseRate * math.max(freeN, 0)) * dt)
-
-        -- Resource harvesting: free members must be near scrap; don't auto-vacuum map props.
-        if freeN > 0 and (camp.nextScrapHarvest or 0) <= now then
-            camp.nextScrapHarvest = now + 4.0
-            local harvester = nil
-            for _, mem in ipairs(camp.members) do
-                if VNPC_CanCampWork(mem) and not mem:IsPlayer() then
-                    harvester = mem
-                    break
-                end
-            end
-            if IsValid(harvester) then
-                for _, scrap in ipairs(ents.FindInSphere(harvester:GetPos(), 160)) do
-                    if IsValid(scrap) and scrap:GetClass() == "prop_physics"
-                        and not scrap.VNPC_IsPreyCampWall and not scrap.VNPC_IsPreyCampHutPiece
-                        and not scrap.VNPC_IsCourtyardDefense and not scrap.VNPC_NoVore
-                        and not scrap.VNPC_IsCookedPropMeal and not scrap.VNPC_IsTownInfrastructure then
-                        camp.resources = (camp.resources or 0) + 6.0
-                        camp.townDevPoints = (camp.townDevPoints or 0) + 8.0
-                        scrap:Remove()
-                        break
-                    end
-                end
-            end
+        if freeN > 0 and VNPC_CampGatherResources then
+            VNPC_CampGatherResources(camp, now, {
+                radius = (camp_gather_radius and camp_gather_radius:GetFloat()) or 1200,
+                value = (camp_scrap_value and camp_scrap_value:GetFloat()) or 6,
+                townPoints = 5,
+                maxGatherers = math.min(3, math.max(1, math.floor(freeN * 0.5))),
+                interval = 2.0,
+            })
         end
 
         if VNPC_UpdatePreyCampTownEvolution then
@@ -2081,7 +2052,7 @@ concommand.Add("vnpcs_prey_camps_status", function(ply)
     print("[V-NPCs] Prey Camps & Fortification AI Status")
     print("Enabled: " .. tostring(camps_enabled:GetBool()))
     print("Target Members/Camp: " .. tostring(camp_target_size:GetInt()))
-    print("Resource Accumulation Rate: " .. tostring(camp_resource_rate:GetFloat()) .. " / sec")
+    print("Scrap Value: " .. tostring(camp_scrap_value and camp_scrap_value:GetFloat() or 6) .. " per prop | Gather radius: " .. tostring(camp_gather_radius and camp_gather_radius:GetFloat() or 1200))
     print("Wall Cost: " .. tostring(camp_wall_cost:GetFloat()))
     print("Max Walls/Camp: " .. tostring(camp_max_walls:GetInt()))
     print("Hut Cost: " .. tostring(camp_hut_cost:GetFloat()))
